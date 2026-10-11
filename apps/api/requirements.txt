@@ -1,0 +1,5 @@
+# Runtime dependencies for Phase 1 only.
+# pandas / numpy are intentionally NOT listed yet (added in the indicators phase).
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic-settings>=2.4
