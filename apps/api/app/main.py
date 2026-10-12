@@ -1,6 +1,8 @@
 """FastAPI entry point for AllSafe AI Trading.
 
-Phase 1: only a health endpoint. No market data, indicators or signals exist yet.
+Endpoints: /health (Phase 1) and /api/v1/market-data/* (Phase 2: describe supported
+instruments and timeframes, validate a supplied candle series). No market data is
+fetched, and no indicators or signals exist yet.
 """
 
 from datetime import datetime, timezone
@@ -10,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.config import get_settings
+from app.routers import market_data
 
 settings = get_settings()
 
@@ -25,6 +28,8 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+app.include_router(market_data.router)
 
 
 @app.get("/health", tags=["system"])
