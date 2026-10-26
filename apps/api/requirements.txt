@@ -3,3 +3,5 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic-settings>=2.4
+growwapi>=1.5.0
+pyotp>=2.9.0
