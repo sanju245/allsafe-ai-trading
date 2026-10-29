@@ -1,6 +1,7 @@
 """Response schemas for read-only Groww live market-data endpoints."""
 
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
 
 from app.indicators.decision import TradeDecision

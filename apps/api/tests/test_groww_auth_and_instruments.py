@@ -3,6 +3,8 @@ and authoritative instrument resolution for NIFTY 50 and BANK NIFTY.
 """
 
 import hashlib
+from typing import ClassVar
+
 import pytest
 
 from app.market_data.instruments import InstrumentId
@@ -23,7 +25,7 @@ class FakeGrowwAPI:
     SEGMENT_CASH = "CASH"
     CANDLE_INTERVAL_MIN_5 = "5minute"
 
-    auth_calls: list[tuple[str, dict]] = []
+    auth_calls: ClassVar[list[tuple[str, dict]]] = []
 
     def __init__(self, access_token: str) -> None:
         self.access_token = access_token
@@ -114,7 +116,7 @@ def test_totp_auth_mode_and_no_fallback_on_failure():
         totp_secret="JBSWY3DPEHPK3PXP",
     )
     assert creds.select_auth_mode() == GrowwAuthMode.TOTP
-    client, mode = authenticate_groww_client(
+    _client, mode = authenticate_groww_client(
         creds,
         api_cls=FakeGrowwAPI,
         totp_generator=lambda secret: "123456",
@@ -150,7 +152,7 @@ def test_api_key_secret_auth_mode_and_checksum():
         api_secret="MY_GROWW_API_SECRET",
     )
     assert creds.select_auth_mode() == GrowwAuthMode.API_KEY_SECRET
-    client, mode = authenticate_groww_client(creds, api_cls=FakeGrowwAPI)
+    _client, mode = authenticate_groww_client(creds, api_cls=FakeGrowwAPI)
     assert mode == GrowwAuthMode.API_KEY_SECRET
     assert FakeGrowwAPI.auth_calls[0][1] == {"api_key": "MY_GROWW_API_KEY", "secret": "MY_GROWW_API_SECRET"}
 

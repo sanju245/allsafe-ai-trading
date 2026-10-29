@@ -9,9 +9,9 @@ Guarantees:
 """
 
 import argparse
-from datetime import datetime
 import sys
 import time
+from datetime import datetime
 
 from app.config import get_settings
 from app.market_data.instruments import InstrumentId

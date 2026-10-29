@@ -1,17 +1,15 @@
 """HTTP API and lifecycle tests for Groww `/api/v1/live/*` endpoints."""
 
 from datetime import datetime, timedelta
+
 from fastapi.testclient import TestClient
-import pytest
 
 from app.main import app
-from app.market_data.instruments import InstrumentId
 from app.market_data.live_runtime import LiveMarketDataRuntime
 from app.providers.groww_auth import GrowwCredentials
 from app.providers.groww_stream import GrowwLiveStreamManager
 from app.routers.live import set_live_runtime
 from tests.fixtures.sample_data import ist
-from tests.test_groww_auth_and_instruments import FakeGrowwAPI
 from tests.test_groww_historical import HistoricalFakeGrowwAPI
 from tests.test_groww_stream_and_runtime import StatefulFakeGrowwFeed
 
@@ -190,8 +188,8 @@ def test_http_responses_never_leak_groww_secrets():
 
 
 def test_smoke_script_exits_2_when_credentials_missing():
-    from scripts.smoke_groww_live import run_smoke_test
     from app.config import get_settings
+    from scripts.smoke_groww_live import run_smoke_test
 
     get_settings.cache_clear()
     assert run_smoke_test(duration_seconds=1.0) == 2

@@ -15,12 +15,12 @@ Safety guarantees:
 """
 
 from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from app.config import Settings, get_settings
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_aggregator import (
-    groww_symbol_for,
     resolve_instrument_symbol,
 )
 from app.market_data.live_models import FeedState
@@ -85,7 +85,7 @@ def set_live_runtime(app: object, runtime: LiveMarketDataRuntime | None) -> None
     _default_runtime = runtime
     state = getattr(app, "state", None)
     if state is not None:
-        setattr(state, "live_runtime", runtime)
+        state.live_runtime = runtime
 
 
 def _resolve_symbol_or_422(symbol: str) -> InstrumentId:

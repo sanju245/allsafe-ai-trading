@@ -16,15 +16,18 @@ Safety rule:
   The runtime NEVER silently falls back to another authentication method.
 """
 
+import hashlib
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-import hashlib
-import inspect
-import re
 from typing import Any
 
-from app.providers.base import ProviderAuthError, ProviderError, ProviderUnavailableError
+from app.providers.base import (
+    ProviderAuthError,
+    ProviderError,
+    ProviderUnavailableError,
+)
 
 
 class GrowwAuthMode(StrEnum):
@@ -81,7 +84,7 @@ def generate_groww_checksum(secret: str, timestamp_epoch_sec: str | int) -> str:
     ts_str = str(timestamp_epoch_sec).strip()
     if not clean_secret or not ts_str:
         raise ValueError("Both secret and timestamp_epoch_sec are required to generate checksum")
-    payload = f"{clean_secret}{ts_str}".encode("utf-8")
+    payload = f"{clean_secret}{ts_str}".encode()
     return hashlib.sha256(payload).hexdigest()
 
 

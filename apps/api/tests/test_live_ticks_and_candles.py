@@ -3,6 +3,7 @@ forming vs confirmed separation, incomplete intervals, and explicit gap tracking
 """
 
 from datetime import datetime, timedelta
+
 import pytest
 
 from app.market_data.instruments import InstrumentId
@@ -12,7 +13,6 @@ from app.market_data.live_aggregator import (
     resolve_instrument_symbol,
 )
 from app.market_data.live_models import (
-    IncompleteReason,
     TickRejectionReason,
 )
 from tests.fixtures.sample_data import ist

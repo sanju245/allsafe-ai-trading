@@ -9,12 +9,12 @@ Responsibilities:
   and strict credential redaction.
 """
 
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import logging
 import math
 import threading
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from app.market_data.instruments import InstrumentId
@@ -27,7 +27,9 @@ from app.market_data.live_aggregator import (
 from app.market_data.live_models import FeedState
 from app.market_data.models import DataSource, DataSourceKind
 from app.market_data.sessions import IST, to_ist
-from app.providers.base import ProviderAuthError, ProviderError, ProviderUnavailableError
+from app.providers.base import (
+    ProviderAuthError,
+)
 from app.providers.groww_auth import (
     GrowwAuthMode,
     GrowwCredentials,
@@ -67,7 +69,7 @@ def _parse_millis_timestamp(raw_ts: Any) -> datetime | None:
         if not math.isfinite(raw_ts) or raw_ts <= 0:
             return None
         epoch_sec = float(raw_ts) / 1000.0 if raw_ts > 1e11 else float(raw_ts)
-        return datetime.fromtimestamp(epoch_sec, tz=timezone.utc).astimezone(IST)
+        return datetime.fromtimestamp(epoch_sec, tz=UTC).astimezone(IST)
     if isinstance(raw_ts, str) and raw_ts.strip():
         text = raw_ts.strip()
         try:
@@ -96,7 +98,8 @@ def parse_groww_index_feed_Snapshot(
     if not isinstance(payload, dict):
         return []
 
-    root_map = payload.get("index_value") if isinstance(payload.get("index_value"), dict) else payload
+    nested_map = payload.get("index_value")
+    root_map: dict[Any, Any] = nested_map if isinstance(nested_map, dict) else payload
     updates: list[ParsedGrowwIndexUpdate] = []
 
     for exchange, seg_map in root_map.items():
@@ -114,7 +117,11 @@ def parse_groww_index_feed_Snapshot(
                     continue
                 raw_val = entry.get("value", entry.get("ltp"))
                 try:
-                    val = float(raw_val) if not isinstance(raw_val, bool) else float("nan")
+                    val = (
+                        float("nan")
+                        if raw_val is None or isinstance(raw_val, bool)
+                        else float(raw_val)
+                    )
                 except (TypeError, ValueError):
                     val = float("nan")
                 ts = _parse_millis_timestamp(entry.get("tsInMillis", entry.get("timestamp")))
@@ -306,7 +313,7 @@ class GrowwLiveStreamManager:
         except ProviderAuthError as exc:
             self._record_error(exc, permanent=True)
             return False
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - vendor SDK exposes exception types dynamically
             self._record_error(exc, permanent=is_groww_auth_exception(exc))
             return False
 
@@ -319,7 +326,7 @@ class GrowwLiveStreamManager:
                 self._descriptors[InstrumentId.NIFTY50].to_feed_subscription_dict(),
                 self._descriptors[InstrumentId.BANKNIFTY].to_feed_subscription_dict(),
             ]
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - SDK lookup and metadata errors must fail startup closed
             self._record_error(exc, permanent=True)
             return False
 
@@ -351,7 +358,7 @@ class GrowwLiveStreamManager:
                 )
                 self._consume_thread.start()
             return True
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - classify vendor errors for reconnect or auth failure
             if is_groww_auth_exception(exc):
                 self._record_error(exc, permanent=True)
             else:
@@ -364,7 +371,7 @@ class GrowwLiveStreamManager:
             return
         try:
             self._feed.consume()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - pass SDK consumer errors through common handler
             self.handle_feed_error(exc)
 
     def stop(self, *, as_of: datetime | None = None) -> None:
@@ -379,7 +386,7 @@ class GrowwLiveStreamManager:
                 unsub = getattr(feed, "unsubscribe_index_value", None)
                 if callable(unsub):
                     unsub(self._subscription_list)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - report vendor unsubscribe failures and continue shutdown
                 self._record_error(exc, permanent=False)
 
     def _on_data_received(self, meta: Any = None) -> list[TickProcessResult]:
@@ -388,7 +395,7 @@ class GrowwLiveStreamManager:
             return []
         try:
             snapshot = self._feed.get_index_value()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - vendor feed errors vary by SDK version
             self.handle_feed_error(exc)
             return []
 
@@ -563,9 +570,12 @@ class GrowwLiveStreamManager:
             overall = FeedState.UNAVAILABLE
 
         next_delay: float | None = None
-        if self._reconnect_attempts > 0 and not self._failed_permanently:
-            if self.backoff_policy.can_retry(self._reconnect_attempts):
-                next_delay = self.backoff_policy.delay_for_attempt(self._reconnect_attempts)
+        if (
+            self._reconnect_attempts > 0
+            and not self._failed_permanently
+            and self.backoff_policy.can_retry(self._reconnect_attempts)
+        ):
+            next_delay = self.backoff_policy.delay_for_attempt(self._reconnect_attempts)
 
         subscribed = tuple(
             desc.groww_symbol for desc in self._descriptors.values()

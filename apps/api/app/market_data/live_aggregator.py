@@ -9,10 +9,10 @@ Rules enforced:
 * Flag candles as incomplete when streaming starts mid-slot or a feed disconnect interrupts a slot.
 """
 
+import math
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-import math
 
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_models import (
@@ -482,14 +482,15 @@ class LiveSessionAggregator:
         incomplete_reasons: list[IncompleteReason] = []
         elapsed_in_slot = (tick_ist - slot).total_seconds()
         is_first_observed_slot = (prev_reference_slot is None) or (missing_interval is not None)
-        if is_first_observed_slot and elapsed_in_slot > self.mid_slot_grace_seconds:
-            incomplete_reasons.append(IncompleteReason.STREAM_STARTED_MID_SLOT)
-        elif self.stream_started_at is not None and self.stream_started_at > slot + timedelta(seconds=self.mid_slot_grace_seconds) and prev_reference_slot is None:
+        if is_first_observed_slot and elapsed_in_slot > self.mid_slot_grace_seconds or self.stream_started_at is not None and self.stream_started_at > slot + timedelta(seconds=self.mid_slot_grace_seconds) and prev_reference_slot is None:
             incomplete_reasons.append(IncompleteReason.STREAM_STARTED_MID_SLOT)
 
-        if self._pending_interruption.get(instrument) and elapsed_in_slot > self.mid_slot_grace_seconds:
-            if IncompleteReason.FEED_INTERRUPTED_DURING_SLOT not in incomplete_reasons:
-                incomplete_reasons.append(IncompleteReason.FEED_INTERRUPTED_DURING_SLOT)
+        if (
+            self._pending_interruption.get(instrument)
+            and elapsed_in_slot > self.mid_slot_grace_seconds
+            and IncompleteReason.FEED_INTERRUPTED_DURING_SLOT not in incomplete_reasons
+        ):
+            incomplete_reasons.append(IncompleteReason.FEED_INTERRUPTED_DURING_SLOT)
         self._pending_interruption[instrument] = False
 
         new_bucket = _ActiveBucket(

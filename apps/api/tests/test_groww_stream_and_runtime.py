@@ -4,7 +4,6 @@ reconnect backoff, feed states) and LiveMarketDataRuntime (historical warm-up +
 """
 
 from datetime import timedelta
-import pytest
 
 from app.indicators.decision import TradeDecision
 from app.market_data.instruments import InstrumentId
@@ -13,7 +12,6 @@ from app.market_data.live_runtime import LiveMarketDataRuntime
 from app.providers.groww_auth import GrowwCredentials
 from app.providers.groww_stream import (
     GrowwLiveStreamManager,
-    ReconnectBackoffPolicy,
     parse_groww_index_feed_Snapshot,
 )
 from tests.fixtures.sample_data import ist
@@ -141,8 +139,6 @@ def test_runtime_historical_warmup_and_indicator_protection_rules():
         slot = base + timedelta(minutes=5 * i)
         p = 24000.0 + 5.0 * i
         rows.append([slot.strftime("%Y-%m-%dT%H:%M:%S"), p, p + 10.0, p - 5.0, p + 3.0, None, None])
-
-    hist_client = HistoricalFakeGrowwAPI(rows)
 
     class RuntimeFakeAPI(HistoricalFakeGrowwAPI):
         def __init__(self, token: str):

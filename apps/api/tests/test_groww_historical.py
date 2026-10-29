@@ -3,6 +3,7 @@ index volume handling, duration limits, and service.fetch_and_validate integrati
 """
 
 from datetime import timedelta
+
 import pytest
 
 from app.indicators.decision import TradeDecision, calculate_decisions
@@ -115,7 +116,7 @@ def test_historical_auth_and_rate_limit_errors_are_translated_and_redacted():
         start=ist(2026, 1, 5, 9, 15),
         end=ist(2026, 1, 5, 10, 15),
     )
-    with pytest.raises(ProviderAuthError) as exc_info:
+    with pytest.raises(ProviderAuthError):
         provider.fetch_candles(req)
 
     # Also check rate limit translation

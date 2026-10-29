@@ -7,8 +7,8 @@ guessing exchange tokens or reusing FYERS symbols.
 """
 
 import csv
-from dataclasses import dataclass
 import io
+from dataclasses import dataclass
 from typing import Any
 
 from app.market_data.instruments import InstrumentId
@@ -169,7 +169,7 @@ class GrowwInstrumentResolver:
                         return _validate_and_build_descriptor(
                             instrument, row, resolution_source="sdk:get_instrument_by_groww_symbol"
                         )
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - try the next supported SDK lookup
                     pass
 
             # 2. Try SDK get_instrument_by_exchange_and_trading_symbol
@@ -190,7 +190,7 @@ class GrowwInstrumentResolver:
                             row,
                             resolution_source="sdk:get_instrument_by_exchange_and_trading_symbol",
                         )
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - try the next supported SDK lookup
                     pass
 
         # 3. Try parsing provided instrument.csv text

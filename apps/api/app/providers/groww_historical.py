@@ -5,8 +5,8 @@ to fetch historical OHLC candles for NIFTY 50 (`NSE-NIFTY`) and BANK NIFTY (`NSE
 and normalize them into `app.market_data.models.Candle` for validation and 5-indicator warm-up.
 """
 
-from datetime import datetime, timedelta, timezone
 import math
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.market_data.instruments import InstrumentId
@@ -75,7 +75,7 @@ def _parse_groww_candle_timestamp(raw_ts: Any) -> datetime:
         if not math.isfinite(raw_ts) or raw_ts <= 0:
             raise ProviderUnavailableError(f"Invalid numeric candle timestamp from Groww: {raw_ts!r}")
         epoch_sec = float(raw_ts) / 1000.0 if raw_ts > 1e11 else float(raw_ts)
-        return datetime.fromtimestamp(epoch_sec, tz=timezone.utc).astimezone(IST)
+        return datetime.fromtimestamp(epoch_sec, tz=UTC).astimezone(IST)
 
     if isinstance(raw_ts, str) and raw_ts.strip():
         text = raw_ts.strip()

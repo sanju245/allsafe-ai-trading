@@ -8,9 +8,10 @@ Endpoints:
   candles + 5-indicator decision summary, and forming 5m candle; disabled by default).
 """
 
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 import inspect
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,7 +60,7 @@ _fastapi_kwargs: dict[str, object] = {
 if "lifespan" in inspect.signature(FastAPI.__init__).parameters:
     _fastapi_kwargs["lifespan"] = lifespan
 
-app = FastAPI(**_fastapi_kwargs)
+app = FastAPI(**cast(Any, _fastapi_kwargs))
 if "lifespan" not in _fastapi_kwargs:
     app.router.on_startup.append(lambda: startup_live_runtime(app))
     app.router.on_shutdown.append(lambda: shutdown_live_runtime(app))
@@ -83,5 +84,5 @@ def health() -> dict[str, str]:
         "service": "allsafe-ai-trading-api",
         "version": __version__,
         "environment": settings.app_env,
-        "time_utc": datetime.now(timezone.utc).isoformat(),
+        "time_utc": datetime.now(UTC).isoformat(),
     }

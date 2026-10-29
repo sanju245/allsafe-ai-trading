@@ -17,11 +17,7 @@ from datetime import datetime, timedelta
 from app.indicators.decision import DecisionPoint, TradeDecision, calculate_decisions
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_models import (
-    ConfirmedCandle,
     FeedState,
-    FormingCandle,
-    LiveQuote,
-    MissingInterval,
 )
 from app.market_data.models import Candle, DataSource
 from app.market_data.sessions import IST, to_ist
@@ -31,8 +27,6 @@ from app.providers.base import CandleRequest
 from app.providers.groww_historical import GrowwHistoricalProvider
 from app.providers.groww_stream import (
     GrowwLiveStreamManager,
-    InstrumentFeedStatus,
-    StreamStatusSnapshot,
 )
 
 
@@ -124,7 +118,7 @@ class LiveMarketDataRuntime:
         if started and run_warmup:
             try:
                 self.warmup_from_historical_provider(as_of=as_of)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - warm-up failure must not disable live ticks
                 self.stream_manager._record_error(
                     f"Historical warm-up warning: {exc}", permanent=False
                 )
