@@ -1,7 +1,9 @@
 """EMA 9/21/50 trend filter."""
 from dataclasses import dataclass
 from datetime import datetime
+
 from app.market_data.models import Candle
+
 
 @dataclass(frozen=True)
 class EMAPoint:
@@ -12,7 +14,7 @@ class EMAPoint:
     bullish: bool | None
 
 def _ema(values: list[float], period: int) -> list[float | None]:
-    out = [None] * len(values)
+    out: list[float | None] = [None] * len(values)
     if len(values) < period:
         return out
     current = sum(values[:period]) / period

@@ -1,7 +1,9 @@
 """MACD 12/26/9 with SMA-seeded EMA warm-up."""
 from dataclasses import dataclass
 from datetime import datetime
+
 from app.market_data.models import Candle
+
 
 @dataclass(frozen=True)
 class MACDPoint:

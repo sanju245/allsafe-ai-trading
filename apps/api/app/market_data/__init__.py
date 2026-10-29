@@ -17,10 +17,10 @@ from app.market_data.validation import (
 )
 
 __all__ = [
+    "INSTRUMENTS",
     "Candle",
     "DataSource",
     "DataSourceKind",
-    "INSTRUMENTS",
     "Instrument",
     "InstrumentId",
     "IssueCode",

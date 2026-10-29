@@ -12,6 +12,7 @@ Calendar used by the tests (2026):
 """
 
 from collections.abc import Iterable, Sequence
+from datetime import UTC as _UTC
 from datetime import datetime, timedelta, timezone
 
 from app.market_data import (
@@ -25,7 +26,7 @@ from app.market_data import (
 )
 
 IST = timezone(timedelta(hours=5, minutes=30))
-UTC = timezone.utc
+UTC = _UTC
 
 NIFTY50 = InstrumentId.NIFTY50
 BANKNIFTY = InstrumentId.BANKNIFTY

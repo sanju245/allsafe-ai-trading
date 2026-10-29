@@ -7,9 +7,9 @@ Pass candles in chronological order. For confirmed signals, pass only
 closed candles from the caller's validated market-data pipeline.
 """
 
+import math
 from dataclasses import dataclass
 from enum import StrEnum
-import math
 
 from app.market_data.models import Candle
 

@@ -2,12 +2,14 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from app.market_data.models import Candle
-from app.indicators.ut_bot import UTBotPoint, UTBotSignal, calculate_ut_bot
+
 from app.indicators.ema import calculate_ema_trend
-from app.indicators.rsi import calculate_rsi
 from app.indicators.macd import calculate_macd
+from app.indicators.rsi import calculate_rsi
 from app.indicators.supertrend import calculate_supertrend
+from app.indicators.ut_bot import UTBotSignal, calculate_ut_bot
+from app.market_data.models import Candle
+
 
 class TradeDecision(StrEnum):
     BUY = "BUY"

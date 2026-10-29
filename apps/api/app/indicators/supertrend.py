@@ -1,8 +1,10 @@
 """Supertrend with Wilder ATR; +1 bullish, -1 bearish."""
+import math
 from dataclasses import dataclass
 from datetime import datetime
-import math
+
 from app.market_data.models import Candle
+
 
 @dataclass(frozen=True)
 class SupertrendPoint:
@@ -37,21 +39,33 @@ def calculate_supertrend(candles: list[Candle], period: int = 10, multiplier: fl
     value: list[float | None] = [None]*n
     direction: list[int | None] = [None]*n
     for i, c in enumerate(candles):
-        if atr[i] is None:
+        current_atr = atr[i]
+        if current_atr is None:
             continue
         mid = (c.high+c.low)/2
-        bu, bl = mid+multiplier*atr[i], mid-multiplier*atr[i]
+        bu, bl = mid+multiplier*current_atr, mid-multiplier*current_atr
         pu = upper[i-1] if i else None
         pl = lower[i-1] if i else None
-        upper[i] = bu if pu is None or bu < pu or candles[i-1].close > pu else pu
-        lower[i] = bl if pl is None or bl > pl or candles[i-1].close < pl else pl
+        previous_close = candles[i-1].close if i else None
+        current_upper = (
+            bu
+            if pu is None or bu < pu or (previous_close is not None and previous_close > pu)
+            else pu
+        )
+        current_lower = (
+            bl
+            if pl is None or bl > pl or (previous_close is not None and previous_close < pl)
+            else pl
+        )
+        upper[i] = current_upper
+        lower[i] = current_lower
         if i == 0 or direction[i-1] is None:
             direction[i] = 1 if c.close >= mid else -1
         elif value[i-1] == pu:
-            direction[i] = 1 if c.close > upper[i] else -1
+            direction[i] = 1 if c.close > current_upper else -1
         else:
-            direction[i] = -1 if c.close < lower[i] else 1
-        value[i] = lower[i] if direction[i] == 1 else upper[i]
+            direction[i] = -1 if c.close < current_lower else 1
+        value[i] = current_lower if direction[i] == 1 else current_upper
     return [SupertrendPoint(c.timestamp, atr[i], value[i], direction[i],
                             None if direction[i] is None else direction[i] == 1)
             for i, c in enumerate(candles)]
