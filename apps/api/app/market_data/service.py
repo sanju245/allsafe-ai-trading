@@ -6,7 +6,11 @@ from datetime import datetime
 from app.market_data.models import Candle, DataSource
 from app.market_data.schemas import ValidateSeriesRequest
 from app.market_data.validation import ValidationReport, validate_candles
-from app.providers.base import CandleRequest, MarketDataProvider, UnsupportedRequestError
+from app.providers.base import (
+    CandleRequest,
+    MarketDataProvider,
+    UnsupportedRequestError,
+)
 
 
 class InvalidMarketDataError(Exception):

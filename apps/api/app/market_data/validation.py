@@ -13,8 +13,9 @@ Severity guide:
 import math
 from collections import Counter
 from collections.abc import Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from itertools import pairwise
 
 from pydantic import BaseModel
 
@@ -262,7 +263,7 @@ def validate_candles(
     its latest candle. Weekends and the time outside 09:15 to 15:30 IST are skipped. No
     holiday calendar exists yet, so a market holiday can look stale.
     """
-    now = as_of if as_of is not None else datetime.now(timezone.utc)
+    now = as_of if as_of is not None else datetime.now(UTC)
     if not _is_aware(now):
         raise ValueError("as_of must be timezone-aware")
     if allowed_lag_candles < 0:
@@ -360,7 +361,7 @@ def validate_candles(
     analysis.sort(key=lambda item: item[0])
     missing_candles = 0
     missing_sessions = 0
-    for (prev_slot, _), (next_slot, _) in zip(analysis, analysis[1:]):
+    for (prev_slot, _), (next_slot, _) in pairwise(analysis):
         gap = find_gap(prev_slot, next_slot, timeframe)
         if gap.missing_slots:
             missing_candles += gap.missing_slots
