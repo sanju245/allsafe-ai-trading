@@ -3,14 +3,13 @@ from datetime import timedelta
 
 import pytest
 
-from app.indicators.ema import calculate_ema_trend
-from app.indicators.rsi import calculate_rsi
-from app.indicators.macd import calculate_macd
-from app.indicators.supertrend import calculate_supertrend
 from app.indicators.decision import TradeDecision, calculate_decisions
+from app.indicators.ema import calculate_ema_trend
+from app.indicators.macd import calculate_macd
+from app.indicators.rsi import calculate_rsi
+from app.indicators.supertrend import calculate_supertrend
 from app.market_data import Candle, DataSource, DataSourceKind, InstrumentId, Timeframe
 from tests.fixtures.sample_data import ist
-
 
 SOURCE = DataSource(name="TEST-SAMPLE", kind=DataSourceKind.SAMPLE)
 

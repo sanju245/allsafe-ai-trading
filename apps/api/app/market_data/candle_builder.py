@@ -1,14 +1,13 @@
 ﻿"""Build five-minute OHLC candles from timestamped price updates."""
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import math
 
 from app.market_data.instruments import InstrumentId
 from app.market_data.models import Candle, DataSource
 from app.market_data.sessions import SESSION_CLOSE, SESSION_OPEN, to_ist
 from app.market_data.timeframes import Timeframe
-
 
 CANDLE_DURATION = timedelta(minutes=5)
 

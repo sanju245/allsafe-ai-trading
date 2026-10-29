@@ -1,7 +1,9 @@
 """RSI 14 using Wilder smoothing."""
 from dataclasses import dataclass
 from datetime import datetime
+
 from app.market_data.models import Candle
+
 
 @dataclass(frozen=True)
 class RSIPoint:
@@ -31,5 +33,7 @@ def calculate_rsi(candles: list[Candle], period: int = 14) -> list[RSIPoint]:
             avg_gain = (avg_gain*(period-1) + gains[j])/period
             avg_loss = (avg_loss*(period-1) + losses[j])/period
             values[i] = calc(avg_gain, avg_loss)
-    return [RSIPoint(c.timestamp, values[i], None if values[i] is None else values[i] > 50)
-            for i, c in enumerate(candles)]
+    result: list[RSIPoint] = []
+    for candle, rsi in zip(candles, values):
+        result.append(RSIPoint(candle.timestamp, rsi, None if rsi is None else rsi > 50))
+    return result
