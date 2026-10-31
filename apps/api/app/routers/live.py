@@ -16,7 +16,7 @@ Safety guarantees:
 
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.config import Settings, get_settings
 from app.market_data.instruments import InstrumentId
@@ -41,6 +41,7 @@ from app.market_data.sessions import IST
 from app.market_data.timeframes import Timeframe
 from app.providers.groww_auth import GrowwCredentials
 from app.providers.groww_stream import GrowwLiveStreamManager
+from app.security import AccountPrincipal, require_active_account
 
 router = APIRouter(prefix="/api/v1/live", tags=["live-market-data"])
 
@@ -125,7 +126,11 @@ def _status_message(feed_state: FeedState, streaming_enabled: bool, has_data: bo
 
 
 @router.get("/status", response_model=LiveStatusResponse)
-def get_live_status(request: Request, response: Response) -> LiveStatusResponse:
+def get_live_status(
+    request: Request,
+    response: Response,
+    _: AccountPrincipal = Depends(require_active_account),
+) -> LiveStatusResponse:
     """Return operational status of the Groww live stream and per-instrument health."""
     response.headers["Cache-Control"] = "no-store"
     rt = get_live_runtime(request)
@@ -177,6 +182,7 @@ def get_live_quote(
     request: Request,
     response: Response,
     symbol: str = Query(..., min_length=1, description="Instrument symbol, e.g. NIFTY50 or BANKNIFTY"),
+    _: AccountPrincipal = Depends(require_active_account),
 ) -> LiveQuoteResponse:
     """Return the latest validated live quote for a subscribed index, never inventing prices or volume."""
     response.headers["Cache-Control"] = "no-store"
@@ -227,6 +233,7 @@ def get_live_candles(
     symbol: str = Query(..., min_length=1, description="Instrument symbol, e.g. NIFTY50 or BANKNIFTY"),
     timeframe: str = Query(default="5m", description="Candle timeframe (must be 5m)"),
     limit: int = Query(default=100, ge=1, le=500, description="Maximum number of confirmed candles to return"),
+    _: AccountPrincipal = Depends(require_active_account),
 ) -> LiveCandlesResponse:
     """Return confirmed 5-minute candles only (never mixed with the forming candle) plus indicator decision."""
     response.headers["Cache-Control"] = "no-store"
@@ -329,6 +336,7 @@ def get_live_forming_candle(
     request: Request,
     response: Response,
     symbol: str = Query(..., min_length=1, description="Instrument symbol, e.g. NIFTY50 or BANKNIFTY"),
+    _: AccountPrincipal = Depends(require_active_account),
 ) -> LiveFormingCandleResponse:
     """Return the currently forming (unconfirmed) 5-minute candle, separated from confirmed history."""
     response.headers["Cache-Control"] = "no-store"

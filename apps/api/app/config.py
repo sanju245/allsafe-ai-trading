@@ -5,6 +5,7 @@ Secrets live only here on the server. Nothing in this module is sent to the brow
 
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,7 +14,12 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     # Comma-separated list of allowed browser origins.
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "https://allsafe-ai-trading.vercel.app,http://localhost:3000"
+
+    # Supabase account and role verification; these values stay on the API service.
+    supabase_url: str | None = None
+    supabase_jwt_secret: SecretStr | None = None
+    supabase_service_role_key: SecretStr | None = None
 
     # Live Groww market-data streaming (disabled by default for safety).
     live_stream_enabled: bool = False

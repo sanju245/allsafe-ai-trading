@@ -1,17 +1,23 @@
 """HTTP API and lifecycle tests for Groww `/api/v1/live/*` endpoints."""
 
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app.main import app
 from app.market_data.live_runtime import LiveMarketDataRuntime
 from app.providers.groww_auth import GrowwCredentials
 from app.providers.groww_stream import GrowwLiveStreamManager
 from app.routers.live import set_live_runtime
+from app.security import require_active_account
 from tests.fixtures.sample_data import ist
 from tests.test_groww_historical import HistoricalFakeGrowwAPI
 from tests.test_groww_stream_and_runtime import StatefulFakeGrowwFeed
+
+pytestmark = pytest.mark.usefixtures("active_account_override")
 
 
 def make_test_runtime(*, streaming_enabled: bool = False, stale_after_seconds: float = 60.0, hist_rows=None) -> LiveMarketDataRuntime:
@@ -185,6 +191,29 @@ def test_http_responses_never_leak_groww_secrets():
     assert res.status_code == 200
     assert "secret_tok_999" not in res.text
     assert res.json()["feed_state"] == "failed"
+
+
+def test_live_api_rejects_requests_without_a_signed_in_account(monkeypatch):
+    import app.security as security
+
+    app.dependency_overrides.pop(require_active_account, None)
+    monkeypatch.setattr(
+        security,
+        "get_settings",
+        lambda: SimpleNamespace(
+            app_env="test",
+            supabase_url="https://test-project.supabase.co",
+            supabase_jwt_secret=SecretStr("test-only-signing-secret"),
+        ),
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/live/status",
+        headers={"Authorization": ""},
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 def test_smoke_script_exits_2_when_credentials_missing():

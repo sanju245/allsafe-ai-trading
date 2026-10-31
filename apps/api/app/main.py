@@ -14,12 +14,14 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.config import get_settings
-from app.routers import live, market_data
+from app.routers import admin, auth, live, market_data
 from app.routers.live import build_runtime_from_settings, set_live_runtime
 
 settings = get_settings()
@@ -68,15 +70,34 @@ if "lifespan" not in _fastapi_kwargs:
     app.router.on_startup.append(lambda: startup_live_runtime(app))
     app.router.on_shutdown.append(lambda: shutdown_live_runtime(app))
 
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(
+    _request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    """Return validation paths/messages without echoing submitted field values."""
+    safe_errors = [
+        {
+            "type": error.get("type", "value_error"),
+            "loc": error.get("loc", ()),
+            "msg": error.get("msg", "Invalid request value."),
+        }
+        for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": safe_errors})
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
 app.include_router(market_data.router)
 app.include_router(live.router)
+app.include_router(auth.router)
+app.include_router(admin.router)
 
 
 @app.get("/health", tags=["system"])

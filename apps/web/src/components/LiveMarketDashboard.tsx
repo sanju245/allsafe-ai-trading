@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 type MarketSymbol = "NIFTY50" | "BANKNIFTY";
 type Candle = {
@@ -47,6 +48,15 @@ const markets: { symbol: MarketSymbol; title: string }[] = [
   { symbol: "BANKNIFTY", title: "BANK NIFTY" },
 ];
 
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "https://allsafe-ai-api.onrender.com"
+    : "http://localhost:8000")
+)
+  .trim()
+  .replace(/\/+$/, "");
+
 const emptyMarket: MarketSnapshot = {
   candles: [],
   quote: null,
@@ -55,8 +65,11 @@ const emptyMarket: MarketSnapshot = {
   error: null,
 };
 
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { cache: "no-store" });
+async function getJson<T>(path: string, accessToken: string): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
   if (!response.ok) throw new Error(`Market data request failed (HTTP ${response.status}).`);
   return response.json() as Promise<T>;
 }
@@ -189,6 +202,8 @@ function MarketCard({
 }
 
 export default function LiveMarketDashboard() {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [marketsState, setMarketsState] = useState<Record<MarketSymbol, MarketSnapshot>>({
     NIFTY50: emptyMarket,
@@ -197,8 +212,9 @@ export default function LiveMarketDashboard() {
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
 
   const refresh = useCallback(async () => {
+    if (!accessToken) return;
     try {
-      const latestStatus = await getJson<StatusResponse>("/api/live/status");
+      const latestStatus = await getJson<StatusResponse>("/api/v1/live/status", accessToken);
       setStatus(latestStatus);
     } catch {
       setStatus(null);
@@ -208,9 +224,9 @@ export default function LiveMarketDashboard() {
       const query = `?symbol=${symbol}`;
       try {
         const [candleResponse, quoteResponse, formingResponse] = await Promise.all([
-          getJson<CandleResponse>(`/api/live/candles${query}`),
-          getJson<QuoteResponse>(`/api/live/quote${query}`),
-          getJson<FormingResponse>(`/api/live/forming-candle${query}`),
+          getJson<CandleResponse>(`/api/v1/live/candles${query}`, accessToken),
+          getJson<QuoteResponse>(`/api/v1/live/quote${query}`, accessToken),
+          getJson<FormingResponse>(`/api/v1/live/forming-candle${query}`, accessToken),
         ]);
         const candles = [...candleResponse.candles];
         if (formingResponse.forming_candle) {
@@ -241,13 +257,14 @@ export default function LiveMarketDashboard() {
       }
     }));
     setCheckedAt(new Date());
-  }, []);
+  }, [accessToken]);
 
   useEffect(() => {
+    if (!accessToken) return;
     void refresh();
     const timer = window.setInterval(() => void refresh(), 15000);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [accessToken, refresh]);
 
   const backendMessage = !status
     ? "Waiting for the live-data service."
