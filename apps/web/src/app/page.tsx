@@ -1,21 +1,8 @@
 import ApiStatus from "@/components/ApiStatus";
+import LiveMarketDashboard from "@/components/LiveMarketDashboard";
 
 // Backend status must be checked per request, never cached at build time.
 export const dynamic = "force-dynamic";
-
-const markets = ["NIFTY 50", "BANK NIFTY"] as const;
-
-// Everything below is planned work. Nothing here is implemented yet.
-const roadmap = [
-  "Interactive candlestick charts",
-  "UT Bot Alerts (primary indicator)",
-  "EMA, VWAP, RSI, MACD, Supertrend, ADX, ATR, volume, support/resistance",
-  "1m, 3m, 5m, 15m, 1h and daily timeframes",
-  "BUY / SELL / WAIT signals with entry, stop-loss, targets and explanations",
-  "Multi-timeframe trend analysis",
-  "Historical backtesting and paper trading",
-  "User accounts and an admin dashboard",
-];
 
 export default function Home() {
   return (
@@ -30,63 +17,19 @@ export default function Home() {
       <main className="flex-1 py-10">
         <section>
           <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">
-            Phase 1 &middot; Foundation
+            Groww live market data
           </p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">
             Rule-based analysis for NIFTY 50 and BANK NIFTY
           </h1>
           <p className="mt-4 max-w-2xl text-base text-slate-300 sm:text-lg">
-            A transparent, rule-driven market analysis site. Signals will be
-            deterministic and based on confirmed candle closes. You always place
-            trades yourself; this site never connects to a broker.
+            Live 5-minute charts for NIFTY 50 and BANK NIFTY, with confirmed
+            candles kept separate from the candle still forming.
           </p>
         </section>
 
         <section className="mt-10">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-            Markets
-          </h2>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            {markets.map((name) => (
-              <div
-                key={name}
-                className="rounded-xl border border-white/10 bg-white/5 p-5"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">{name}</span>
-                  <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-200">
-                    No data source
-                  </span>
-                </div>
-                <p className="mt-4 text-3xl font-semibold text-slate-500">
-                  &mdash;
-                </p>
-                <p className="mt-2 text-sm text-slate-400">
-                  No market-data provider is connected yet, so no prices or
-                  signals are shown.
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-10">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-            Planned features
-          </h2>
-          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-            {roadmap.map((item) => (
-              <li
-                key={item}
-                className="flex items-start gap-3 rounded-lg border border-white/10 px-4 py-3 text-sm text-slate-300"
-              >
-                <span className="mt-0.5 shrink-0 rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-300">
-                  Planned
-                </span>
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
+          <LiveMarketDashboard />
         </section>
       </main>
 
