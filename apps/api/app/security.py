@@ -116,22 +116,56 @@ def require_active_account(
         ) from None
 
     if not isinstance(profile, dict):
-        raise HTTPException(status_code=403, detail="This account is not active.")
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "account_unavailable", "message": "This account is not available."},
+        )
 
     role = profile.get("role")
     status = profile.get("status")
     email = profile.get("email")
-    allowed_ip = _normalize_stored_ip(profile.get("allowed_ip"))
-    if (
-        role not in {"user", "admin"}
-        or status != "active"
-        or not isinstance(email, str)
-        or allowed_ip is None
-        or allowed_ip != client_ip
+    raw_allowed_ip = profile.get("allowed_ip")
+    allowed_ip = _normalize_stored_ip(raw_allowed_ip)
+    if role not in {"user", "admin"} or not isinstance(email, str):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "account_unavailable", "message": "This account is not available."},
+        )
+    if status == "paused":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "account_paused", "message": "This login is paused."},
+        )
+    if status != "active":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "account_inactive", "message": "This account is not active."},
+        )
+    if raw_allowed_ip is None or (
+        isinstance(raw_allowed_ip, str) and not raw_allowed_ip.strip()
     ):
         raise HTTPException(
             status_code=403,
-            detail="This account is paused or is not allowed from this IP address.",
+            detail={
+                "code": "ip_not_configured",
+                "message": "An approved IP address has not been configured for this account.",
+            },
+        )
+    if allowed_ip is None:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "ip_configuration_invalid",
+                "message": "The IP restriction for this account is invalid.",
+            },
+        )
+    if allowed_ip != client_ip:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "ip_not_allowed",
+                "message": "This IP address is not approved for this account.",
+            },
         )
 
     return AccountPrincipal(

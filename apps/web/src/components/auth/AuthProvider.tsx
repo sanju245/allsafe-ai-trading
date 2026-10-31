@@ -105,13 +105,27 @@ function accessDeniedMessage(body: unknown, status: number): string {
     (typeof record?.client_ip === "string" && record.client_ip) ||
     (typeof detail?.client_ip === "string" && detail.client_ip);
 
-  if (/paused|disabled|inactive|account_suspended/.test(`${code} ${text}`)) {
+  if (/account_paused|disabled|account_suspended/.test(code)) {
+    return "This login is paused. Contact the administrator to restore access.";
+  }
+  if (/ip_not_allowed|ip_not_configured|ip_configuration_invalid/.test(code)) {
+    const allowed = allowedIp ? ` The approved IP is ${allowedIp}.` : "";
+    const current = clientIp ? ` The current IP is ${clientIp}.` : "";
+    return `This login is not allowed from the current IP.${allowed}${current}`;
+  }
+  if (/paused.*ip|ip.*paused/.test(text)) {
+    return "Account access could not be verified. Ask the administrator to check the account status and approved IP.";
+  }
+  if (/paused|disabled|account_suspended/.test(`${code} ${text}`)) {
     return "This login is paused. Contact the administrator to restore access.";
   }
   if (/ip|address|allow.?list|network/.test(`${code} ${text}`) || allowedIp) {
     const allowed = allowedIp ? ` The approved IP is ${allowedIp}.` : "";
     const current = clientIp ? ` The current IP is ${clientIp}.` : "";
     return `This login is not allowed from the current IP.${allowed}${current}`;
+  }
+  if (/inactive|not active/.test(`${code} ${text}`)) {
+    return "This account is not active. Contact the administrator for help.";
   }
   if (status === 401) return "The email or password is incorrect, or the sign-in has expired.";
   if (status === 403) return "This login is not allowed to access the account.";

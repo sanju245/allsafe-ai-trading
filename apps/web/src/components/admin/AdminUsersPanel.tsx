@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 type UserStatus = "active" | "paused" | string;
@@ -200,6 +200,71 @@ export default function AdminUsersPanel() {
   const [allowedIp, setAllowedIp] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const deleteDialogRef = useRef<HTMLElement | null>(null);
+  const deleteTriggerRef = useRef<HTMLElement | null>(null);
+  const createCustomerButtonRef = useRef<HTMLButtonElement | null>(null);
+  const busyUserIdRef = useRef<string | null>(null);
+
+  function updateBusyUserId(userId: string | null) {
+    busyUserIdRef.current = userId;
+    setBusyUserId(userId);
+  }
+
+  useEffect(() => {
+    const targetId = deleteTarget?.id;
+    if (!targetId) return;
+
+    const dialog = deleteDialogRef.current;
+    const fallbackFocusTarget = createCustomerButtonRef.current;
+    const getFocusableElements = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.getAttribute("aria-hidden") !== "true");
+
+    getFocusableElements()[0]?.focus();
+
+    function handleDialogKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (busyUserIdRef.current !== targetId) {
+          event.preventDefault();
+          setDeleteTarget(null);
+          setDeleteConfirmation("");
+        }
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+      const focusable = getFocusableElements();
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) {
+        event.preventDefault();
+        dialog?.focus();
+        return;
+      }
+
+      if (!dialog?.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleDialogKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleDialogKeyDown);
+      const trigger = deleteTriggerRef.current;
+      if (trigger?.isConnected) trigger.focus();
+      else fallbackFocusTarget?.focus();
+    };
+  }, [deleteTarget?.id]);
 
   const refreshUsers = useCallback(async () => {
     if (!accessToken || !isAdmin) return;
@@ -244,6 +309,12 @@ export default function AdminUsersPanel() {
     setSuccess(null);
   }
 
+  function closeDeleteDialog() {
+    if (deleteTarget && busyUserId === deleteTarget.id) return;
+    setDeleteTarget(null);
+    setDeleteConfirmation("");
+  }
+
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!accessToken) return;
@@ -270,7 +341,7 @@ export default function AdminUsersPanel() {
   async function changeStatus(user: AdminUser) {
     if (!accessToken || !isCustomer(user)) return;
     const status = user.status === "active" ? "paused" : "active";
-    setBusyUserId(user.id);
+    updateBusyUserId(user.id);
     clearNotices();
     try {
       await adminRequest<unknown>(accessToken, `/api/v1/admin/users/${encodeURIComponent(user.id)}`, {
@@ -282,13 +353,13 @@ export default function AdminUsersPanel() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not update the account status.");
     } finally {
-      setBusyUserId(null);
+      updateBusyUserId(null);
     }
   }
 
   async function changeAllowedIp(user: AdminUser, nextAllowedIp: string): Promise<boolean> {
     if (!accessToken || !isCustomer(user) || !nextAllowedIp) return false;
-    setBusyUserId(user.id);
+    updateBusyUserId(user.id);
     clearNotices();
     try {
       await adminRequest<unknown>(accessToken, `/api/v1/admin/users/${encodeURIComponent(user.id)}`, {
@@ -302,14 +373,14 @@ export default function AdminUsersPanel() {
       setError(cause instanceof Error ? cause.message : "Could not update the allowed IP.");
       return false;
     } finally {
-      setBusyUserId(null);
+      updateBusyUserId(null);
     }
   }
 
   async function deleteUser() {
     if (!accessToken || !deleteTarget || !isCustomer(deleteTarget)) return;
     if (deleteConfirmation.trim().toLowerCase() !== deleteTarget.email.trim().toLowerCase()) return;
-    setBusyUserId(deleteTarget.id);
+    updateBusyUserId(deleteTarget.id);
     clearNotices();
     try {
       await adminRequest<unknown>(
@@ -324,7 +395,7 @@ export default function AdminUsersPanel() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not delete the account.");
     } finally {
-      setBusyUserId(null);
+      updateBusyUserId(null);
     }
   }
 
@@ -371,6 +442,9 @@ export default function AdminUsersPanel() {
       onAllowedIpChange={changeAllowedIp}
       onDelete={(target) => {
         clearNotices();
+        deleteTriggerRef.current = document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
         setDeleteConfirmation("");
         setDeleteTarget(target);
       }}
@@ -389,7 +463,7 @@ export default function AdminUsersPanel() {
           <button type="button" onClick={() => void refreshUsers()} disabled={loadingUsers} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50">
             {loadingUsers ? "Refreshing…" : "Refresh list"}
           </button>
-          <button type="button" onClick={() => { clearNotices(); setCreateOpen((open) => !open); }} className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
+          <button ref={createCustomerButtonRef} type="button" onClick={() => { clearNotices(); setCreateOpen((open) => !open); }} className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
             {createOpen ? "Close form" : "Create customer"}
           </button>
           <button type="button" onClick={() => void signOut()} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5">
@@ -517,11 +591,11 @@ export default function AdminUsersPanel() {
       </section>
 
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busyUserId) { setDeleteTarget(null); setDeleteConfirmation(""); } }}>
-          <section role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" className="w-full max-w-lg rounded-2xl border border-rose-400/20 bg-slate-900 p-5 shadow-2xl sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDeleteDialog(); }}>
+          <section ref={deleteDialogRef} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description" className="w-full max-w-lg rounded-2xl border border-rose-400/20 bg-slate-900 p-5 shadow-2xl sm:p-6">
             <p className="text-xs font-medium uppercase tracking-widest text-rose-200">Delete customer</p>
             <h2 id="delete-dialog-title" className="mt-2 text-xl font-semibold text-white">This will remove the login</h2>
-            <p className="mt-3 text-sm leading-relaxed text-slate-300">
+            <p id="delete-dialog-description" className="mt-3 text-sm leading-relaxed text-slate-300">
               To confirm, type <span className="font-semibold text-white">{deleteTarget.email}</span>. This action cannot be undone.
             </p>
             <label className="mt-4 block text-sm text-slate-300">
@@ -529,7 +603,7 @@ export default function AdminUsersPanel() {
               <input type="email" autoComplete="off" autoFocus value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-rose-300 focus:outline-none" />
             </label>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <button type="button" disabled={busyUserId === deleteTarget.id} onClick={() => { setDeleteTarget(null); setDeleteConfirmation(""); }} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50">Cancel</button>
+              <button type="button" disabled={busyUserId === deleteTarget.id} onClick={closeDeleteDialog} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50">Cancel</button>
               <button type="button" disabled={busyUserId === deleteTarget.id || deleteConfirmation.trim().toLowerCase() !== deleteTarget.email.trim().toLowerCase()} onClick={() => void deleteUser()} className="rounded-lg bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-40">
                 {busyUserId === deleteTarget.id ? "Deleting…" : "Delete customer"}
               </button>

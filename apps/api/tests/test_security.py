@@ -170,16 +170,17 @@ def test_production_ip_uses_only_the_trusted_cloudflare_header(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("status", "allowed_ip", "expected_status"),
+    ("status", "allowed_ip", "expected_status", "expected_code"),
     [
-        ("active", "192.0.2.10", None),
-        ("paused", "192.0.2.10", 403),
-        ("active", "192.0.2.11", 403),
-        ("active", "192.0.2.0/24", 403),
+        ("active", "192.0.2.10", None, None),
+        ("paused", "192.0.2.10", 403, "account_paused"),
+        ("active", "192.0.2.11", 403, "ip_not_allowed"),
+        ("active", None, 403, "ip_not_configured"),
+        ("active", "192.0.2.0/24", 403, "ip_configuration_invalid"),
     ],
 )
 def test_account_access_requires_active_status_and_exact_host_ip(
-    monkeypatch, status, allowed_ip, expected_status
+    monkeypatch, status, allowed_ip, expected_status, expected_code
 ):
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
     monkeypatch.setattr(security, "request_client_ip", lambda request: "192.0.2.10")
@@ -201,10 +202,51 @@ def test_account_access_requires_active_status_and_exact_host_ip(
         with pytest.raises(HTTPException) as error:
             security.require_active_account(_request(), authorization)
         assert error.value.status_code == expected_status
+        assert error.value.detail["code"] == expected_code
     else:
         account = security.require_active_account(_request(), authorization)
         assert account.id == user_id
         assert account.allowed_ip == "192.0.2.10"
+
+
+@pytest.mark.parametrize(
+    ("allowed_ip", "expected_status"),
+    [
+        ("2001:0db8:0:0:0:0:0:1/128", None),
+        ("2001:db8::2/128", 403),
+    ],
+)
+def test_ipv6_allowlist_matches_only_the_canonical_exact_host(
+    monkeypatch, allowed_ip, expected_status
+):
+    monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
+    monkeypatch.setattr(security, "get_settings", lambda: _settings())
+    user_id = str(uuid4())
+    monkeypatch.setattr(
+        security,
+        "get_profile",
+        lambda account_id, settings=None: {
+            "id": account_id,
+            "email": "customer@example.com",
+            "role": "user",
+            "status": "active",
+            "allowed_ip": allowed_ip,
+        },
+    )
+    request = _request([
+        (b"cf-connecting-ip", b"2001:0db8:0:0:0:0:0:1"),
+    ])
+    authorization = f"Bearer {_hs256_token(user_id=user_id)}"
+
+    assert security.request_client_ip(request) == "2001:db8::1"
+    if expected_status is None:
+        account = security.require_active_account(request, authorization)
+        assert account.allowed_ip == "2001:db8::1"
+    else:
+        with pytest.raises(HTTPException) as error:
+            security.require_active_account(request, authorization)
+        assert error.value.status_code == expected_status
+        assert error.value.detail["code"] == "ip_not_allowed"
 
 
 def test_non_admin_cannot_use_admin_dependency(monkeypatch):
