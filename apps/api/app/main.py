@@ -8,6 +8,7 @@ Endpoints:
   candles + 5-indicator decision summary, and forming 5m candle; disabled by default).
 """
 
+import asyncio
 import inspect
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -45,11 +46,13 @@ def shutdown_live_runtime(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    startup_live_runtime(application)
+    # The Groww SDK creates and runs its own asyncio loop during feed startup.
+    # Keep that blocking SDK work off the ASGI loop to avoid nested-loop errors.
+    await asyncio.to_thread(startup_live_runtime, application)
     try:
         yield
     finally:
-        shutdown_live_runtime(application)
+        await asyncio.to_thread(shutdown_live_runtime, application)
 
 
 _fastapi_kwargs: dict[str, object] = {
