@@ -90,7 +90,8 @@ async def request_validation_error_handler(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    # PUT is required by PUT /api/v1/auth/password; without it browsers block the preflight.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 

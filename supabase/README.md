@@ -10,6 +10,28 @@ Supabase SQL Editor or the Supabase CLI. The account-controls migration adds an
 `active`/`paused` state and one exact IP address to each profile. Browser roles
 remain read-only on `public.profiles`.
 
+### Single-administrator guard (`20261102000000_single_admin_guard.sql`)
+
+This migration makes the database refuse a second `role = 'admin'` profile (a
+partial unique index, `profiles_single_admin_idx`). It never modifies accounts.
+
+1. In the SQL Editor, run `supabase/preflight/check_single_admin.sql` (read-only).
+   `admin_count` must be 0 or 1.
+2. If it is greater than 1, decide which account stays admin and demote the others
+   by hand, for example
+   `update public.profiles set role = 'user' where lower(email) = lower('old-admin@example.com');`
+   Paused admins count as admins until demoted.
+3. Run the migration. If duplicates remain it stops with an error before creating
+   the index and changes nothing, so it is safe to fix the data and run it again.
+4. After it succeeds, changing the administrator takes two steps: demote the current
+   admin, then promote the new one. Promoting a second admin while one exists fails
+   with a unique-violation error naming `profiles_single_admin_idx`.
+
+Rollback: `drop index if exists public.profiles_single_admin_idx;`
+
+Local test (scratch Postgres only, never a Supabase project):
+`PGHOST=<socket dir or localhost> PGUSER=<superuser> bash supabase/tests/test_single_admin_guard.sh`
+
 ## Disable public sign-up
 
 In the Supabase Dashboard, open **Authentication → Settings → User Signups**
