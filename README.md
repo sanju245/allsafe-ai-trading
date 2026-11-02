@@ -1,8 +1,50 @@
 # AllSafe AI Trading
 
-A public Indian stock-market analysis website for **NIFTY 50** and **BANK NIFTY**, built around transparent, rule-based signals (UT Bot Alerts as the primary indicator).
+A public Indian stock-# AllSafe AI Trading
 
-> **Analysis only.** This project never places broker orders. Users trade manually. Nothing here is investment advice, and no strategy guarantees profit.
+Read-only quantitative market analysis and decision-support platform for **NIFTY 50** (`NSE-NIFTY`, 75 units/lot) and **BANK NIFTY** (`NSE-BANKNIFTY`, 30 units/lot), powered by validated Groww 5-minute IST candles, a unanimous 5-indicator rule engine (`UT Bot Alerts`, `EMA 9/21/50`, `RSI 14`, `MACD 12/26/9`, `Supertrend 10/3.0`), multi-timeframe (`5m`/`15m`/`1h`) Market Context analysis, and strict risk-management safeguards.
+
+> **Financial Safety & Compliance Invariant:** AllSafe AI Trading is strictly a **read-only analytical and educational decision-support system** (`read_only_mode = true`, `execution_disabled = true`). Autonomous live trading is disabled, no broker orders are placed by this application, and analytical confidence scores measure technical indicator alignment only — never a guarantee or mathematical probability of profit.
+
+## Repository Structure
+
+- `apps/api/` — FastAPI Python backend for validated 5-minute IST candle aggregation, Groww read-only live streaming & historical warm-up, 5-indicator signal evaluation, Market Context & AI Decision Support, and lot-aligned position sizing.
+- `apps/web/` — Next.js 16 + React 19 + Tailwind CSS v4 frontend terminal featuring interactive SVG 5-minute candlestick charts, confirmed vs. forming candle separation, 5-indicator status matrices, AI market intelligence cards, adaptive polling (`15s` live / `60s` off-hours), and subscriber-safe in-flight request deduplication.
+- `docs/` — Architectural guidelines (`docs/ARCHITECTURE.md`) and frontend dashboard documentation (`docs/FRONTEND_DASHBOARD.md`).
+- `PROJECT_COMPLETION_AUDIT.md`, `IMPLEMENTATION_STATUS.md`, `FINAL_VERIFICATION_REPORT.md`, `ALLSAFE_MASTER_COMPLETION_REPORT.md`, `PROJECT_STATUS.md` — Comprehensive audit, implementation, and verification reports.
+
+## Key Features & Safety Controls
+
+1. **Validated 5-Minute IST Market Data Pipeline (`apps/api/app/market_data/`)**:
+   - Aligns ticks strictly to NSE regular trading hours (`Monday–Friday, 09:15–15:30 IST`).
+   - Separates confirmed 5-minute candles (`is_confirmed=true, is_forming=false`) from the in-progress forming candle (`is_forming=true, is_confirmed=false`).
+   - Rejects future-skewed ticks (`>5s`), tracks missing 5-minute intervals, and locks signals when data is stale (`>60s`), disconnected, or closed.
+2. **Unanimous 5-Indicator Rule Engine (`apps/api/app/indicators/`)**:
+   - **UT Bot Alerts**: `sensitivity = 1.0`, Wilder RMA `atr_period = 10`.
+   - **EMA Trend Filter**: `EMA 9 > EMA 21 > EMA 50` (bullish) / `EMA 9 < EMA 21 < EMA 50` (bearish).
+   - **RSI (14)**: Wilder smoothing (`RSI > 50` bullish, `RSI < 50` bearish).
+   - **MACD (12, 26, 9)**: Bullish when `MACD > Signal` and `Histogram > 0`; bearish when `MACD < Signal` and `Histogram < 0`.
+   - **Supertrend (10, 3.0)**: Wilder ATR(10) with multiplier `3.0` (`direction = +1` bullish, `-1` bearish).
+3. **Market Context, Explainable AI Decision Support & Risk Safeguards (`apps/api/app/signals/`)**:
+   - Multi-timeframe (`5m`, `15m`, `1h`) trend alignment, support/resistance (`S1`, `S2`, `R1`, `R2`), `ATR(10)` volatility regime, and `RVOL`/`VWAP` volume context.
+   - Enforces a minimum `1.5x` reward-to-risk ratio, `0.4x–3.5x ATR` stop-loss bounds, and a hard `2.0%` maximum capital risk cap per trade.
+   - Phase 1 `IndicatorSeriesBundle` and thread-safe bounded `_MARKET_CONTEXT_CACHE` (`OrderedDict`, max 32 entries) with full-series unrounded cache keys.
+4. **High-Performance Frontend Terminal (`apps/web/src/`)**:
+   - Subscriber-isolated in-flight GET deduplication (`createInFlightGetDeduplicator`).
+   - Adaptive polling (`15s` during open NSE sessions, `60s` during closed/off-hours) with immediate `Closed -> Open` forming-candle recovery fetch.
+   - Pure React state updaters (React 19 Strict Mode safe), `React.memo` panel isolation, singleton `Intl` formatters, and 250ms capital input debouncing.
+
+## Getting Started (Local Development)
+
+### 1. Backend (`apps/api`)
+1. Navigate to `apps/api`, create a virtual environment (`python3 -m venv .venv && source .venv/bin/activate`), and install dependencies (`pip install -r requirements.txt -r requirements-dev.txt`).
+2. Copy `.env.example` to `.env` (uses safe read-only defaults with `LIVE_STREAM_ENABLED=false`).
+3. Run the backend test suite (`pytest` — 90 test cases) and start the local server (`uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`).
+
+### 2. Frontend (`apps/web`)
+1. Navigate to `apps/web` and install dependencies (`npm install`).
+2. Copy `.env.example` to `.env.local`.
+3. Run the frontend test suite (`npm test` — 16 subtests), typecheck (`npm run typecheck`), lint (`npm run lint`), and start the Next.js server (`npm run dev`).
 
 **Current phase:** 2 of the roadmap (market-data foundation). The backend can describe supported instruments and timeframes and validate a candle series you give it. There is **no data provider, no live prices, no indicators and no signals yet**. See [PROJECT_STATUS.md](PROJECT_STATUS.md) for exactly what exists and what has been tested.
 
