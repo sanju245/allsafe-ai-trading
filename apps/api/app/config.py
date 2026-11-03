@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     # Requests per account per minute, and failed authentications per client IP per 5 min.
     auth_rate_limit_per_minute: int = 120
     auth_failure_limit: int = 60
+    # Wrong-IP attempts per customer account per 15 minutes before 429.
+    auth_ip_mismatch_limit: int = 10
 
     # Live Groww market-data streaming (disabled by default for safety).
     live_stream_enabled: bool = False

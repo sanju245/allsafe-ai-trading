@@ -29,6 +29,7 @@ def _install(monkeypatch, *, role="user", status="active", allowed_ip=REGISTERED
     """Production-like settings + a stubbed profile lookup; returns the mutable profile."""
     security.api_rate_limiter.reset()
     security.failed_auth_throttle.reset()
+    security.ip_mismatch_throttle.reset()
     monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
     monkeypatch.setattr(security, "get_settings", lambda: _settings(**settings_changes))
     state = {
@@ -320,10 +321,15 @@ def test_failed_attempts_never_block_a_valid_token_or_other_clients(monkeypatch)
     _expect_401(_request(_cf("198.51.100.1")), "Bearer bad.bad.bad")  # different IP: not throttled
 
 
-def test_failed_auth_is_not_counted_without_a_trusted_client_ip(monkeypatch):
+def test_failed_auth_without_a_trusted_ip_uses_a_shared_higher_limit(monkeypatch):
     _install(monkeypatch, role="admin", auth_failure_limit=1)
-    for _ in range(5):  # no trusted IP -> would be one shared bucket, so it is skipped
+    # No trusted IP: one shared "unknown client" bucket with 5x the per-IP limit.
+    for _ in range(5):
         _expect_401(_request(), "Bearer bad.bad.bad")
+    error = _denied(monkeypatch, _request(), "Bearer bad.bad.bad", 429)
+    assert "Retry-After" in error.headers
+    # A valid token is still accepted while that bucket is exhausted.
+    assert security.require_active_account(_request(), _auth()).role == "admin"
 
 
 # --- Errors reveal nothing sensitive ------------------------------------------------------

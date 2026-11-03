@@ -22,6 +22,7 @@ client = TestClient(app)
 def _mock_account(monkeypatch, *, role="admin", status="active", allowed_ip="192.0.2.10", **settings):
     security.api_rate_limiter.reset()
     security.failed_auth_throttle.reset()
+    security.ip_mismatch_throttle.reset()
     monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
     monkeypatch.setattr(security, "get_settings", lambda: _settings(**settings))
     monkeypatch.setattr(
