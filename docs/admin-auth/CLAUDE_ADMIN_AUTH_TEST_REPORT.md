@@ -1,5 +1,7 @@
 # CLAUDE_ADMIN_AUTH_TEST_REPORT (revision 2)
 
+> **Superseded in part by `docs/admin-auth/final/` (commit `6984e29` added audit hardening; the test counts below predate it). Where they differ, `final/` is authoritative.**
+
 ## Limitation (read first)
 The genuine pytest + FastAPI integration suite was **NOT RUN**: `fastapi`, `pytest`, `httpx` and `pydantic-settings` are not installed and cannot be installed here (PyPI and the npm registry are refused by the session network policy; re-checked on this revision). The route-level tests (`test_auth_ip_policy_api.py`), CORS tests, the existing admin/auth/CORS suites and all unrelated suites are therefore **NOT TESTED**.
 

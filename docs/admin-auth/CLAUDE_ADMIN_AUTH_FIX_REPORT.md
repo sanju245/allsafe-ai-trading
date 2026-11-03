@@ -1,5 +1,7 @@
 # CLAUDE_ADMIN_AUTH_FIX_REPORT (revision 2)
 
+> **Superseded in part by `docs/admin-auth/final/` (commit `6984e29` added audit hardening; the test counts below predate it). Where they differ, `final/` is authoritative.**
+
 Branch `fix/admin-login-any-ip`, from `main` @ `8d9138b`. Commit 1 `416216e` (first attempt), commit 2 corrects it (see `git log`).
 Labels: VERIFIED / UNVERIFIED / NOT TESTED / BLOCKED.
 
