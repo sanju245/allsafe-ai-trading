@@ -30,8 +30,7 @@ class CreateUserRequest(BaseModel):
 
     email: str = Field(min_length=3, max_length=254)
     password: SecretStr
-    # Optional and informational: the API does not restrict sign-in by IP address.
-    allowed_ip: IPvAnyAddress | None = None
+    allowed_ip: IPvAnyAddress
 
     @field_validator("email")
     @classmethod
@@ -123,13 +122,10 @@ def create_user(
             body.password.get_secret_value(),
         )
         user_id = UUID(auth_user["id"])
-        if body.allowed_ip is not None:
-            profile = update_profile(
-                str(user_id),
-                {"allowed_ip": body.allowed_ip.compressed},
-            )
-        else:
-            profile = get_profile(str(user_id))
+        profile = update_profile(
+            str(user_id),
+            {"allowed_ip": body.allowed_ip.compressed},
+        )
         if profile is None:
             raise SupabaseAdminAPIError(502)
     except SupabaseAdminAPIError as exc:

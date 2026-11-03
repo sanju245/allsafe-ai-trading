@@ -54,10 +54,10 @@ class AccountPrincipal:
     email: str
     role: str
     status: str
-    # Informational only. The stored allowed_ip is NEVER used to authorize a request.
+    # Enforced for role "user"; ignored for role "admin" (Super Administrator).
     allowed_ip: str | None
-    # Best-effort trusted client address (None when it cannot be determined). It is used
-    # only for failed-authentication throttling and display, never for authorization.
+    # Verified trusted address for users. For admins it is best-effort (None when it cannot
+    # be determined) and is used only for throttling and display, never to authorize.
     client_ip: str | None
 
 
@@ -86,7 +86,7 @@ def request_client_ip(request: Request) -> str:
 
 
 def trusted_client_ip_or_none(request: Request) -> str | None:
-    """Best-effort trusted client IP for throttling; never raises and never authorizes."""
+    """Best-effort trusted client IP for throttling/display; never raises."""
     try:
         return request_client_ip(request)
     except HTTPException:
@@ -133,12 +133,15 @@ def require_active_account(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AccountPrincipal:
-    """Verify the JWT and enforce the current profile role and status.
+    """Verify the JWT, then enforce the current server-side role, status and IP policy.
 
-    Authorization is independent of the caller's IP address: a valid Supabase token for
-    an active account is accepted from any network. The role is read from the
-    server-side profile on every request (never from the token, request body or email),
-    so pausing or deleting an account takes effect immediately even for an unexpired JWT.
+    * The profile is read on every request; the role never comes from the token, request
+      body, headers or email, so pausing, deleting or demoting an account takes effect
+      immediately even for an unexpired JWT.
+    * role == "admin" (active): accepted from any network.
+    * role == "user" (active): the exact stored allowed_ip must equal the trusted client
+      IP; a missing, malformed or non-matching value fails closed. The client IP comes
+      only from the trusted proxy header in production (never X-Forwarded-For).
     """
     settings = get_settings()
     try:
@@ -193,13 +196,48 @@ def require_active_account(
             detail={"code": "account_inactive", "message": "This account is not active."},
         )
 
+    raw_allowed_ip = profile.get("allowed_ip")
+    allowed_ip = _normalize_stored_ip(raw_allowed_ip)
+    if role == "admin":
+        # Super Administrator: authenticated from any IP. The stored value is ignored.
+        client_ip = trusted_client_ip_or_none(request)
+    else:
+        # Customers fail closed: the IP must be verifiable, configured, valid and equal.
+        client_ip = request_client_ip(request)  # 503 when it cannot be verified
+        if raw_allowed_ip is None or (
+            isinstance(raw_allowed_ip, str) and not raw_allowed_ip.strip()
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ip_not_configured",
+                    "message": "An approved IP address has not been configured for this account.",
+                },
+            )
+        if allowed_ip is None:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ip_configuration_invalid",
+                    "message": "The IP restriction for this account is invalid.",
+                },
+            )
+        if allowed_ip != client_ip:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ip_not_allowed",
+                    "message": "This IP address is not approved for this account.",
+                },
+            )
+
     return AccountPrincipal(
         id=user_id,
         email=email,
         role=role,
         status=status,
-        allowed_ip=_normalize_stored_ip(profile.get("allowed_ip")),
-        client_ip=trusted_client_ip_or_none(request),
+        allowed_ip=allowed_ip,
+        client_ip=client_ip,
     )
 
 
@@ -207,7 +245,7 @@ def require_admin_account(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AccountPrincipal:
-    """Require an authenticated, active account whose server-side profile role is admin."""
+    """Require an active account whose server-side profile role is admin (any IP)."""
     account = require_active_account(request, authorization)
     if account.role != "admin":
         raise HTTPException(status_code=403, detail="Administrator access is required.")

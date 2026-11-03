@@ -1,69 +1,41 @@
-# CLAUDE_ADMIN_AUTH_FIX_REPORT
+# CLAUDE_ADMIN_AUTH_FIX_REPORT (revision 2)
 
-Branch: `fix/admin-login-any-ip` (from `main` @ `8d9138b`). Status labels: VERIFIED / UNVERIFIED / NOT TESTED / BLOCKED.
+Branch `fix/admin-login-any-ip`, from `main` @ `8d9138b`. Commit 1 `416216e` (first attempt), commit 2 corrects it (see `git log`).
+Labels: VERIFIED / UNVERIFIED / NOT TESTED / BLOCKED.
 
-## 1. Root cause — VERIFIED (code + data; no live reproduction)
+## Correction in this revision
+Commit 1 removed the IP allowlist for every account. Owner decision: **only the Super Admin may sign in from any IP; customers keep their exact-IP restriction.** Commit 2 restores the customer rule and the customer UI/API, and keeps the admin exemption and the new rate limiting. Net change versus `main` is now confined to `security.py`, `routers/auth.py` (nullable fields), `config.py`, `.env.example`, two small web files, one README sentence, tests and these reports.
 
-Sign-in is two steps: the browser signs in at Supabase Auth, then calls `GET /api/v1/auth/me`.
-`require_active_account()` in `apps/api/app/security.py` also enforced an exact match between the
-request IP (Render `CF-Connecting-IP`) and `public.profiles.allowed_ip`, returning 403
-`ip_not_allowed` / `ip_not_configured` / `ip_configuration_invalid`, and 503 when the IP header was
-missing. The frontend then signs the user out. Supabase data: the single admin
-(`sanjay@gmail.com`) had `allowed_ip` set, and `last_sign_in_at` is recent, i.e. the Supabase
-step succeeds and the API step is what rejects other networks.
+## 1. Root cause — VERIFIED (code + Supabase data; no live reproduction)
+Sign-in is browser -> Supabase Auth, then `GET /api/v1/auth/me`. `require_active_account()` demanded an exact match between the request IP (Render `CF-Connecting-IP`) and `profiles.allowed_ip` for every role, so the admin was refused (403 `ip_not_allowed`, or 503 without the header) on any network other than the stored one. Supabase confirms the single admin has `allowed_ip` set and a successful Supabase sign-in today.
 
-## 2. Dependencies on `allowed_ip` (all found by repo-wide grep) — VERIFIED
+## 2. New policy in `require_active_account()` (VERIFIED in mocked tests)
+1. JWT validation mandatory for all (pinned algorithms, issuer, audience, exp/iat/nbf).
+2. Per-account rate limit (before the profile lookup).
+3. Profile fetched on every request; role must be `user`/`admin`; status must be `active` (paused / other -> 403).
+4. `role == "admin"` and active: accepted from any IP; stored `allowed_ip` ignored; client IP is best-effort (None allowed).
+5. `role == "user"` and active: trusted client IP must be verifiable (else 503) and the stored `allowed_ip` must be present (`ip_not_configured`), a single valid host (`ip_configuration_invalid`) and equal (`ip_not_allowed`). Fail closed.
+6. Client IP comes only from Render's `CF-Connecting-IP` in production (a header list is rejected); `X-Forwarded-For`, `X-Real-IP`, `Forwarded` are never used.
+7. Pause, delete, demotion, invalid/expired JWT take effect on the next request. A demoted admin is immediately IP-restricted.
+8. Admin routes additionally require `role == "admin"` from the server-side profile; the role is never read from the token, body, headers or email.
 
-| Where | Was | Now |
-|---|---|---|
-| `security.py` `require_active_account` | Enforced (the bug) | Removed; value kept only as informational field |
-| `routers/auth.py` `/me` | Required non-null `allowed_ip`, `client_ip` | Both nullable, informational |
-| `routers/admin.py` create/update customer | Required on create | Optional on create; PATCH unchanged (informational) |
-| Frontend `AuthProvider`, login page, account page, admin panel | IP-specific errors, "current IP for setup" panel, required field | Removed / relabelled "not enforced" |
-| DB column + CHECK constraint, RLS, `private.is_admin()` | Unchanged | Unchanged (no migration needed). No other security feature depends on `allowed_ip` |
+## 3. Rate limiting and brute force
+- Per account: default 120 requests/min (`AUTH_RATE_LIMIT_PER_MINUTE`), keyed by verified account id; cannot lock out other users.
+- Failed authentications: default 60 per 5 min per trusted client IP (`AUTH_FAILURE_LIMIT`), counts only failures and only with a trusted IP; never blocks a valid token.
+- Password guessing happens at Supabase Auth (browser -> Supabase), outside this API. Supabase's own sign-in limits were NOT READABLE with the available tools (UNVERIFIED).
+- Other controls unchanged: CORS explicit origin list (no wildcard), generic error bodies, server-side secrets only.
 
-## 3. Changes
+## 4. MFA (owner-authorized off) — implications
+Supabase shows 0 MFA factors for the admin and no MFA code exists in the API. For a Super Admin reachable from any network the password is the only factor. Rotate the password that was shared in chat; use a long unique one; consider CAPTCHA/leaked-password protection and TOTP later.
 
-Backend: IP check removed; rate limiting wired in; `trusted_client_ip_or_none()`; `reset()` on the limiter; two optional settings
-(`AUTH_RATE_LIMIT_PER_MINUTE=120`, `AUTH_FAILURE_LIMIT=60`). Frontend: IP-specific messages removed, 429 message added.
-Docs: `supabase/README.md` bootstrap steps corrected. Tests: see the test report.
+## 5. Supabase — VERIFIED read-only, no changes
+Exactly one admin profile: `sanjay@gmail.com` (matches `auth.users`), confirmed, active, not banned, 0 MFA factors. Browser roles have SELECT-only on `profiles`; one SELECT policy; RLS on. No migration added (the separate two-admin migration is out of scope and untouched). No data or password change.
 
-## 4. Security design
+## 6. Trading safety — VERIFIED (static scan + source)
+15 routes; mutating routes only under admin/auth and the pure `/market-data/validate`; no order/execution route; no broker order calls in `apps/api/app`. The flags `execution_disabled` / `allow_autonomous_live_trading` exist only in documentation on `main`, not in code, and are unchanged. Indicators, UT Bot, risk and live-data code untouched.
 
-- Authorization = valid Supabase JWT (pinned algorithms, issuer, audience, exp/iat/nbf) AND server-side `profiles` lookup on every request: role must be `user`/`admin`, status `active`. Admin routes additionally require `role == "admin"` from that profile row. Role is never taken from the token, request body, headers or email. Browser roles have SELECT-only grants on `profiles` (verified in Supabase), and admin create/update request models forbid extra fields, so a client cannot set a role.
-- Immediate revocation: pausing/demoting/deleting a profile takes effect on the next request even for an unexpired JWT (tested).
-- Per-account limiter (default 120/min, keyed by verified account id, applied before the Supabase profile lookup). Cannot lock out other users.
-- Failed-authentication throttle (default 60 per 5 min per trusted client IP). Counts only failures, only with a trusted IP (Render `CF-Connecting-IP`), and never blocks a valid token. `X-Forwarded-For` is ignored.
-- CORS reviewed, unchanged: explicit origin list, no wildcard, no credentials, methods limited. `allow_headers=["*"]` left as is to avoid breaking browser fetches I cannot test live.
-- Error responses carry no IP, secret or provider detail.
+## 7. Rollback
+Revert the PR / merge commit and let Render redeploy (previous deploy `d012167` is also available in Render). No database change to undo.
 
-## 5. MFA disabled — owner-authorized; implications
-
-Confirmed in Supabase: 0 MFA factors for the admin, and no MFA code exists in the API. The password is therefore the only factor for a
-Super Administrator reachable from any network. Mitigations that exist: Supabase Auth's own sign-in rate limits (NOT VERIFIED — Auth settings are not readable
-with the available tools), the throttles above, instant revocation, single-admin constraint. Recommendations: a long unique password (the earlier one was shared in chat: rotate it),
-enable CAPTCHA/leaked-password protection in Supabase if the plan allows, and consider re-enabling TOTP later.
-
-## 6. Product-decision change to confirm
-
-The brief says all active users may authenticate from any IP, so **customer IP restriction is no longer enforced** (it was before). The admin panel now says so. If you still want
-customers restricted, that needs a separate opt-in design.
-
-## 7. Supabase — VERIFIED read-only; no changes made
-
-Exactly one `role='admin'` profile; email matches `auth.users` and equals `sanjay@gmail.com`; confirmed, `status=active`, not banned, 0 MFA factors. Single-admin
-unique index present. No migration, no data change, no password change. Optional (not applied): `update public.profiles set allowed_ip = null where role='admin';` to clear the stale value.
-
-## 8. Trading safety — VERIFIED (static + tests)
-
-`main` contains no order-placement code and no execution route (15 routes; mutating routes only under admin/auth and the pure `/market-data/validate`). The
-flags `execution_disabled` / `allow_autonomous_live_trading` appear only in documentation on `main`, not in code. UT Bot, indicators, risk and live-data modules are untouched.
-
-## 9. Rollback
-
-Revert the PR (`git revert <merge commit>`) and let Render redeploy; the old behavior returns. No database change to undo. Render also keeps the previous deploy `d012167` for a dashboard rollback.
-
-## 10. Deployment plan (not executed; needs owner approval)
-
-1. Merge PR. 2. Render auto-deploys `main` (service `allsafe-ai-api`); check build logs. 3. Vercel redeploys the web app. 4. Sign in as the admin from a network other than the stored IP;
-confirm `/auth/me` = 200 and `/admin/users` loads. 5. Confirm a paused test customer is still refused.
+## 8. Deployment plan (NOT executed; needs owner approval)
+Merge PR -> Render auto-deploys `main` (`allsafe-ai-api`) -> check build logs -> sign in as admin from a network other than the stored IP -> `/auth/me` 200 and `/admin/users` loads -> sign in as a test customer from a non-registered IP -> expect 403 `ip_not_allowed`.

@@ -24,8 +24,9 @@ class CurrentAccountResponse(BaseModel):
     email: str
     role: Literal["user", "admin"]
     status: Literal["active", "paused"]
-    # Informational only; the API does not restrict sign-in by IP address.
+    # allowed_ip is enforced for customers; the Super Administrator is exempt (may be null).
     allowed_ip: str | None
+    # Best-effort for administrators (may be null); always present for customers.
     client_ip: str | None
 
 
@@ -44,7 +45,7 @@ class ChangePasswordRequest(BaseModel):
 
 @router.get("/client-ip", response_model=ClientIPResponse)
 def get_client_ip(request: Request, response: Response) -> ClientIPResponse:
-    """Return the caller's trusted source IP (diagnostic only; not used for authorization)."""
+    """Return the trusted source IP for first-admin bootstrap and customer allowlisting."""
     response.headers["Cache-Control"] = "no-store"
     return ClientIPResponse(client_ip=request_client_ip(request))
 
@@ -54,7 +55,7 @@ def get_current_account(
     response: Response,
     account: AccountPrincipal = Depends(require_active_account),
 ) -> CurrentAccountResponse:
-    """Return the profile of an authenticated, currently active account (any network)."""
+    """Return the profile when the current status passes and, for customers, the exact-IP rule."""
     response.headers["Cache-Control"] = "no-store"
     return CurrentAccountResponse(
         id=account.id,
@@ -71,7 +72,7 @@ def change_password(
     body: ChangePasswordRequest,
     account: AccountPrincipal = Depends(require_active_account),
 ) -> Response:
-    """Change the signed-in user's password after rechecking the active account status."""
+    """Change the signed-in user's password after rechecking active status and IP rules."""
     try:
         update_auth_user_password(account.id, body.password.get_secret_value())
     except SupabaseAdminAPIError as exc:

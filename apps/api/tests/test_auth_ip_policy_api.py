@@ -1,4 +1,4 @@
-"""Route-level checks for IP-independent authentication (FastAPI TestClient).
+"""Route-level checks of the IP policy: admin any IP, customers exact IP (FastAPI TestClient).
 
 MOCKED: Supabase profile/Auth Admin calls are stubbed; JWTs use a test-only secret.
 """
@@ -59,7 +59,7 @@ def test_me_succeeds_without_any_stored_ip_or_client_ip(monkeypatch):
 
 
 def test_admin_endpoints_reject_non_admin_with_403(monkeypatch):
-    headers = _mock_account(monkeypatch, role="user")
+    headers = {**_mock_account(monkeypatch, role="user"), "CF-Connecting-IP": "192.0.2.10"}
     assert client.get("/api/v1/admin/users", headers=headers).status_code == 403
     assert client.post(
         "/api/v1/admin/users",
@@ -68,6 +68,33 @@ def test_admin_endpoints_reject_non_admin_with_403(monkeypatch):
     ).status_code == 403
     assert client.patch(f"/api/v1/admin/users/{uuid4()}", headers=headers, json={"status": "paused"}).status_code == 403
     assert client.delete(f"/api/v1/admin/users/{uuid4()}", headers=headers).status_code == 403
+
+
+def test_customer_me_succeeds_only_from_the_registered_ip(monkeypatch):
+    headers = _mock_account(monkeypatch, role="user", allowed_ip="192.0.2.10")
+    ok = client.get("/api/v1/auth/me", headers={**headers, "CF-Connecting-IP": "192.0.2.10"})
+    assert ok.status_code == 200
+    assert ok.json()["role"] == "user"
+    assert ok.json()["client_ip"] == "192.0.2.10"
+
+    denied = client.get("/api/v1/auth/me", headers={**headers, "CF-Connecting-IP": "198.51.100.7"})
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "ip_not_allowed"
+
+
+def test_customer_cannot_bypass_with_x_forwarded_for(monkeypatch):
+    headers = _mock_account(monkeypatch, role="user", allowed_ip="192.0.2.10")
+    forged = {**headers, "CF-Connecting-IP": "198.51.100.7", "X-Forwarded-For": "192.0.2.10"}
+    assert client.get("/api/v1/auth/me", headers=forged).status_code == 403
+    only_forged = {**headers, "X-Forwarded-For": "192.0.2.10"}
+    assert client.get("/api/v1/auth/me", headers=only_forged).status_code == 503
+
+
+@pytest.mark.parametrize("stored", [None, "", "192.0.2.0/24", "garbage"])
+def test_customer_with_missing_or_malformed_ip_is_denied(monkeypatch, stored):
+    headers = _mock_account(monkeypatch, role="user", allowed_ip=stored)
+    response = client.get("/api/v1/auth/me", headers={**headers, "CF-Connecting-IP": "192.0.2.10"})
+    assert response.status_code == 403
 
 
 def test_admin_endpoints_require_a_valid_token(monkeypatch):
@@ -107,28 +134,6 @@ def test_clients_cannot_set_a_role_when_creating_or_updating_accounts(monkeypatc
     assert create.status_code == 422
     assert patch.status_code == 422
     assert called == []
-
-
-@pytest.mark.usefixtures("admin_account_override")
-def test_admin_can_create_a_customer_without_an_ip(monkeypatch):
-    user_id = uuid4()
-    profile = {
-        "id": str(user_id),
-        "email": "customer@example.com",
-        "role": "user",
-        "status": "active",
-        "allowed_ip": None,
-        "created_at": "2026-01-01T00:00:00+00:00",
-    }
-    monkeypatch.setattr(admin_router, "create_auth_user", lambda email, password: {"id": str(user_id)})
-    monkeypatch.setattr(admin_router, "get_profile", lambda account_id: profile)
-    response = client.post(
-        "/api/v1/admin/users",
-        json={"email": "customer@example.com", "password": "long-enough-password"},
-    )
-    assert response.status_code == 201
-    assert response.json()["role"] == "user"
-    assert response.json()["allowed_ip"] is None
 
 
 # --- Trading safety invariants -------------------------------------------------------
