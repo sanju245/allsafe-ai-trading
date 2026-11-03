@@ -54,8 +54,11 @@ class AccountPrincipal:
     email: str
     role: str
     status: str
+    # Informational only. The stored allowed_ip is NEVER used to authorize a request.
     allowed_ip: str | None
-    client_ip: str
+    # Best-effort trusted client address (None when it cannot be determined). It is used
+    # only for failed-authentication throttling and display, never for authorization.
+    client_ip: str | None
 
 
 def request_client_ip(request: Request) -> str:
@@ -82,6 +85,14 @@ def request_client_ip(request: Request) -> str:
         ) from None
 
 
+def trusted_client_ip_or_none(request: Request) -> str | None:
+    """Best-effort trusted client IP for throttling; never raises and never authorizes."""
+    try:
+        return request_client_ip(request)
+    except HTTPException:
+        return None
+
+
 def _normalize_stored_ip(value: object) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return None
@@ -95,18 +106,60 @@ def _normalize_stored_ip(value: object) -> str | None:
         return None
 
 
+def _limit_setting(settings: object, name: str, default: int) -> int:
+    value = getattr(settings, name, default)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else default
+
+
+def _record_failed_authentication(request: Request, settings: object) -> None:
+    """Count a failed authentication per trusted client IP; raise 429 over the limit.
+
+    Only requests that fail authentication are counted, and only when a trusted client
+    address is available, so one noisy client cannot lock out other users and valid
+    tokens are never blocked by this throttle. Password guessing itself happens at
+    Supabase Auth (browser -> Supabase), which applies its own sign-in rate limits.
+    """
+    client_ip = trusted_client_ip_or_none(request)
+    if client_ip is None:
+        return
+    failed_auth_throttle.check(
+        client_ip,
+        limit=_limit_setting(settings, "auth_failure_limit", DEFAULT_AUTH_FAILURE_LIMIT),
+        resource="Authentication",
+    )
+
+
 def require_active_account(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AccountPrincipal:
-    """Verify the JWT and enforce the current profile status and exact IP allowlist."""
+    """Verify the JWT and enforce the current profile role and status.
+
+    Authorization is independent of the caller's IP address: a valid Supabase token for
+    an active account is accepted from any network. The role is read from the
+    server-side profile on every request (never from the token, request body or email),
+    so pausing or deleting an account takes effect immediately even for an unexpired JWT.
+    """
     settings = get_settings()
-    user_id = verify_supabase_access_token(
-        authorization,
-        supabase_url=settings.supabase_url,
-        jwt_secret=settings.supabase_jwt_secret,
+    try:
+        user_id = verify_supabase_access_token(
+            authorization,
+            supabase_url=settings.supabase_url,
+            jwt_secret=settings.supabase_jwt_secret,
+        )
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            _record_failed_authentication(request, settings)
+        raise
+
+    # Per-account limit, applied before the Supabase profile lookup so a token holder
+    # cannot use this API to hammer the database.
+    api_rate_limiter.check(
+        user_id,
+        limit=_limit_setting(settings, "auth_rate_limit_per_minute", DEFAULT_API_RATE_LIMIT),
+        resource="API",
     )
-    client_ip = request_client_ip(request)
+
     try:
         profile = get_profile(user_id, settings=settings)
     except SupabaseAdminAPIError:
@@ -124,8 +177,6 @@ def require_active_account(
     role = profile.get("role")
     status = profile.get("status")
     email = profile.get("email")
-    raw_allowed_ip = profile.get("allowed_ip")
-    allowed_ip = _normalize_stored_ip(raw_allowed_ip)
     if role not in {"user", "admin"} or not isinstance(email, str):
         raise HTTPException(
             status_code=403,
@@ -141,40 +192,14 @@ def require_active_account(
             status_code=403,
             detail={"code": "account_inactive", "message": "This account is not active."},
         )
-    if raw_allowed_ip is None or (
-        isinstance(raw_allowed_ip, str) and not raw_allowed_ip.strip()
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "ip_not_configured",
-                "message": "An approved IP address has not been configured for this account.",
-            },
-        )
-    if allowed_ip is None:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "ip_configuration_invalid",
-                "message": "The IP restriction for this account is invalid.",
-            },
-        )
-    if allowed_ip != client_ip:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "ip_not_allowed",
-                "message": "This IP address is not approved for this account.",
-            },
-        )
 
     return AccountPrincipal(
         id=user_id,
         email=email,
         role=role,
         status=status,
-        allowed_ip=allowed_ip,
-        client_ip=client_ip,
+        allowed_ip=_normalize_stored_ip(profile.get("allowed_ip")),
+        client_ip=trusted_client_ip_or_none(request),
     )
 
 
@@ -182,7 +207,7 @@ def require_admin_account(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AccountPrincipal:
-    """Require a currently active, IP-allowed Supabase admin account."""
+    """Require an authenticated, active account whose server-side profile role is admin."""
     account = require_active_account(request, authorization)
     if account.role != "admin":
         raise HTTPException(status_code=403, detail="Administrator access is required.")
@@ -449,6 +474,11 @@ class SlidingWindowRateLimiter:
         self._requests: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
 
+    def reset(self) -> None:
+        """Forget all recorded requests (used by tests)."""
+        with self._lock:
+            self._requests.clear()
+
     def check(
         self, principal: str, *, limit: int, resource: str = "Market-data"
     ) -> None:
@@ -491,3 +521,12 @@ class SlidingWindowRateLimiter:
 
 
 market_data_rate_limiter = SlidingWindowRateLimiter()
+
+DEFAULT_API_RATE_LIMIT = 120  # authenticated requests per account per minute
+DEFAULT_AUTH_FAILURE_LIMIT = 60  # failed authentications per trusted client IP per window
+_AUTH_FAILURE_WINDOW_SECONDS = 300
+
+# Keyed by authenticated account id (a verified UUID); cannot be shared between users.
+api_rate_limiter = SlidingWindowRateLimiter()
+# Keyed by trusted client IP; counts failed authentications only.
+failed_auth_throttle = SlidingWindowRateLimiter(window_seconds=_AUTH_FAILURE_WINDOW_SECONDS)

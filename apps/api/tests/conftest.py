@@ -8,7 +8,7 @@ from app.security import AccountPrincipal, require_active_account, require_admin
 
 @pytest.fixture
 def active_account_override():
-    """Model an active, IP-approved customer without depending on Supabase."""
+    """Model an active customer without depending on Supabase."""
     principal = AccountPrincipal(
         id="00000000-0000-4000-8000-000000000001",
         email="customer@example.com",

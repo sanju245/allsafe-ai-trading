@@ -1,4 +1,8 @@
-"""JWT, account-state, and trusted-proxy IP enforcement tests."""
+"""JWT, account-state, and trusted-proxy client-IP parsing tests.
+
+The client IP is parsed for throttling/diagnostics only; it never gates access.
+See test_auth_any_ip.py for the IP-independent authentication tests.
+"""
 
 import base64
 import hashlib
@@ -170,20 +174,18 @@ def test_production_ip_uses_only_the_trusted_cloudflare_header(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("status", "allowed_ip", "expected_status", "expected_code"),
+    ("status", "expected_status", "expected_code"),
     [
-        ("active", "192.0.2.10", None, None),
-        ("paused", "192.0.2.10", 403, "account_paused"),
-        ("active", "192.0.2.11", 403, "ip_not_allowed"),
-        ("active", None, 403, "ip_not_configured"),
-        ("active", "192.0.2.0/24", 403, "ip_configuration_invalid"),
+        ("active", None, None),
+        ("paused", 403, "account_paused"),
+        ("inactive", 403, "account_inactive"),
     ],
 )
-def test_account_access_requires_active_status_and_exact_host_ip(
-    monkeypatch, status, allowed_ip, expected_status, expected_code
+def test_account_access_requires_active_status(
+    monkeypatch, status, expected_status, expected_code
 ):
+    security.api_rate_limiter.reset()
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
-    monkeypatch.setattr(security, "request_client_ip", lambda request: "192.0.2.10")
     user_id = str(uuid4())
     monkeypatch.setattr(
         security,
@@ -193,7 +195,8 @@ def test_account_access_requires_active_status_and_exact_host_ip(
             "email": "customer@example.com",
             "role": "user",
             "status": status,
-            "allowed_ip": allowed_ip,
+            # A stored address that matches no caller must not affect the outcome.
+            "allowed_ip": "192.0.2.99",
         },
     )
     authorization = f"Bearer {_hs256_token(user_id=user_id)}"
@@ -206,19 +209,11 @@ def test_account_access_requires_active_status_and_exact_host_ip(
     else:
         account = security.require_active_account(_request(), authorization)
         assert account.id == user_id
-        assert account.allowed_ip == "192.0.2.10"
+        assert account.allowed_ip == "192.0.2.99"  # informational only
 
 
-@pytest.mark.parametrize(
-    ("allowed_ip", "expected_status"),
-    [
-        ("2001:0db8:0:0:0:0:0:1/128", None),
-        ("2001:db8::2/128", 403),
-    ],
-)
-def test_ipv6_allowlist_matches_only_the_canonical_exact_host(
-    monkeypatch, allowed_ip, expected_status
-):
+def test_ipv6_client_address_is_canonicalised_but_never_gates_access(monkeypatch):
+    security.api_rate_limiter.reset()
     monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
     user_id = str(uuid4())
@@ -230,26 +225,21 @@ def test_ipv6_allowlist_matches_only_the_canonical_exact_host(
             "email": "customer@example.com",
             "role": "user",
             "status": "active",
-            "allowed_ip": allowed_ip,
+            "allowed_ip": "2001:db8::2/128",  # a different host than the caller
         },
     )
     request = _request([
         (b"cf-connecting-ip", b"2001:0db8:0:0:0:0:0:1"),
     ])
-    authorization = f"Bearer {_hs256_token(user_id=user_id)}"
 
     assert security.request_client_ip(request) == "2001:db8::1"
-    if expected_status is None:
-        account = security.require_active_account(request, authorization)
-        assert account.allowed_ip == "2001:db8::1"
-    else:
-        with pytest.raises(HTTPException) as error:
-            security.require_active_account(request, authorization)
-        assert error.value.status_code == expected_status
-        assert error.value.detail["code"] == "ip_not_allowed"
+    account = security.require_active_account(request, f"Bearer {_hs256_token(user_id=user_id)}")
+    assert account.client_ip == "2001:db8::1"
+    assert account.allowed_ip == "2001:db8::2"
 
 
 def test_non_admin_cannot_use_admin_dependency(monkeypatch):
+    security.api_rate_limiter.reset()
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
     monkeypatch.setattr(security, "request_client_ip", lambda request: "192.0.2.10")
     user_id = str(uuid4())

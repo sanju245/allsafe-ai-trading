@@ -112,7 +112,7 @@ function UserActions({ user, busy, onStatusChange, onAllowedIpChange, onDelete }
           });
         }}
       >
-        <label className="sr-only" htmlFor={`allowed-ip-${user.id}`}>Allowed public IP for {user.email}</label>
+        <label className="sr-only" htmlFor={`allowed-ip-${user.id}`}>Registered public IP (not enforced) for {user.email}</label>
         <input
           id={`allowed-ip-${user.id}`}
           type="text"
@@ -323,7 +323,11 @@ export default function AdminUsersPanel() {
     try {
       await adminRequest<unknown>(accessToken, "/api/v1/admin/users", {
         method: "POST",
-        body: { email: email.trim(), password, allowed_ip: allowedIp.trim() },
+        body: {
+          email: email.trim(),
+          password,
+          ...(allowedIp.trim() ? { allowed_ip: allowedIp.trim() } : {}),
+        },
       });
       setSuccess(`Created the account for ${email.trim()}.`);
       setEmail("");
@@ -486,9 +490,9 @@ export default function AdminUsersPanel() {
               <input type="password" required minLength={8} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-400 focus:outline-none" placeholder="At least 8 characters" />
             </label>
             <label className="text-sm text-slate-300">
-              Allowed public IP
-              <input type="text" required autoComplete="off" value={allowedIp} onChange={(event) => setAllowedIp(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-400 focus:outline-none" placeholder="Customer’s public IPv4 or IPv6" />
-              <span className="mt-1 block text-xs text-slate-500">Enter one public address; the API validates that it is allowed.</span>
+              Registered public IP (optional)
+              <input type="text" autoComplete="off" value={allowedIp} onChange={(event) => setAllowedIp(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-400 focus:outline-none" placeholder="Customer’s public IPv4 or IPv6" />
+              <span className="mt-1 block text-xs text-slate-500">Informational only. Sign-in is not restricted by IP address.</span>
             </label>
             <div className="flex flex-wrap items-center gap-3 md:col-span-3">
               <button type="submit" disabled={creating} className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-50">
@@ -534,7 +538,7 @@ export default function AdminUsersPanel() {
                 <th scope="col" className="px-4 py-3">Customer</th>
                 <th scope="col" className="px-4 py-3">Role</th>
                 <th scope="col" className="px-4 py-3">Status</th>
-                <th scope="col" className="px-4 py-3">Allowed public IP</th>
+                <th scope="col" className="px-4 py-3">Registered IP (not enforced)</th>
                 <th scope="col" className="px-4 py-3">Created</th>
                 <th scope="col" className="px-4 py-3">Actions</th>
               </tr>
@@ -579,7 +583,7 @@ export default function AdminUsersPanel() {
               <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
                 <div><dt className="text-slate-500">Role</dt><dd className="mt-1 capitalize text-slate-200">{user.role}</dd></div>
                 <div><dt className="text-slate-500">Created</dt><dd className="mt-1 text-slate-200">{formatDate(user.created_at)}</dd></div>
-                <div className="col-span-2"><dt className="text-slate-500">Allowed public IP</dt><dd className="mt-1 break-all font-mono text-slate-200">{user.allowed_ip ?? "Not set"}</dd></div>
+                <div className="col-span-2"><dt className="text-slate-500">Registered public IP (not enforced)</dt><dd className="mt-1 break-all font-mono text-slate-200">{user.allowed_ip ?? "Not set"}</dd></div>
               </dl>
               <div className="mt-4 border-t border-white/10 pt-3">{renderActions(user)}</div>
             </article>

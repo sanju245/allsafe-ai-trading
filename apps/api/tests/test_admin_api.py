@@ -25,7 +25,7 @@ def _profile(*, user_id, email="customer@example.com", status="active", allowed_
     }
 
 
-def test_admin_creates_email_login_bound_to_one_exact_ip(monkeypatch):
+def test_admin_creates_email_login_with_an_informational_registered_ip(monkeypatch):
     user_id = uuid4()
     captured = {}
     monkeypatch.setattr(
@@ -85,7 +85,7 @@ def test_admin_cannot_create_cidr_allowlist_or_short_password(monkeypatch):
 def test_account_validation_errors_do_not_echo_submitted_password():
     response = client.post(
         "/api/v1/admin/users",
-        json={"email": "customer@example.com", "password": "secret-only-in-request"},
+        json={"email": "not-an-email", "password": "secret-only-in-request"},
     )
 
     assert response.status_code == 422

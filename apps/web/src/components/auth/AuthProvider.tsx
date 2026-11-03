@@ -16,8 +16,9 @@ export type AuthProfile = {
   email: string;
   role: "admin" | "user";
   status: "active" | "paused";
+  // Informational only; sign-in is not restricted by IP address.
   allowed_ip: string | null;
-  client_ip: string;
+  client_ip: string | null;
 };
 
 type AuthContextValue = {
@@ -98,36 +99,18 @@ function accessDeniedMessage(body: unknown, status: number): string {
     .filter((value): value is string => typeof value === "string")
     .join(" ")
     .toLowerCase();
-  const allowedIp =
-    (typeof record?.allowed_ip === "string" && record.allowed_ip) ||
-    (typeof detail?.allowed_ip === "string" && detail.allowed_ip);
-  const clientIp =
-    (typeof record?.client_ip === "string" && record.client_ip) ||
-    (typeof detail?.client_ip === "string" && detail.client_ip);
 
   if (/account_paused|disabled|account_suspended/.test(code)) {
     return "This login is paused. Contact the administrator to restore access.";
   }
-  if (/ip_not_allowed|ip_not_configured|ip_configuration_invalid/.test(code)) {
-    const allowed = allowedIp ? ` The approved IP is ${allowedIp}.` : "";
-    const current = clientIp ? ` The current IP is ${clientIp}.` : "";
-    return `This login is not allowed from the current IP.${allowed}${current}`;
-  }
-  if (/paused.*ip|ip.*paused/.test(text)) {
-    return "Account access could not be verified. Ask the administrator to check the account status and approved IP.";
-  }
   if (/paused|disabled|account_suspended/.test(`${code} ${text}`)) {
     return "This login is paused. Contact the administrator to restore access.";
-  }
-  if (/ip|address|allow.?list|network/.test(`${code} ${text}`) || allowedIp) {
-    const allowed = allowedIp ? ` The approved IP is ${allowedIp}.` : "";
-    const current = clientIp ? ` The current IP is ${clientIp}.` : "";
-    return `This login is not allowed from the current IP.${allowed}${current}`;
   }
   if (/inactive|not active/.test(`${code} ${text}`)) {
     return "This account is not active. Contact the administrator for help.";
   }
   if (status === 401) return "The email or password is incorrect, or the sign-in has expired.";
+  if (status === 429) return "Too many requests. Wait a moment and try again.";
   if (status === 403) return "This login is not allowed to access the account.";
   if (status >= 500) return "Account verification is temporarily unavailable. Try again soon.";
   return "Could not verify this account. Check your connection and try again.";
@@ -145,7 +128,7 @@ function parseProfile(body: unknown): AuthProfile | null {
     (role !== "admin" && role !== "user") ||
     (status !== "active" && status !== "paused") ||
     (allowedIp !== null && typeof allowedIp !== "string") ||
-    typeof clientIp !== "string"
+    (clientIp !== null && typeof clientIp !== "string")
   ) {
     return null;
   }

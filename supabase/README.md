@@ -64,28 +64,27 @@ environment file, a response, or a browser request.
    intended administrator with a confirmed email and a temporary password.
    Public self-signup is disabled. The auth trigger creates the matching
    `public.profiles` row with role `user`.
-2. From the intended administrator's permitted network, open
-   `https://allsafe-ai-api.onrender.com/api/v1/auth/client-ip` and copy the
-   returned `client_ip` value.
-3. In Supabase SQL Editor, promote only that account and bind its exact IP:
+2. In Supabase SQL Editor, promote only that account:
 
    ```sql
    update public.profiles
    set role = 'admin',
-       status = 'active',
-       allowed_ip = '203.0.113.42'::inet
+       status = 'active'
    where lower(email) = lower('admin@example.com');
    ```
 
-   Replace the example address and email with the values from steps 1 and 2.
-   Confirm exactly one row was updated. Do not use a CIDR range; the migration
-   rejects anything other than one IPv4 or IPv6 host address.
-4. Sign in at `https://allsafe-ai-trading.vercel.app/login` from that IP, then
-   confirm `GET /api/v1/auth/me` returns the `admin` role. Admin actions are
-   served by the API and checked against the current profile status and IP on
-   every request.
+   Replace the example email with the administrator's email. Confirm exactly
+   one row was updated. The single-admin index rejects a second administrator.
+   `allowed_ip` is no longer used for access control (it may stay NULL or keep an
+   old value; it is informational only), so the administrator can sign in from
+   any network.
+3. Sign in at `https://allsafe-ai-trading.vercel.app/login`, then confirm
+   `GET /api/v1/auth/me` returns the `admin` role. Admin actions are served by
+   the API and checked against the current profile role and status on every
+   request. Set the password through the Supabase Dashboard (Authentication ->
+   Users) or the in-app Change Password page; never put it in code, SQL or chat.
 
 The public `GET /api/v1/auth/client-ip` endpoint reports the API's trusted
-client address and does not require a login. In production, the API accepts this
-address only from Render's `CF-Connecting-IP` header; if it is absent or invalid,
-the API fails closed.
+client address for diagnostics and does not require a login. In production, the
+API accepts the client address only from Render's `CF-Connecting-IP` header; it
+is used for throttling failed authentications and never for authorization.

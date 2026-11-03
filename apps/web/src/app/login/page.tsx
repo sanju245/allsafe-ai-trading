@@ -9,67 +9,16 @@ const SUPABASE_CONFIGURED = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim(),
 );
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  (process.env.NODE_ENV === "production"
-    ? "https://allsafe-ai-api.onrender.com"
-    : "http://localhost:8000")
-)
-  .trim()
-  .replace(/\/+$/, "");
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 export default function LoginPage() {
   const router = useRouter();
   const { session, loading, signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [clientIp, setClientIp] = useState<string | null>(null);
-  const [ipLoading, setIpLoading] = useState(true);
-  const [ipUnavailable, setIpUnavailable] = useState(false);
 
   useEffect(() => {
     if (!loading && session) router.replace("/account");
   }, [loading, router, session]);
-
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 8000);
-
-    fetch(`${API_BASE_URL}/api/v1/auth/client-ip`, {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      credentials: "omit",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("IP lookup failed");
-        const body: unknown = await response.json();
-        if (!isRecord(body)) throw new Error("Unexpected IP response");
-        const ip = [body.client_ip, body.ip, body.address].find(
-          (value): value is string => typeof value === "string" && value.trim().length > 0,
-        );
-        if (!ip) throw new Error("IP missing from response");
-        if (active) setClientIp(ip);
-      })
-      .catch(() => {
-        if (active) setIpUnavailable(true);
-      })
-      .finally(() => {
-        if (active) setIpLoading(false);
-      });
-
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -101,22 +50,6 @@ export default function LoginPage() {
         <p className="mt-2 text-sm leading-relaxed text-slate-300">
           Sign in with the account created for you by the administrator. Public account creation is disabled.
         </p>
-
-        <div className="mt-5 rounded-lg border border-white/10 bg-slate-950/50 p-4 text-sm">
-          <p className="font-medium text-slate-200">Current IP for account setup</p>
-          {ipLoading ? (
-            <p className="mt-1 text-slate-400">Checking the account service…</p>
-          ) : clientIp ? (
-            <p className="mt-1 break-all font-mono text-emerald-200">{clientIp}</p>
-          ) : (
-            <p className="mt-1 text-amber-200">
-              {ipUnavailable ? "Current IP is unavailable. Check the account service connection." : "Current IP is unavailable."}
-            </p>
-          )}
-          <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            The administrator can use this address when restricting a customer login to one public IP.
-          </p>
-        </div>
 
         {!SUPABASE_CONFIGURED ? (
           <div className="mt-5 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
