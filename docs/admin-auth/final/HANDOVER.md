@@ -16,3 +16,6 @@ Do not deploy or run migrations without owner approval; do not force-push or rew
 
 ## Known limitations of this delivery
 No real pytest/FastAPI or frontend build was run by the author; GitHub and Dropbox were unreachable; Vercel not inspected.
+
+## Audit update 2026-11-05
+A further docs-only commit on this branch records the verification audit (`VERIFICATION_AUDIT_2026-11-05.md`). Nothing has been pushed; the bundle delivered with this commit supersedes the `b79c05d` bundle. Before merging run the origin-bypass test in section 4 of that file.

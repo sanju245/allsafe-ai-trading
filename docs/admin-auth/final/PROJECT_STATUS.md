@@ -14,3 +14,6 @@
 
 Next steps: push branch (bundle provided) and open PR → run real pytest + web build → resolve/accept O-1 → rotate admin password → approve deploy.
 Trading safety: unchanged; no execution capability; `allow_autonomous_live_trading` not enabled.
+
+## Verification audit 2026-11-05
+GitHub verified by `git ls-remote`: branch `fix/admin-login-any-ip` and commits `416216e`, `1acebe4`, `6984e29`, `b79c05d` are NOT on GitHub; no PR; push 403. Dropbox: no tool. Render origin bypass: UNVERIFIED -> not declared production-safe. See `VERIFICATION_AUDIT_2026-11-05.md`.

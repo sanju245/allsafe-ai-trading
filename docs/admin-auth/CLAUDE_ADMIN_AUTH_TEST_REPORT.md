@@ -7,7 +7,7 @@ The genuine pytest + FastAPI integration suite was **NOT RUN**: `fastapi`, `pyte
 
 What was run: `tests/test_security.py` (unchanged from `main`) and `tests/test_auth_ip_policy.py` under a **local stand-in harness** (fake `fastapi`/`pytest`/`pydantic_settings` modules kept outside the repo). They execute the real `app/security.py`, real PyJWT checks and real Starlette `Request` objects, with Supabase **mocked**. This is NOT a full integration test. Result: **58 passed, 0 failed** (`test-evidence-security-layer-shim-run.txt`). No live Supabase/production test was done.
 
-Mutation check (VERIFIED): dropping the customer IP match failed 4 tests; applying customer rules to admins failed 8+; trusting `X-Forwarded-For` failed 2; removing the throttles failed 4.
+Mutation check: superseded - exact counts are in `final/TEST_EVIDENCE.md`.
 
 ## Requested scenarios
 | Scenario | Status | Test |

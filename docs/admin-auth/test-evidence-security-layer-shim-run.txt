@@ -1,3 +1,5 @@
+[OUTDATED - SUPERSEDED] This 58-test log predates commit 6984e29. Current evidence: docs/admin-auth/final/test-evidence-shim-run-head-b79c05d.txt (71 tests). Kept only for history.
+
 LOCAL STAND-IN HARNESS RUN (NOT the real pytest/FastAPI suite). Mocked Supabase. Real app/security.py, PyJWT, Starlette Request.
 
 PASS tests.test_security::test_account_access_requires_active_status_and_exact_host_ip[active-192.0.2.10-None-None]
