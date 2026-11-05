@@ -16,8 +16,9 @@ export type AuthProfile = {
   email: string;
   role: "admin" | "user";
   status: "active" | "paused";
+  // Null for the Super Administrator, who is not restricted to one IP.
   allowed_ip: string | null;
-  client_ip: string;
+  client_ip: string | null;
 };
 
 type AuthContextValue = {
@@ -128,6 +129,7 @@ function accessDeniedMessage(body: unknown, status: number): string {
     return "This account is not active. Contact the administrator for help.";
   }
   if (status === 401) return "The email or password is incorrect, or the sign-in has expired.";
+  if (status === 429) return "Too many requests. Wait a moment and try again.";
   if (status === 403) return "This login is not allowed to access the account.";
   if (status >= 500) return "Account verification is temporarily unavailable. Try again soon.";
   return "Could not verify this account. Check your connection and try again.";
@@ -145,7 +147,7 @@ function parseProfile(body: unknown): AuthProfile | null {
     (role !== "admin" && role !== "user") ||
     (status !== "active" && status !== "paused") ||
     (allowedIp !== null && typeof allowedIp !== "string") ||
-    typeof clientIp !== "string"
+    (clientIp !== null && typeof clientIp !== "string")
   ) {
     return null;
   }

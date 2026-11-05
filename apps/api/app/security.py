@@ -35,6 +35,11 @@ _JWKS_MAX_BYTES = 65_536
 _JWKS_MAX_KEYS = 50
 _ASYMMETRIC_ALGORITHMS = {"ES256", "RS256"}
 _JWKS_CACHE: dict[str, tuple[float, list[dict[str, object]]]] = {}
+# When each project's signing keys were last requested (success or failure).
+_JWKS_LAST_ATTEMPT: dict[str, float] = {}
+# A forced refresh (unknown key id) is honoured at most this often per project, so
+# tokens with random "kid" values cannot make the API call Supabase on every request.
+_JWKS_MIN_REFRESH_SECONDS = 30
 _JWKS_LOCK = threading.Lock()
 
 
@@ -54,17 +59,36 @@ class AccountPrincipal:
     email: str
     role: str
     status: str
+    # Enforced for role "user"; ignored for role "admin" (Super Administrator).
     allowed_ip: str | None
-    client_ip: str
+    # Verified trusted address for users. For admins it is best-effort (None when it cannot
+    # be determined) and is used only for throttling and display, never to authorize.
+    client_ip: str | None
+
+
+def _canonical_ip(value: str) -> str:
+    """Canonical text for an address; an IPv4-mapped IPv6 address becomes plain IPv4."""
+    address = ipaddress.ip_address(value)
+    mapped = getattr(address, "ipv4_mapped", None)
+    return (mapped if mapped is not None else address).compressed
 
 
 def request_client_ip(request: Request) -> str:
-    """Return the trusted client IP; production trusts only Render's edge header."""
+    """Return the trusted client IP; production trusts only Render's edge header.
+
+    TRUST MODEL: in production the address comes solely from ``CF-Connecting-IP``, which
+    Cloudflare (in front of Render) sets on every proxied request. It is only safe while
+    the origin cannot be reached except through that proxy; Render does not document this
+    guarantee, so customer IP enforcement is defence in depth, not an absolute control.
+    ``X-Forwarded-For`` is never used (Render appends to a client-supplied value).
+    Exactly one header line is accepted; duplicates or lists are treated as unverifiable.
+    """
     settings = get_settings()
     on_render = bool(os.getenv("RENDER_SERVICE_ID"))
     production = settings.app_env.strip().lower() == "production" or on_render
     if production:
-        candidate = request.headers.get("cf-connecting-ip")
+        values = request.headers.getlist("cf-connecting-ip")
+        candidate = values[0] if len(values) == 1 else None
     else:
         candidate = request.client.host if request.client is not None else None
 
@@ -74,12 +98,20 @@ def request_client_ip(request: Request) -> str:
             detail="The API could not verify the request IP address.",
         )
     try:
-        return ipaddress.ip_address(candidate.strip()).compressed
+        return _canonical_ip(candidate.strip())
     except ValueError:
         raise HTTPException(
             status_code=503,
             detail="The API could not verify the request IP address.",
         ) from None
+
+
+def trusted_client_ip_or_none(request: Request) -> str | None:
+    """Best-effort trusted client IP for throttling/display; never raises."""
+    try:
+        return request_client_ip(request)
+    except HTTPException:
+        return None
 
 
 def _normalize_stored_ip(value: object) -> str | None:
@@ -90,23 +122,67 @@ def _normalize_stored_ip(value: object) -> str | None:
         interface = ipaddress.ip_interface(value.strip())
         if interface.network.prefixlen != interface.max_prefixlen:
             return None
-        return interface.ip.compressed
+        return _canonical_ip(str(interface.ip))
     except ValueError:
         return None
+
+
+def _limit_setting(settings: object, name: str, default: int) -> int:
+    value = getattr(settings, name, default)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else default
+
+
+def _record_failed_authentication(request: Request, settings: object) -> None:
+    """Count a failed authentication per trusted client IP; raise 429 over the limit.
+
+    Only requests that fail authentication are counted, so valid tokens are never
+    blocked by this throttle. Requests without a trusted client address share one
+    "unknown client" bucket with a higher limit (it can only ever slow requests that are
+    already failing). Password guessing itself happens at Supabase Auth (browser ->
+    Supabase), which applies its own sign-in rate limits.
+    """
+    limit = _limit_setting(settings, "auth_failure_limit", DEFAULT_AUTH_FAILURE_LIMIT)
+    client_ip = trusted_client_ip_or_none(request)
+    if client_ip is None:
+        client_ip = _UNKNOWN_CLIENT_KEY
+        limit *= _UNKNOWN_CLIENT_LIMIT_MULTIPLIER
+    failed_auth_throttle.check(client_ip, limit=limit, resource="Authentication")
 
 
 def require_active_account(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AccountPrincipal:
-    """Verify the JWT and enforce the current profile status and exact IP allowlist."""
+    """Verify the JWT, then enforce the current server-side role, status and IP policy.
+
+    * The profile is read on every request; the role never comes from the token, request
+      body, headers or email, so pausing, deleting or demoting an account takes effect
+      immediately even for an unexpired JWT.
+    * role == "admin" (active): accepted from any network.
+    * role == "user" (active): the exact stored allowed_ip must equal the trusted client
+      IP; a missing, malformed or non-matching value fails closed. The client IP comes
+      only from the trusted proxy header in production (never X-Forwarded-For).
+    """
     settings = get_settings()
-    user_id = verify_supabase_access_token(
-        authorization,
-        supabase_url=settings.supabase_url,
-        jwt_secret=settings.supabase_jwt_secret,
+    try:
+        user_id = verify_supabase_access_token(
+            authorization,
+            supabase_url=settings.supabase_url,
+            jwt_secret=settings.supabase_jwt_secret,
+        )
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            _record_failed_authentication(request, settings)
+        raise
+
+    # Per-account limit, applied before the Supabase profile lookup so a token holder
+    # cannot use this API to hammer the database.
+    api_rate_limiter.check(
+        user_id,
+        limit=_limit_setting(settings, "auth_rate_limit_per_minute", DEFAULT_API_RATE_LIMIT),
+        resource="API",
     )
-    client_ip = request_client_ip(request)
+
     try:
         profile = get_profile(user_id, settings=settings)
     except SupabaseAdminAPIError:
@@ -124,8 +200,6 @@ def require_active_account(
     role = profile.get("role")
     status = profile.get("status")
     email = profile.get("email")
-    raw_allowed_ip = profile.get("allowed_ip")
-    allowed_ip = _normalize_stored_ip(raw_allowed_ip)
     if role not in {"user", "admin"} or not isinstance(email, str):
         raise HTTPException(
             status_code=403,
@@ -141,32 +215,51 @@ def require_active_account(
             status_code=403,
             detail={"code": "account_inactive", "message": "This account is not active."},
         )
-    if raw_allowed_ip is None or (
-        isinstance(raw_allowed_ip, str) and not raw_allowed_ip.strip()
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "ip_not_configured",
-                "message": "An approved IP address has not been configured for this account.",
-            },
-        )
-    if allowed_ip is None:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "ip_configuration_invalid",
-                "message": "The IP restriction for this account is invalid.",
-            },
-        )
-    if allowed_ip != client_ip:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "ip_not_allowed",
-                "message": "This IP address is not approved for this account.",
-            },
-        )
+
+    raw_allowed_ip = profile.get("allowed_ip")
+    allowed_ip = _normalize_stored_ip(raw_allowed_ip)
+    if role == "admin":
+        # Super Administrator: authenticated from any IP. The stored value is ignored.
+        client_ip = trusted_client_ip_or_none(request)
+    else:
+        # Customers fail closed: the IP must be verifiable, configured, valid and equal.
+        client_ip = request_client_ip(request)  # 503 when it cannot be verified
+        if raw_allowed_ip is None or (
+            isinstance(raw_allowed_ip, str) and not raw_allowed_ip.strip()
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ip_not_configured",
+                    "message": "An approved IP address has not been configured for this account.",
+                },
+            )
+        if allowed_ip is None:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ip_configuration_invalid",
+                    "message": "The IP restriction for this account is invalid.",
+                },
+            )
+        if allowed_ip != client_ip:
+            # Slow down repeated wrong-IP attempts on one account (e.g. someone cycling
+            # through addresses). Only mismatches are counted, so a request from the
+            # registered IP is never blocked by this.
+            ip_mismatch_throttle.check(
+                user_id,
+                limit=_limit_setting(
+                    settings, "auth_ip_mismatch_limit", DEFAULT_IP_MISMATCH_LIMIT
+                ),
+                resource="Authentication",
+            )
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ip_not_allowed",
+                    "message": "This IP address is not approved for this account.",
+                },
+            )
 
     return AccountPrincipal(
         id=user_id,
@@ -182,7 +275,7 @@ def require_admin_account(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AccountPrincipal:
-    """Require a currently active, IP-allowed Supabase admin account."""
+    """Require an active account whose server-side profile role is admin (any IP)."""
     account = require_active_account(request, authorization)
     if account.role != "admin":
         raise HTTPException(status_code=403, detail="Administrator access is required.")
@@ -367,6 +460,15 @@ def _load_jwks(supabase_url: str, *, refresh: bool = False) -> list[dict[str, ob
         cached = _JWKS_CACHE.get(supabase_url)
         if not refresh and cached is not None and now - cached[0] < _JWKS_TTL_SECONDS:
             return cached[1]
+        last_attempt = _JWKS_LAST_ATTEMPT.get(supabase_url)
+        if (
+            refresh
+            and cached is not None
+            and last_attempt is not None
+            and now - last_attempt < _JWKS_MIN_REFRESH_SECONDS
+        ):
+            return cached[1]
+        _JWKS_LAST_ATTEMPT[supabase_url] = now
 
     request = URLRequest(
         f"{supabase_url}/auth/v1/.well-known/jwks.json",
@@ -449,6 +551,11 @@ class SlidingWindowRateLimiter:
         self._requests: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
 
+    def reset(self) -> None:
+        """Forget all recorded requests (used by tests)."""
+        with self._lock:
+            self._requests.clear()
+
     def check(
         self, principal: str, *, limit: int, resource: str = "Market-data"
     ) -> None:
@@ -491,3 +598,21 @@ class SlidingWindowRateLimiter:
 
 
 market_data_rate_limiter = SlidingWindowRateLimiter()
+
+DEFAULT_API_RATE_LIMIT = 120  # authenticated requests per account per minute
+DEFAULT_AUTH_FAILURE_LIMIT = 60  # failed authentications per trusted client IP per window
+_AUTH_FAILURE_WINDOW_SECONDS = 300
+DEFAULT_IP_MISMATCH_LIMIT = 10  # wrong-IP attempts per customer account per window
+_IP_MISMATCH_WINDOW_SECONDS = 900
+_UNKNOWN_CLIENT_KEY = "unknown-client"
+_UNKNOWN_CLIENT_LIMIT_MULTIPLIER = 5
+
+# Keyed by authenticated account id (a verified UUID); cannot be shared between users.
+api_rate_limiter = SlidingWindowRateLimiter()
+# Keyed by trusted client IP; counts failed authentications only.
+failed_auth_throttle = SlidingWindowRateLimiter(window_seconds=_AUTH_FAILURE_WINDOW_SECONDS)
+# Keyed by verified account id; counts customer wrong-IP attempts only.
+ip_mismatch_throttle = SlidingWindowRateLimiter(window_seconds=_IP_MISMATCH_WINDOW_SECONDS)
+
+# NOTE: all limiters are process-local memory. They reset on restart or idle spin-down
+# and are not shared between instances (the Render service runs one instance).

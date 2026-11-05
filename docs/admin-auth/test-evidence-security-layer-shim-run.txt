@@ -1,0 +1,64 @@
+[OUTDATED - SUPERSEDED] This 58-test log predates commit 6984e29. Current evidence: docs/admin-auth/final/test-evidence-shim-run-head-b79c05d.txt (71 tests). Kept only for history.
+
+LOCAL STAND-IN HARNESS RUN (NOT the real pytest/FastAPI suite). Mocked Supabase. Real app/security.py, PyJWT, Starlette Request.
+
+PASS tests.test_security::test_account_access_requires_active_status_and_exact_host_ip[active-192.0.2.10-None-None]
+PASS tests.test_security::test_account_access_requires_active_status_and_exact_host_ip[paused-192.0.2.10-403-account_paused]
+PASS tests.test_security::test_account_access_requires_active_status_and_exact_host_ip[active-192.0.2.11-403-ip_not_allowed]
+PASS tests.test_security::test_account_access_requires_active_status_and_exact_host_ip[active-None-403-ip_not_configured]
+PASS tests.test_security::test_account_access_requires_active_status_and_exact_host_ip[active-192.0.2.0/24-403-ip_configuration_invalid]
+PASS tests.test_security::test_es256_token_uses_matching_public_jwk_without_shared_secret
+PASS tests.test_security::test_hs256_token_checks_issuer_audience_and_required_auth_role
+PASS tests.test_security::test_ipv6_allowlist_matches_only_the_canonical_exact_host[2001:0db8:0:0:0:0:0:1/128-None]
+PASS tests.test_security::test_ipv6_allowlist_matches_only_the_canonical_exact_host[2001:db8::2/128-403]
+PASS tests.test_security::test_non_admin_cannot_use_admin_dependency
+PASS tests.test_security::test_production_ip_uses_only_the_trusted_cloudflare_header
+PASS tests.test_security::test_rs256_token_uses_matching_public_jwk_without_shared_secret
+PASS tests.test_security::test_unsupported_algorithm_and_missing_bearer_fail_closed
+PASS tests.test_auth_ip_policy::test_admin_ignores_missing_or_malformed_stored_ip[None]
+PASS tests.test_auth_ip_policy::test_admin_ignores_missing_or_malformed_stored_ip[]
+PASS tests.test_auth_ip_policy::test_admin_ignores_missing_or_malformed_stored_ip[not-an-ip]
+PASS tests.test_auth_ip_policy::test_admin_ignores_missing_or_malformed_stored_ip[192.0.2.0/24]
+PASS tests.test_auth_ip_policy::test_admin_succeeds_from_multiple_ips[198.51.100.7]
+PASS tests.test_auth_ip_policy::test_admin_succeeds_from_multiple_ips[203.0.113.200]
+PASS tests.test_auth_ip_policy::test_admin_succeeds_from_multiple_ips[2001:db8:abcd::1]
+PASS tests.test_auth_ip_policy::test_admin_succeeds_from_multiple_ips[100.64.12.34]
+PASS tests.test_auth_ip_policy::test_admin_succeeds_when_the_client_ip_cannot_be_determined
+PASS tests.test_auth_ip_policy::test_customer_cannot_bypass_the_ip_check_with_forged_headers
+PASS tests.test_auth_ip_policy::test_customer_fails_from_a_different_ip
+PASS tests.test_auth_ip_policy::test_customer_is_denied_when_the_client_ip_cannot_be_verified
+PASS tests.test_auth_ip_policy::test_customer_succeeds_from_their_registered_ip
+PASS tests.test_auth_ip_policy::test_customer_with_missing_or_malformed_ip_is_denied[None-ip_not_configured]
+PASS tests.test_auth_ip_policy::test_customer_with_missing_or_malformed_ip_is_denied[-ip_not_configured]
+PASS tests.test_auth_ip_policy::test_customer_with_missing_or_malformed_ip_is_denied[   -ip_not_configured]
+PASS tests.test_auth_ip_policy::test_customer_with_missing_or_malformed_ip_is_denied[not-an-ip-ip_configuration_invalid]
+PASS tests.test_auth_ip_policy::test_customer_with_missing_or_malformed_ip_is_denied[192.0.2.0/24-ip_configuration_invalid]
+PASS tests.test_auth_ip_policy::test_customer_with_missing_or_malformed_ip_is_denied[2001:db8::/64-ip_configuration_invalid]
+PASS tests.test_auth_ip_policy::test_default_rate_limit_allows_normal_dashboard_polling
+PASS tests.test_auth_ip_policy::test_deleted_profile_is_denied
+PASS tests.test_auth_ip_policy::test_demoted_admin_becomes_subject_to_user_restrictions_immediately
+PASS tests.test_auth_ip_policy::test_error_responses_do_not_expose_secrets
+PASS tests.test_auth_ip_policy::test_expired_token_is_401
+PASS tests.test_auth_ip_policy::test_failed_attempts_never_block_a_valid_token_or_other_clients
+PASS tests.test_auth_ip_policy::test_failed_auth_is_not_counted_without_a_trusted_client_ip
+PASS tests.test_auth_ip_policy::test_forged_header_does_not_make_a_customer_an_admin_or_change_admin_identity
+PASS tests.test_auth_ip_policy::test_inactive_account_is_denied[inactive]
+PASS tests.test_auth_ip_policy::test_inactive_account_is_denied[disabled]
+PASS tests.test_auth_ip_policy::test_inactive_account_is_denied[]
+PASS tests.test_auth_ip_policy::test_inactive_account_is_denied[None]
+PASS tests.test_auth_ip_policy::test_missing_or_malformed_authorization_is_401
+PASS tests.test_auth_ip_policy::test_non_admin_cannot_use_admin_dependency
+PASS tests.test_auth_ip_policy::test_owner_email_alone_does_not_grant_admin
+PASS tests.test_auth_ip_policy::test_paused_account_is_denied[user]
+PASS tests.test_auth_ip_policy::test_paused_account_is_denied[admin]
+PASS tests.test_auth_ip_policy::test_pausing_an_account_revokes_an_unexpired_token_immediately
+PASS tests.test_auth_ip_policy::test_per_account_rate_limit_returns_429_with_retry_after
+PASS tests.test_auth_ip_policy::test_promoting_a_customer_does_not_happen_from_the_client_side
+PASS tests.test_auth_ip_policy::test_rate_limiting_does_not_affect_unrelated_users
+PASS tests.test_auth_ip_policy::test_repeated_failed_authentication_is_throttled_with_429
+PASS tests.test_auth_ip_policy::test_tampered_signature_is_401
+PASS tests.test_auth_ip_policy::test_token_claiming_an_admin_jwt_role_is_rejected
+PASS tests.test_auth_ip_policy::test_token_for_another_project_audience_or_time_is_401
+PASS tests.test_auth_ip_policy::test_unknown_role_is_denied
+
+RESULT: 58 passed, 0 failed

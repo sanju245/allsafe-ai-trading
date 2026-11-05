@@ -24,8 +24,10 @@ class CurrentAccountResponse(BaseModel):
     email: str
     role: Literal["user", "admin"]
     status: Literal["active", "paused"]
-    allowed_ip: str
-    client_ip: str
+    # allowed_ip is enforced for customers; the Super Administrator is exempt (may be null).
+    allowed_ip: str | None
+    # Best-effort for administrators (may be null); always present for customers.
+    client_ip: str | None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -43,7 +45,7 @@ class ChangePasswordRequest(BaseModel):
 
 @router.get("/client-ip", response_model=ClientIPResponse)
 def get_client_ip(request: Request, response: Response) -> ClientIPResponse:
-    """Return the trusted source IP for first-admin bootstrap and allowlisting."""
+    """Return the trusted source IP for first-admin bootstrap and customer allowlisting."""
     response.headers["Cache-Control"] = "no-store"
     return ClientIPResponse(client_ip=request_client_ip(request))
 
@@ -53,10 +55,8 @@ def get_current_account(
     response: Response,
     account: AccountPrincipal = Depends(require_active_account),
 ) -> CurrentAccountResponse:
-    """Return a profile only when its current active status and IP allowlist pass."""
+    """Return the profile when the current status passes and, for customers, the exact-IP rule."""
     response.headers["Cache-Control"] = "no-store"
-    # require_active_account rejects profiles without a single assigned IP.
-    assert account.allowed_ip is not None
     return CurrentAccountResponse(
         id=account.id,
         email=account.email,
@@ -72,7 +72,7 @@ def change_password(
     body: ChangePasswordRequest,
     account: AccountPrincipal = Depends(require_active_account),
 ) -> Response:
-    """Change the signed-in user's password after rechecking active status and IP."""
+    """Change the signed-in user's password after rechecking active status and IP rules."""
     try:
         update_auth_user_password(account.id, body.password.get_secret_value())
     except SupabaseAdminAPIError as exc:

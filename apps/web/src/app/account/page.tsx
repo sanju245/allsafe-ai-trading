@@ -100,11 +100,11 @@ export default function AccountPage() {
           </div>
           <div>
             <dt className="text-xs text-slate-500">Allowed IP</dt>
-            <dd className="mt-1 break-all font-mono text-slate-200">{profile.allowed_ip ?? "Not restricted"}</dd>
+            <dd className="mt-1 break-all font-mono text-slate-200">{profile.role === "admin" ? "Any network (Super Administrator)" : (profile.allowed_ip ?? "Not set")}</dd>
           </div>
           <div>
             <dt className="text-xs text-slate-500">Current IP</dt>
-            <dd className="mt-1 break-all font-mono text-slate-200">{profile.client_ip}</dd>
+            <dd className="mt-1 break-all font-mono text-slate-200">{profile.client_ip ?? "Unavailable"}</dd>
           </div>
         </dl>
 

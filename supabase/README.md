@@ -79,7 +79,9 @@ environment file, a response, or a browser request.
 
    Replace the example address and email with the values from steps 1 and 2.
    Confirm exactly one row was updated. Do not use a CIDR range; the migration
-   rejects anything other than one IPv4 or IPv6 host address.
+   rejects anything other than one IPv4 or IPv6 host address. The stored address
+   is informational for the administrator: the Super Administrator may sign in from
+   any network. Regular customers remain restricted to their `allowed_ip`.
 4. Sign in at `https://allsafe-ai-trading.vercel.app/login` from that IP, then
    confirm `GET /api/v1/auth/me` returns the `admin` role. Admin actions are
    served by the API and checked against the current profile status and IP on
