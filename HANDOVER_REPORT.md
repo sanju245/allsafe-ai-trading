@@ -1,9 +1,9 @@
 # AllSafe AI Trading — Independent Verification Handover Report (`HANDOVER_REPORT.md`)
 
-* **Audit Date**: November 5, 2026
-* **Repository**: [`https://github.com/sanju245/allsafe-ai-trading`](https://github.com/sanju245/allsafe-ai-trading)
-* **Verification Branch**: `audit/landing-auth-integration-verification`
-* **Preserved Branches**: `main` (`ee90f9e`), `fix/admin-login-any-ip` (`bdc3445`), `feature/landing-page` (`759c09e`)
+- **Audit Date**: November 5, 2026
+- **Repository**: [`https://github.com/sanju245/allsafe-ai-trading`](https://github.com/sanju245/allsafe-ai-trading)
+- **Verification Branch**: `audit/landing-auth-integration-verification`
+- **Preserved Branches**: `main` (`ee90f9e`), `fix/admin-login-any-ip` (`bdc3445`), `feature/landing-page` (`759c09e`)
 
 ## 1. Integration Recommendation
 

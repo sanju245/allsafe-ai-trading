@@ -1,6 +1,13 @@
-// Server-side helper for talking to the FastAPI backend.
-// Only import this from Server Components or route handlers: API_BASE_URL is
-// intentionally not exposed to the browser.
+// Server-side health check helper + re-exported browser-safe API client helpers.
+// Server-only environment variables (process.env.API_BASE_URL) are read exclusively inside getApiHealth() on the server.
+
+export {
+  PUBLIC_API_BASE_URL,
+  API_BASE_URL,
+  AuthApiError,
+  fetchApi,
+  type FetchApiOptions,
+} from "./clientApi";
 
 export type HealthResult =
   | {
@@ -13,15 +20,23 @@ export type HealthResult =
   | { ok: false; reason: string };
 
 export async function getApiHealth(): Promise<HealthResult> {
-  const base = process.env.API_BASE_URL;
+  const base =
+    process.env.API_BASE_URL ||
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    (process.env.NODE_ENV === "production"
+      ? "https://allsafe-ai-api.onrender.com"
+      : "");
   if (!base) {
     return { ok: false, reason: "API_BASE_URL is not set" };
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
+
   try {
-    const res = await fetch(`${base}/health`, {
+    const res = await fetch(`${base.replace(/\/+$/, "")}/health`, {
       cache: "no-store",
-      signal: AbortSignal.timeout(3000),
+      signal: controller.signal,
     });
     if (!res.ok) {
       return { ok: false, reason: `API responded with HTTP ${res.status}` };
@@ -46,5 +61,7 @@ export async function getApiHealth(): Promise<HealthResult> {
     };
   } catch {
     return { ok: false, reason: "API is not reachable" };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

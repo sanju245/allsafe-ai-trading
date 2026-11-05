@@ -43,8 +43,8 @@ export default function TerminalPage() {
                 Rule-based analysis for NIFTY 50 and BANK NIFTY
               </h1>
               <p className="mt-2 max-w-3xl text-sm text-slate-300 sm:text-base">
-                Real-time 5-minute IST candlestick charts and unanimous 5-indicator
-                confirmation (UT Bot Alerts, EMA 9/21, RSI 14, MACD, Supertrend),
+                Real-time 5-minute IST candlestick charts and unanimous 5-AI-Agent
+                consensus confirmation across trend, pressure, breakout range, regime, and risk,
                 with confirmed candles strictly separated from the forming candle.
               </p>
             </div>

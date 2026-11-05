@@ -4,335 +4,203 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
+import { fetchApi, AuthApiError } from "@/lib/api";
 
-export type AuthUser = { id: string; email: string };
-export type AuthSession = { access_token: string; user: AuthUser };
-export type AuthProfile = {
+export interface AppUser {
   id: string;
+  username?: string;
   email: string;
-  role: "admin" | "user";
-  status: "active" | "paused";
-  allowed_ip: string | null;
-  client_ip: string;
-};
+  role: "admin" | "user" | "operator" | "auditor" | string;
+  is_super_admin?: boolean;
+  status: "active" | "paused" | "locked" | string;
+  allowed_ip?: string | null;
+  permissions?: string[];
+  mfa_enabled?: boolean;
+  last_login_at?: string | null;
+  last_login_ip?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
 
-type AuthContextValue = {
+export interface AuthSession {
+  access_token: string;
+}
+
+export interface AuthContextValue {
+  user: AppUser | null;
+  token: string | null;
   session: AuthSession | null;
-  profile: AuthProfile | null;
+  csrfToken: string | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
-  changePassword: (password: string) => Promise<void>;
-  refreshProfile: () => Promise<void>;
-};
+  error: string | null;
+  signIn: (token: string, user: AppUser, csrfToken?: string) => void;
+  signOut: (options?: { redirectUrl?: string }) => Promise<void>;
+  refreshUser: () => Promise<AppUser | null>;
+  clearError: () => void;
+}
 
-type JsonRecord = Record<string, unknown>;
-type ApiAuthReply = {
-  access_token?: unknown;
-  user?: unknown;
-};
+const STORAGE_KEY = "allsafe_access_token";
+const CSRF_STORAGE_KEY = "allsafe_csrf_token";
 
-const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")
-  .trim()
-  .replace(/\/+$/, "");
-const SUPABASE_ANON_KEY = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "").trim();
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  (process.env.NODE_ENV === "production"
-    ? "https://allsafe-ai-api.onrender.com"
-    : "http://localhost:8000")
-)
-  .trim()
-  .replace(/\/+$/, "");
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const AuthContext = createContext<AuthContextValue | null>(null);
-
-class ProfileCheckError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly shouldSignOut: boolean,
-  ) {
-    super(message);
-    this.name = "ProfileCheckError";
+function readStorageItem(key: string): string | null {
+  if (typeof window === "undefined") {
+    return null;
   }
-}
-
-function asRecord(value: unknown): JsonRecord | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : null;
-}
-
-async function readJson(response: Response): Promise<unknown> {
   try {
-    return await response.json();
+    const value = window.localStorage.getItem(key)?.trim();
+    return value || null;
   } catch {
     return null;
   }
-}
-
-function errorText(body: unknown, fallback: string): string {
-  const record = asRecord(body);
-  if (!record) return fallback;
-  for (const key of ["msg", "message", "error_description", "error", "detail"]) {
-    if (typeof record[key] === "string" && record[key].trim()) {
-      return record[key].trim();
-    }
-  }
-  return fallback;
-}
-
-function accessDeniedMessage(body: unknown, status: number): string {
-  const record = asRecord(body);
-  const detail = asRecord(record?.detail);
-  const code = [record?.code, record?.reason, record?.error, detail?.code, detail?.reason]
-    .filter((value): value is string => typeof value === "string")
-    .join(" ")
-    .toLowerCase();
-  const text = [record?.detail, record?.message, record?.msg, detail?.message, detail?.detail]
-    .filter((value): value is string => typeof value === "string")
-    .join(" ")
-    .toLowerCase();
-  const allowedIp =
-    (typeof record?.allowed_ip === "string" && record.allowed_ip) ||
-    (typeof detail?.allowed_ip === "string" && detail.allowed_ip);
-  const clientIp =
-    (typeof record?.client_ip === "string" && record.client_ip) ||
-    (typeof detail?.client_ip === "string" && detail.client_ip);
-
-  if (/account_paused|disabled|account_suspended/.test(code)) {
-    return "This login is paused. Contact the administrator to restore access.";
-  }
-  if (/ip_not_allowed|ip_not_configured|ip_configuration_invalid/.test(code)) {
-    const allowed = allowedIp ? ` The approved IP is ${allowedIp}.` : "";
-    const current = clientIp ? ` The current IP is ${clientIp}.` : "";
-    return `This login is not allowed from the current IP.${allowed}${current}`;
-  }
-  if (/paused.*ip|ip.*paused/.test(text)) {
-    return "Account access could not be verified. Ask the administrator to check the account status and approved IP.";
-  }
-  if (/paused|disabled|account_suspended/.test(`${code} ${text}`)) {
-    return "This login is paused. Contact the administrator to restore access.";
-  }
-  if (/ip|address|allow.?list|network/.test(`${code} ${text}`) || allowedIp) {
-    const allowed = allowedIp ? ` The approved IP is ${allowedIp}.` : "";
-    const current = clientIp ? ` The current IP is ${clientIp}.` : "";
-    return `This login is not allowed from the current IP.${allowed}${current}`;
-  }
-  if (/inactive|not active/.test(`${code} ${text}`)) {
-    return "This account is not active. Contact the administrator for help.";
-  }
-  if (status === 401) return "The email or password is incorrect, or the sign-in has expired.";
-  if (status === 403) return "This login is not allowed to access the account.";
-  if (status >= 500) return "Account verification is temporarily unavailable. Try again soon.";
-  return "Could not verify this account. Check your connection and try again.";
-}
-
-function parseProfile(body: unknown): AuthProfile | null {
-  const outer = asRecord(body);
-  const nested = asRecord(outer?.profile) ?? outer;
-  if (!nested) return null;
-
-  const { id, email, role, status, allowed_ip: allowedIp, client_ip: clientIp } = nested;
-  if (
-    typeof id !== "string" ||
-    typeof email !== "string" ||
-    (role !== "admin" && role !== "user") ||
-    (status !== "active" && status !== "paused") ||
-    (allowedIp !== null && typeof allowedIp !== "string") ||
-    typeof clientIp !== "string"
-  ) {
-    return null;
-  }
-
-  return {
-    id,
-    email,
-    role,
-    status,
-    allowed_ip: allowedIp,
-    client_ip: clientIp,
-  };
-}
-
-function requireSupabaseConfig(): void {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    throw new Error(
-      "Account sign-in is not configured yet. The administrator must set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in the web app settings.",
-    );
-  }
-}
-
-async function signOutFromSupabase(accessToken: string): Promise<void> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
-  try {
-    await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${accessToken}`,
-      },
-      cache: "no-store",
-      credentials: "omit",
-    });
-  } catch {
-    // Local memory is still cleared even if Supabase logout is temporarily unreachable.
-  }
-}
-
-async function fetchProfile(accessToken: string): Promise<AuthProfile> {
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-      cache: "no-store",
-      credentials: "omit",
-    });
-  } catch {
-    throw new Error("Could not reach the account service. Try again soon.");
-  }
-
-  const body = await readJson(response);
-  if (!response.ok) {
-    throw new ProfileCheckError(
-      accessDeniedMessage(body, response.status),
-      response.status,
-      response.status === 401 || response.status === 403,
-    );
-  }
-
-  const profile = parseProfile(body);
-  if (!profile) {
-    throw new ProfileCheckError(
-      "The account service returned an unexpected profile. Please contact the administrator.",
-      response.status,
-      true,
-    );
-  }
-  if (profile.status === "paused") {
-    throw new ProfileCheckError(
-      "This login is paused. Contact the administrator to restore access.",
-      403,
-      true,
-    );
-  }
-  return profile;
-}
-
-function parseAuthUser(value: unknown): AuthUser | null {
-  const record = asRecord(value);
-  if (typeof record?.id !== "string" || typeof record.email !== "string") return null;
-  return { id: record.id, email: record.email };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<AuthSession | null>(null);
-  const [profile, setProfile] = useState<AuthProfile | null>(null);
-  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const [token, setToken] = useState<string | null>(() => readStorageItem(STORAGE_KEY));
+  const [csrfToken, setCsrfToken] = useState<string | null>(() => readStorageItem(CSRF_STORAGE_KEY));
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const isMountedRef = useRef(false);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    requireSupabaseConfig();
-    setLoading(true);
+  const clearSession = useCallback(() => {
     try {
-      const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-        method: "POST",
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ email: email.trim(), password }),
-        cache: "no-store",
-        credentials: "omit",
-      });
-      const body = await readJson(response);
-      if (!response.ok) {
-        throw new Error(errorText(body, "Sign-in failed. Check your email and password."));
-      }
-
-      const authReply = asRecord(body) as ApiAuthReply | null;
-      const accessToken = authReply?.access_token;
-      const user = parseAuthUser(authReply?.user);
-      if (typeof accessToken !== "string" || !accessToken || !user) {
-        throw new Error("Supabase did not return a valid sign-in session.");
-      }
-
-      try {
-        const nextProfile = await fetchProfile(accessToken);
-        setSession({ access_token: accessToken, user });
-        setProfile(nextProfile);
-      } catch (cause) {
-        await signOutFromSupabase(accessToken);
-        throw cause;
-      }
-    } finally {
-      setLoading(false);
+      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(CSRF_STORAGE_KEY);
+    } catch {
+      // Ignore storage clear failures
     }
+    setToken(null);
+    setCsrfToken(null);
+    setUser(null);
   }, []);
 
-  const signOut = useCallback(async () => {
-    setLoading(true);
-    try {
-      if (session) await signOutFromSupabase(session.access_token);
-    } finally {
-      setSession(null);
-      setProfile(null);
+  const refreshUser = useCallback(async (): Promise<AppUser | null> => {
+    const currentToken = readStorageItem(STORAGE_KEY);
+    if (!currentToken) {
+      setUser(null);
       setLoading(false);
+      return null;
     }
-  }, [session]);
 
-  const changePassword = useCallback(async (password: string) => {
-    if (!session) throw new Error("Sign in before changing your password.");
-    setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/password`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ password }),
-        cache: "no-store",
-        credentials: "omit",
+      const response = await fetchApi<AppUser>("/api/v1/auth/me", {
+        token: currentToken,
       });
-      const body = await readJson(response);
-      if (!response.ok) {
-        throw new Error(accessDeniedMessage(body, response.status));
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [session]);
 
-  const refreshProfile = useCallback(async () => {
-    if (!session) {
-      setProfile(null);
-      return;
-    }
-    setLoading(true);
-    try {
-      setProfile(await fetchProfile(session.access_token));
-    } catch (cause) {
-      if (cause instanceof ProfileCheckError && cause.shouldSignOut) {
-        await signOutFromSupabase(session.access_token);
-        setSession(null);
-        setProfile(null);
+      if (isMountedRef.current) {
+        setToken(currentToken);
+        setUser(response);
+        setError(null);
       }
-      throw cause;
+      return response;
+    } catch (err) {
+      if (!isMountedRef.current) {
+        return null;
+      }
+
+      if (err instanceof AuthApiError && (err.status === 401 || err.status === 403)) {
+        clearSession();
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Unable to authenticate session.");
+      }
+
+      return null;
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
-  }, [session]);
+  }, [clearSession]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    void refreshUser();
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [refreshUser]);
+
+  const signIn = useCallback(
+    (newToken: string, newUser: AppUser, newCsrfToken?: string) => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, newToken);
+        if (newCsrfToken) {
+          window.localStorage.setItem(CSRF_STORAGE_KEY, newCsrfToken);
+        }
+      } catch {
+        // Continue even if localStorage is blocked
+      }
+      setToken(newToken);
+      if (newCsrfToken) {
+        setCsrfToken(newCsrfToken);
+      }
+      setUser(newUser);
+      setError(null);
+      setLoading(false);
+    },
+    [],
+  );
+
+  const signOut = useCallback(
+    async (options?: { redirectUrl?: string }) => {
+      const currentToken = readStorageItem(STORAGE_KEY);
+      const currentCsrf = readStorageItem(CSRF_STORAGE_KEY);
+
+      if (currentToken) {
+        try {
+          await fetchApi("/api/v1/auth/logout", {
+            method: "POST",
+            token: currentToken,
+            csrfToken: currentCsrf,
+          });
+        } catch {
+          // Local session clear remains authoritative if API logout fails
+        }
+      }
+
+      clearSession();
+      router.push(options?.redirectUrl ?? "/login");
+      router.refresh();
+    },
+    [clearSession, router],
+  );
+
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  const session = useMemo<AuthSession | null>(
+    () => (token ? { access_token: token } : null),
+    [token],
+  );
 
   const value = useMemo<AuthContextValue>(
-    () => ({ session, profile, loading, signIn, signOut, changePassword, refreshProfile }),
-    [session, profile, loading, signIn, signOut, changePassword, refreshProfile],
+    () => ({
+      user,
+      token,
+      session,
+      csrfToken,
+      loading,
+      error,
+      signIn,
+      signOut,
+      refreshUser,
+      clearError,
+    }),
+    [user, token, session, csrfToken, loading, error, signIn, signOut, refreshUser, clearError],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -340,6 +208,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthContextValue {
   const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used inside AuthProvider.");
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
   return context;
 }
+
+export default AuthProvider;

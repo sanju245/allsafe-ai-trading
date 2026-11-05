@@ -1,195 +1,337 @@
-"""Administrative customer-account operations backed by Supabase Auth Admin API."""
+"""Admin Control Center endpoints (`/api/v1/admin/*`).
 
-import re
-from datetime import datetime
-from typing import Literal
-from uuid import UUID
+Provides:
+* GET /api/v1/admin/stats — Key platform, user, session, and market-feed statistics
+* GET /api/v1/admin/users — Searchable, filterable account directory
+* POST /api/v1/admin/users — Create user or administrator account
+* PATCH|PUT /api/v1/admin/users/{user_id} — Update role, status, global/CIDR IP rules, or password
+* DELETE /api/v1/admin/users/{user_id} — Delete customer account (Super Admin protected)
+* POST /api/v1/admin/users/{user_id}/unlock — Clear brute-force lockout
+* POST /api/v1/admin/users/{user_id}/revoke-sessions — Revoke all active sessions for a user
+* GET|PATCH /api/v1/admin/roles — Role and permission management
+* GET|PATCH /api/v1/admin/content — Content and application configuration management
+* GET /api/v1/admin/audit-logs — Immutable system activity & security audit trail
+* GET|PATCH /api/v1/admin/settings — System & security settings management
+* GET /api/v1/admin/health & POST /api/v1/admin/errors/clear — System health & error diagnostics
+"""
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, SecretStr, field_validator
+from __future__ import annotations
 
-from app.security import AccountPrincipal, require_admin_account
-from app.supabase_admin import (
-    SupabaseAdminAPIError,
-    create_auth_user,
-    delete_auth_user,
-    get_profile,
-    list_customer_profiles,
-    sanitized_admin_error,
-    set_auth_user_ban,
-    update_profile,
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+
+from app.auth.models import (
+    AdminActionResponse,
+    AdminAuditLogSchema,
+    AdminContentConfigSchema,
+    AdminHealthResponse,
+    AdminRoleDefinitionSchema,
+    AdminStatsResponse,
+    AdminSystemSettingsSchema,
+    AppUserSchema,
+    CreateUserRequest,
+    SessionInfoSchema,
+    UpdateContentConfigRequest,
+    UpdateRolePermissionsRequest,
+    UpdateSystemSettingsRequest,
+    UpdateUserRequest,
 )
+from app.auth.security import extract_client_ip
+from app.auth.store import AuthStore, StoredSession, get_auth_store
+from app.routers.auth import get_current_user_and_session
+from app.routers.live import get_live_runtime
 
-router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
-AccountStatus = Literal["active", "paused"]
-_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-
-
-class CreateUserRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    email: str = Field(min_length=3, max_length=254)
-    password: SecretStr
-    allowed_ip: IPvAnyAddress
-
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if not _EMAIL_PATTERN.fullmatch(normalized):
-            raise ValueError("email must be a valid email address")
-        return normalized
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, value: SecretStr) -> SecretStr:
-        password = value.get_secret_value()
-        if not 8 <= len(password) <= 128:
-            raise ValueError("password must be between 8 and 128 characters")
-        return value
+router = APIRouter(prefix="/api/v1/admin", tags=["admin-control-center"])
 
 
-class UpdateUserRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    status: AccountStatus | None = None
-    allowed_ip: IPvAnyAddress | None = None
-
-
-class UserResponse(BaseModel):
-    id: UUID
-    email: str
-    role: Literal["user", "admin"]
-    status: AccountStatus
-    allowed_ip: str | None
-    created_at: datetime
-
-
-class UserListResponse(BaseModel):
-    users: list[UserResponse]
-
-
-def _user_response(profile: dict[str, object]) -> UserResponse:
-    try:
-        return UserResponse.model_validate(profile)
-    except Exception:
-        # Do not include provider bodies or credentials in the public response.
-        raise HTTPException(
-            status_code=502,
-            detail="Supabase returned an incomplete account profile.",
-        ) from None
-
-
-def _customer_profile(user_id: UUID) -> dict[str, object]:
-    try:
-        profile = get_profile(str(user_id))
-    except SupabaseAdminAPIError as exc:
-        raise sanitized_admin_error(exc) from None
-    if profile is None:
-        raise HTTPException(status_code=404, detail="The account was not found.")
-    if profile.get("role") != "user":
-        raise HTTPException(
-            status_code=409,
-            detail="Only customer accounts can be managed through this endpoint.",
+def require_admin_user(
+    request: Request,
+    pair: tuple[AppUserSchema, StoredSession] = Depends(get_current_user_and_session),
+    store: AuthStore = Depends(get_auth_store),
+) -> AppUserSchema:
+    """Enforce that the caller is an authenticated, active Administrator or Super Admin."""
+    user, _ = pair
+    if not (user.is_super_admin or user.role in {"admin", "operator", "auditor"}):
+        store.record_audit_log(
+            actor_id=user.id,
+            actor_email=user.email,
+            action="admin.access.denied",
+            target_type="endpoint",
+            target_id=request.url.path,
+            severity="warning",
+            ip_address=extract_client_ip(request),
+            status="denied",
+            details=f"Non-admin user (role={user.role}) attempted to access {request.method} {request.url.path}.",
         )
-    return profile
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator permissions are required to access the Admin Control Center.",
+        )
+    # Write operations require full admin or super_admin (unless operator updating content)
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        if user.role == "auditor":
+            raise HTTPException(status_code=403, detail="Auditor role has read-only access.")
+        if user.role == "operator" and not request.url.path.endswith("/content"):
+            raise HTTPException(status_code=403, detail="Operator role can only modify content settings.")
+    return user
 
 
-@router.get("/users", response_model=UserListResponse)
-def get_users(
-    _: AccountPrincipal = Depends(require_admin_account),
-) -> UserListResponse:
-    try:
-        profiles = list_customer_profiles()
-    except SupabaseAdminAPIError as exc:
-        raise sanitized_admin_error(exc) from None
-    return UserListResponse(users=[_user_response(profile) for profile in profiles])
+@router.get("/stats", response_model=AdminStatsResponse)
+def get_admin_stats(
+    request: Request,
+    response: Response,
+    _: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AdminStatsResponse:
+    response.headers["Cache-Control"] = "no-store"
+    rt = get_live_runtime(request)
+    snap = rt.stream_manager.status_snapshot()
+    return store.get_stats(
+        feed_state=snap.feed_state.value,
+        session_open=snap.session_open,
+    )
 
 
-@router.post(
-    "/users",
-    response_model=UserResponse,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.get("/users", response_model=list[AppUserSchema])
+def list_users(
+    response: Response,
+    search: str | None = Query(default=None),
+    role: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    _: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> list[AppUserSchema]:
+    response.headers["Cache-Control"] = "no-store"
+    return store.list_users(search=search, role=role, status=status)
+
+
+@router.post("/users", response_model=AppUserSchema, status_code=201)
 def create_user(
-    body: CreateUserRequest,
-    _: AccountPrincipal = Depends(require_admin_account),
-) -> UserResponse:
-    user_id: UUID | None = None
-    try:
-        auth_user = create_auth_user(
-            body.email,
-            body.password.get_secret_value(),
-        )
-        user_id = UUID(auth_user["id"])
-        profile = update_profile(
-            str(user_id),
-            {"allowed_ip": body.allowed_ip.compressed},
-        )
-        if profile is None:
-            raise SupabaseAdminAPIError(502)
-    except SupabaseAdminAPIError as exc:
-        if user_id is not None:
-            try:
-                delete_auth_user(str(user_id))
-            except SupabaseAdminAPIError:
-                pass
-        raise sanitized_admin_error(exc) from None
-    except ValueError:
-        if user_id is not None:
-            try:
-                delete_auth_user(str(user_id))
-            except SupabaseAdminAPIError:
-                pass
-        raise HTTPException(
-            status_code=502,
-            detail="Supabase returned an invalid user id.",
-        ) from None
-    return _user_response(profile)
+    payload: CreateUserRequest,
+    request: Request,
+    response: Response,
+    admin_user: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AppUserSchema:
+    response.headers["Cache-Control"] = "no-store"
+    return store.create_user(
+        payload,
+        actor=admin_user,
+        ip_address=extract_client_ip(request),
+    )
 
 
-@router.patch("/users/{user_id}", response_model=UserResponse)
+@router.patch("/users/{user_id}", response_model=AppUserSchema)
+@router.put("/users/{user_id}", response_model=AppUserSchema)
 def update_user(
-    user_id: UUID,
-    body: UpdateUserRequest,
-    _: AccountPrincipal = Depends(require_admin_account),
-) -> UserResponse:
-    changes = body.model_dump(exclude_unset=True)
-    if not changes:
-        raise HTTPException(status_code=422, detail="Set status and/or allowed_ip.")
-    if "status" in changes and changes["status"] is None:
-        raise HTTPException(status_code=422, detail="status cannot be null.")
-    if "allowed_ip" in changes and changes["allowed_ip"] is None:
-        raise HTTPException(status_code=422, detail="allowed_ip must be one exact IP address.")
-    if "allowed_ip" in changes:
-        changes["allowed_ip"] = changes["allowed_ip"].compressed
-
-    profile = _customer_profile(user_id)
-    status_change = changes.get("status")
-    try:
-        if status_change == "active":
-            # Remove the Auth ban first; the DB status remains paused if the next call fails.
-            set_auth_user_ban(str(user_id), paused=False)
-        updated = update_profile(str(user_id), changes)
-        if updated is None:
-            raise HTTPException(status_code=404, detail="The account was not found.")
-        if status_change == "paused":
-            # The profile is already paused, so existing JWTs fail closed even if Auth fails.
-            set_auth_user_ban(str(user_id), paused=True)
-    except SupabaseAdminAPIError as exc:
-        raise sanitized_admin_error(exc) from None
-    return _user_response(updated)
+    user_id: str,
+    payload: UpdateUserRequest,
+    request: Request,
+    response: Response,
+    admin_user: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AppUserSchema:
+    response.headers["Cache-Control"] = "no-store"
+    return store.update_user(
+        user_id,
+        payload,
+        actor=admin_user,
+        ip_address=extract_client_ip(request),
+    )
 
 
-@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/users/{user_id}", response_model=AdminActionResponse)
 def delete_user(
-    user_id: UUID,
-    _: AccountPrincipal = Depends(require_admin_account),
-) -> Response:
-    _customer_profile(user_id)
-    try:
-        # Supabase cascades the profile; backend profile checks then reject outstanding JWTs.
-        delete_auth_user(str(user_id))
-    except SupabaseAdminAPIError as exc:
-        raise sanitized_admin_error(exc) from None
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    user_id: str,
+    request: Request,
+    response: Response,
+    admin_user: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AdminActionResponse:
+    response.headers["Cache-Control"] = "no-store"
+    store.delete_user(
+        user_id,
+        actor=admin_user,
+        ip_address=extract_client_ip(request),
+    )
+    return AdminActionResponse(ok=True, message=f"User '{user_id}' deleted.")
+
+
+@router.post("/users/{user_id}/unlock", response_model=AppUserSchema)
+def unlock_user(
+    user_id: str,
+    request: Request,
+    response: Response,
+    admin_user: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AppUserSchema:
+    response.headers["Cache-Control"] = "no-store"
+    return store.unlock_user(
+        user_id,
+        actor=admin_user,
+        ip_address=extract_client_ip(request),
+    )
+
+
+@router.post("/users/{user_id}/revoke-sessions", response_model=AdminActionResponse)
+def revoke_user_sessions(
+    user_id: str,
+    request: Request,
+    response: Response,
+    admin_user: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AdminActionResponse:
+    response.headers["Cache-Control"] = "no-store"
+    cnt = store.revoke_all_user_sessions(
+        user_id,
+        actor=admin_user,
+        ip_address=extract_client_ip(request),
+    )
+    return AdminActionResponse(ok=True, message=f"Revoked {cnt} active session(s).")
+
+
+@router.get("/sessions", response_model=list[SessionInfoSchema])
+def list_sessions(
+    response: Response,
+    pair: tuple[AppUserSchema, StoredSession] = Depends(get_current_user_and_session),
+    _: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> list[SessionInfoSchema]:
+    response.headers["Cache-Control"] = "no-store"
+    return store.list_active_sessions(current_jti=pair[1].jti)
+
+
+@router.get("/roles", response_model=list[AdminRoleDefinitionSchema])
+def get_roles(
+    response: Response,
+    _: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> list[AdminRoleDefinitionSchema]:
+    response.headers["Cache-Control"] = "no-store"
+    return store.list_roles()
+
+
+@router.patch("/roles/{role_name}", response_model=AdminRoleDefinitionSchema)
+def update_role(
+    role_name: str,
+    payload: UpdateRolePermissionsRequest,
+    request: Request,
+    response: Response,
+    admin_user: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AdminRoleDefinitionSchema:
+    response.headers["Cache-Control"] = "no-store"
+    return store.update_role_permissions(
+        role_name,
+        payload,
+        actor=admin_user,
+        ip_address=extract_client_ip(request),
+    )
+
+
+@router.get("/content", response_model=AdminContentConfigSchema)
+def get_content(
+    response: Response,
+    _: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AdminContentConfigSchema:
+    response.headers["Cache-Control"] = "no-store"
+    return store.get_content_config()
+
+
+@router.patch("/content", response_model=AdminContentConfigSchema)
+def update_content(
+    payload: UpdateContentConfigRequest,
+    request: Request,
+    response: Response,
+    admin_user: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AdminContentConfigSchema:
+    response.headers["Cache-Control"] = "no-store"
+    return store.update_content_config(
+        payload,
+        actor=admin_user,
+        ip_address=extract_client_ip(request),
+    )
+
+
+@router.get("/audit-logs", response_model=list[AdminAuditLogSchema])
+def get_audit_logs(
+    response: Response,
+    search: str | None = Query(default=None),
+    severity: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    _: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> list[AdminAuditLogSchema]:
+    response.headers["Cache-Control"] = "no-store"
+    return store.list_audit_logs(search=search, severity=severity, status=status, limit=limit)
+
+
+@router.get("/settings", response_model=AdminSystemSettingsSchema)
+def get_settings_config(
+    response: Response,
+    _: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AdminSystemSettingsSchema:
+    response.headers["Cache-Control"] = "no-store"
+    return store.get_system_settings()
+
+
+@router.patch("/settings", response_model=AdminSystemSettingsSchema)
+def update_settings_config(
+    payload: UpdateSystemSettingsRequest,
+    request: Request,
+    response: Response,
+    admin_user: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AdminSystemSettingsSchema:
+    response.headers["Cache-Control"] = "no-store"
+    return store.update_system_settings(
+        payload,
+        actor=admin_user,
+        ip_address=extract_client_ip(request),
+    )
+
+
+@router.get("/health", response_model=AdminHealthResponse)
+def get_admin_health(
+    request: Request,
+    response: Response,
+    _: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AdminHealthResponse:
+    response.headers["Cache-Control"] = "no-store"
+    rt = get_live_runtime(request)
+    snap = rt.stream_manager.status_snapshot()
+    market_feed_info = {
+        "provider": snap.provider,
+        "feed_state": snap.feed_state.value,
+        "streaming_enabled": snap.streaming_enabled,
+        "connected": snap.connected,
+        "session_open": snap.session_open,
+        "reconnect_attempts": snap.reconnect_attempts,
+        "last_error": snap.last_error,
+        "instruments": {
+            inst.value: {
+                "feed_state": status.feed_state.value,
+                "confirmed_candle_count": status.confirmed_candle_count,
+                "has_forming_candle": status.has_forming_candle,
+                "is_stale": status.is_stale,
+            }
+            for inst, status in snap.instruments.items()
+        },
+    }
+    return store.get_health_report(market_feed_info=market_feed_info)
+
+
+@router.post("/errors/clear", response_model=AdminActionResponse)
+def clear_admin_errors(
+    request: Request,
+    response: Response,
+    admin_user: AppUserSchema = Depends(require_admin_user),
+    store: AuthStore = Depends(get_auth_store),
+) -> AdminActionResponse:
+    response.headers["Cache-Control"] = "no-store"
+    cnt = store.clear_errors(actor=admin_user, ip_address=extract_client_ip(request))
+    return AdminActionResponse(ok=True, message=f"Cleared {cnt} error entry(ies).")

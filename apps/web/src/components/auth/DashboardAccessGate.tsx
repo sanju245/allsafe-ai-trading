@@ -27,14 +27,15 @@ export function DashboardAccessGate({
     if (loading) return;
 
     if (!user) {
-      const loginUrl = new URL("/login", window.location.origin);
+      const loginRoute = requireAdmin ? "/admin/login" : "/login";
+      const loginUrl = new URL(loginRoute, window.location.origin);
       loginUrl.searchParams.set("next", pathname);
       router.replace(loginUrl.pathname + loginUrl.search);
       return;
     }
 
     if (requireAdmin && !hasAdminAccess(user.role, user.is_super_admin)) {
-      router.replace("/account");
+      router.replace("/terminal");
     }
   }, [user, loading, requireAdmin, pathname, router]);
 

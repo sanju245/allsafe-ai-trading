@@ -73,12 +73,12 @@ function LoginFormContent() {
           AllSafe <span className="text-emerald-400">AI Trading</span>
         </h1>
         <p className="text-sm text-slate-400">
-          Sign in with your administrator username or registered email address
+          Customer Portal Sign-In · Access live NIFTY 50 & BANK NIFTY market intelligence
         </p>
       </div>
 
       <div className="flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3.5 py-2.5 text-[11px] text-emerald-200">
-        <span>Global IP Access Enabled</span>
+        <span>Customer IP Policy &amp; Account Protection Active</span>
         <span className="font-mono text-emerald-300">PBKDF2-SHA256 &middot; TLS</span>
       </div>
 
@@ -171,11 +171,13 @@ function LoginFormContent() {
         </button>
       </form>
 
-      <div className="flex items-center justify-between border-t border-white/10 pt-4 text-xs text-slate-400">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-4 text-xs text-slate-400">
         <Link href="/" className="font-medium text-emerald-300 hover:underline">
           &larr; Back to Landing Page
         </Link>
-        <span className="font-mono text-[11px] text-slate-500">Read-Only Terminal</span>
+        <Link href="/admin/login" className="font-mono text-[11px] text-slate-300 hover:text-emerald-300 hover:underline">
+          Admin Portal Sign In &rarr;
+        </Link>
       </div>
 
       <p className="text-center text-[11px] leading-relaxed text-slate-500">
