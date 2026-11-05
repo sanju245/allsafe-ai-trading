@@ -1,64 +1,135 @@
 "use client";
 
+import { useEffect, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
-import { useAuth } from "@/components/auth/AuthProvider";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "./AuthProvider";
 
-export default function DashboardAccessGate({ children }: { children: ReactNode }) {
+interface DashboardAccessGateProps {
+  children: ReactNode;
+  requireAdmin?: boolean;
+}
+
+function hasAdminAccess(role?: string, isSuperAdmin?: boolean): boolean {
+  if (isSuperAdmin) return true;
+  return role === "admin" || role === "operator" || role === "auditor";
+}
+
+export function DashboardAccessGate({
+  children,
+  requireAdmin = false,
+}: DashboardAccessGateProps) {
+  const { user, loading, signOut } = useAuth();
   const router = useRouter();
-  const { session, profile, loading, signOut } = useAuth();
+  const pathname = usePathname();
 
-  async function leaveProject() {
-    await signOut();
-    router.replace("/login");
-  }
+  useEffect(() => {
+    if (loading) return;
+
+    if (!user) {
+      const loginUrl = new URL("/login", window.location.origin);
+      loginUrl.searchParams.set("next", pathname);
+      router.replace(loginUrl.pathname + loginUrl.search);
+      return;
+    }
+
+    if (requireAdmin && !hasAdminAccess(user.role, user.is_super_admin)) {
+      router.replace("/account");
+    }
+  }, [user, loading, requireAdmin, pathname, router]);
 
   if (loading) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-5xl items-center px-4 py-10 sm:px-6">
-        <p className="rounded-xl border border-white/10 bg-white/[0.025] p-5 text-sm text-slate-300">
-          Checking your account…
-        </p>
-      </main>
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-slate-200"
+      >
+        <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-slate-900/70 px-5 py-3.5 text-sm shadow-xl">
+          <span className="h-2.5 w-2.5 animate-ping rounded-full bg-emerald-400" />
+          <span>Verifying session &amp; security policy...</span>
+        </div>
+      </div>
     );
   }
 
-  if (!session || !profile) {
-    return (
-      <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-4 py-10 sm:px-6">
-        <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-6 sm:p-8">
-          <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">Customer access</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Sign in to use AllSafe</h1>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
-            Your administrator creates your account and approves the public IP address it can use.
-          </p>
-          <Link href="/login" className="mt-5 inline-flex rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
-            Go to sign in
-          </Link>
-        </section>
-      </main>
-    );
+  if (!user || (requireAdmin && !hasAdminAccess(user.role, user.is_super_admin))) {
+    return null;
   }
+
+  const isAdmin = hasAdminAccess(user.role, user.is_super_admin);
 
   return (
-    <>
-      <nav aria-label="Account navigation" className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-6">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Link href="/" className="rounded-lg px-3 py-2 text-slate-200 hover:bg-white/5">Dashboard</Link>
-          <Link href="/account" className="rounded-lg px-3 py-2 text-slate-300 hover:bg-white/5">Account</Link>
-          {profile.role === "admin" && (
-            <Link href="/admin" className="rounded-lg px-3 py-2 text-emerald-200 hover:bg-emerald-400/10">Admin</Link>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="max-w-56 truncate text-xs text-slate-500">{profile.email}</span>
-          <button type="button" onClick={() => void leaveProject()} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-white/5">
-            Sign out
-          </button>
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      {/* Top Global Security & Navigation Strip */}
+      <nav
+        aria-label="Global platform navigation"
+        className="border-b border-white/10 bg-slate-900/80 backdrop-blur-md"
+      >
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-xs sm:px-6 lg:px-8">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+            <Link
+              href="/"
+              className="rounded-lg px-2.5 py-1 font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"
+            >
+              Landing Page
+            </Link>
+            <Link
+              href="/terminal"
+              className={`rounded-lg px-2.5 py-1 font-medium transition ${
+                pathname === "/terminal"
+                  ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                  : "text-slate-300 hover:bg-white/5 hover:text-white"
+              }`}
+            >
+              Live Market Terminal
+            </Link>
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className={`rounded-lg px-2.5 py-1 font-medium transition ${
+                  pathname?.startsWith("/admin")
+                    ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                    : "text-slate-300 hover:bg-white/5 hover:text-white"
+                }`}
+              >
+                Admin Control Center
+              </Link>
+            )}
+            <Link
+              href="/account"
+              className={`rounded-lg px-2.5 py-1 font-medium transition ${
+                pathname === "/account"
+                  ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                  : "text-slate-300 hover:bg-white/5 hover:text-white"
+              }`}
+            >
+              Account &amp; Security
+            </Link>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/70 px-2.5 py-0.5 text-[11px] text-slate-300 sm:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              <span>{user.email}</span>
+              <span className="rounded bg-emerald-500/20 px-1.5 py-0.2 text-[10px] font-semibold uppercase text-emerald-300">
+                {user.is_super_admin ? "SUPER ADMIN" : user.role}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
       </nav>
+
       {children}
-    </>
+    </div>
   );
 }
+
+export default DashboardAccessGate;

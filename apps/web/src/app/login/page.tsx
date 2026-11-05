@@ -1,175 +1,202 @@
 "use client";
 
+import { Suspense, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
-import { useAuth } from "@/components/auth/AuthProvider";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth, type AppUser } from "@/components/auth/AuthProvider";
+import { API_BASE_URL, fetchApi } from "@/lib/api";
 
-const SUPABASE_CONFIGURED = Boolean(
-  process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim(),
-);
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  (process.env.NODE_ENV === "production"
-    ? "https://allsafe-ai-api.onrender.com"
-    : "http://localhost:8000")
-)
-  .trim()
-  .replace(/\/+$/, "");
+interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  csrf_token: string;
+  user: AppUser;
+}
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function LoginFormContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedNext = searchParams.get("next");
+  const { signIn } = useAuth();
+
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [showMfaField, setShowMfaField] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const trimmedId = identifier.trim();
+      const response = await fetchApi<AuthResponse>("/api/v1/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          email: trimmedId,
+          username: trimmedId,
+          password,
+          totp_code: totpCode.trim() || undefined,
+        }),
+      });
+
+      signIn(response.access_token, response.user, response.csrf_token);
+      const isAdmin =
+        response.user.is_super_admin ||
+        response.user.role === "admin" ||
+        response.user.role === "operator" ||
+        response.user.role === "auditor";
+      const targetPath = requestedNext || (isAdmin ? "/admin" : "/terminal");
+      router.replace(targetPath);
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Sign in failed. Verify API configuration and credentials.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-md space-y-6 rounded-2xl border border-white/10 bg-slate-900/60 p-6 shadow-2xl backdrop-blur-xl sm:p-8">
+      <div className="space-y-2 text-center">
+        <div className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-base font-bold text-emerald-400">
+          AS
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-white">
+          AllSafe <span className="text-emerald-400">AI Trading</span>
+        </h1>
+        <p className="text-sm text-slate-400">
+          Sign in with your administrator username or registered email address
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3.5 py-2.5 text-[11px] text-emerald-200">
+        <span>Global IP Access Enabled</span>
+        <span className="font-mono text-emerald-300">PBKDF2-SHA256 &middot; TLS</span>
+      </div>
+
+      {!API_BASE_URL && (
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3.5 text-xs text-amber-200"
+        >
+          Warning: NEXT_PUBLIC_API_BASE_URL is not set. Defaulting to configured API endpoint.
+        </div>
+      )}
+
+      {error && (
+        <div
+          role="alert"
+          className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3.5 text-xs font-medium text-rose-200"
+        >
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-slate-300" htmlFor="identifier">
+            Email address or Admin Username
+          </label>
+          <input
+            id="identifier"
+            type="text"
+            autoComplete="username"
+            required
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="superadmin or admin@allsafe.ai"
+            className="w-full rounded-lg border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-xs font-medium text-slate-300" htmlFor="password">
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••••••"
+            className="w-full rounded-lg border border-white/10 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowMfaField((prev) => !prev)}
+            className="text-xs font-medium text-slate-400 underline-offset-2 hover:text-emerald-300 hover:underline"
+          >
+            {showMfaField ? "Hide 2FA authenticator code" : "Have a 2FA / TOTP code?"}
+          </button>
+
+          {showMfaField && (
+            <div className="mt-2 space-y-1">
+              <label className="block text-xs font-medium text-slate-300" htmlFor="totp-code">
+                Two-Factor Authenticator Code (Optional)
+              </label>
+              <input
+                id="totp-code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={8}
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value)}
+                placeholder="6-digit code"
+                className="w-full rounded-lg border border-white/10 bg-slate-950 px-3.5 py-2 text-sm font-mono text-white placeholder-slate-500 focus:border-emerald-400 focus:outline-none"
+              />
+            </div>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isSubmitting ? "Verifying credentials..." : "Sign In Securely"}
+        </button>
+      </form>
+
+      <div className="flex items-center justify-between border-t border-white/10 pt-4 text-xs text-slate-400">
+        <Link href="/" className="font-medium text-emerald-300 hover:underline">
+          &larr; Back to Landing Page
+        </Link>
+        <span className="font-mono text-[11px] text-slate-500">Read-Only Terminal</span>
+      </div>
+
+      <p className="text-center text-[11px] leading-relaxed text-slate-500">
+        Strictly read-only market analysis terminal. Brute-force protection and session audit logging are active across all networks.
+      </p>
+    </div>
+  );
 }
 
 export default function LoginPage() {
-  const router = useRouter();
-  const { session, loading, signIn } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [clientIp, setClientIp] = useState<string | null>(null);
-  const [ipLoading, setIpLoading] = useState(true);
-  const [ipUnavailable, setIpUnavailable] = useState(false);
-
-  useEffect(() => {
-    if (!loading && session) router.replace("/account");
-  }, [loading, router, session]);
-
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 8000);
-
-    fetch(`${API_BASE_URL}/api/v1/auth/client-ip`, {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      credentials: "omit",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("IP lookup failed");
-        const body: unknown = await response.json();
-        if (!isRecord(body)) throw new Error("Unexpected IP response");
-        const ip = [body.client_ip, body.ip, body.address].find(
-          (value): value is string => typeof value === "string" && value.trim().length > 0,
-        );
-        if (!ip) throw new Error("IP missing from response");
-        if (active) setClientIp(ip);
-      })
-      .catch(() => {
-        if (active) setIpUnavailable(true);
-      })
-      .finally(() => {
-        if (active) setIpLoading(false);
-      });
-
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, []);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    try {
-      await signIn(email, password);
-      setPassword("");
-      router.replace("/account");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Sign-in failed. Try again.");
-      setPassword("");
-    }
-  }
-
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-4 py-10 sm:px-6">
-      <header className="mb-6 flex items-center justify-between gap-3">
-        <Link href="/" className="text-sm font-semibold text-slate-200 hover:text-white">
-          AllSafe <span className="text-emerald-400">AI Trading</span>
-        </Link>
-        <Link href="/" className="text-sm text-slate-400 hover:text-white">
-          Back to dashboard
-        </Link>
-      </header>
-
-      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-8">
-        <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">Customer access</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Sign in</h1>
-        <p className="mt-2 text-sm leading-relaxed text-slate-300">
-          Sign in with the account created for you by the administrator. Public account creation is disabled.
-        </p>
-
-        <div className="mt-5 rounded-lg border border-white/10 bg-slate-950/50 p-4 text-sm">
-          <p className="font-medium text-slate-200">Current IP for account setup</p>
-          {ipLoading ? (
-            <p className="mt-1 text-slate-400">Checking the account service…</p>
-          ) : clientIp ? (
-            <p className="mt-1 break-all font-mono text-emerald-200">{clientIp}</p>
-          ) : (
-            <p className="mt-1 text-amber-200">
-              {ipUnavailable ? "Current IP is unavailable. Check the account service connection." : "Current IP is unavailable."}
-            </p>
-          )}
-          <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            The administrator can use this address when restricting a customer login to one public IP.
-          </p>
-        </div>
-
-        {!SUPABASE_CONFIGURED ? (
-          <div className="mt-5 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-            <p className="font-semibold">Sign-in is not configured yet.</p>
-            <p className="mt-1 leading-relaxed">
-              The administrator must set <code>NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-              <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in the web app environment, then redeploy the site.
-              Do not put a Supabase service-role key in the web app.
-            </p>
+    <main className="flex min-h-screen items-center justify-center bg-slate-950 p-4 text-slate-100">
+      <Suspense
+        fallback={
+          <div className="rounded-xl border border-white/10 bg-slate-900/60 px-6 py-4 text-sm text-slate-300">
+            Loading sign-in portal...
           </div>
-        ) : (
-          <form onSubmit={submit} className="mt-5 grid gap-4">
-            <label className="text-sm text-slate-300">
-              Email
-              <input
-                type="email"
-                autoComplete="username"
-                required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/60"
-              />
-            </label>
-            <label className="text-sm text-slate-300">
-              Password
-              <input
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/60"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60"
-            >
-              {loading ? "Verifying account…" : "Sign in"}
-            </button>
-          </form>
-        )}
-
-        {error && (
-          <p role="alert" className="mt-4 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
-            {error}
-          </p>
-        )}
-        <p className="mt-4 text-xs leading-relaxed text-slate-500">
-          Need access? Contact your administrator. Sign-in tokens stay in memory and are cleared when you sign out or reload.
-        </p>
-      </section>
+        }
+      >
+        <LoginFormContent />
+      </Suspense>
     </main>
   );
 }

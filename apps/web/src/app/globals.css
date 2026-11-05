@@ -1,8 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0b0f14;
+  --background: #06090f;
   --foreground: #e6edf3;
+  --surface-card: #0b1018;
+  --border-subtle: rgba(255, 255, 255, 0.1);
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
@@ -10,4 +18,185 @@ body {
   color: var(--foreground);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+/* Ensure crisp tabular alignment for financial prices, countdowns, and timestamps */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ========================================================================== */
+/* Hardware-Accelerated Bull vs Bear Arena & Live Market Keyframe Animations  */
+/* Strictly uses GPU-composited transform and opacity properties (zero CLS).  */
+/* ========================================================================== */
+
+@keyframes bullCharge {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  45% {
+    transform: translate3d(12px, -3px, 0) rotate(0.8deg);
+  }
+  55% {
+    transform: translate3d(15px, 1px, 0) rotate(-0.4deg);
+  }
+}
+
+@keyframes bearStrike {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  45% {
+    transform: translate3d(-12px, -4px, 0) rotate(-0.9deg);
+  }
+  55% {
+    transform: translate3d(-15px, 1px, 0) rotate(0.4deg);
+  }
+}
+
+@keyframes clashCorePulse {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+@keyframes clashRingExpand {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(1.45);
+    opacity: 0.18;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.85;
+  }
+}
+
+@keyframes particleDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+    opacity: 0.95;
+  }
+}
+
+@keyframes marketLiveRing {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  70% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+}
+
+@keyframes liveEqBarBounce {
+  0%,
+  100% {
+    transform: scaleY(0.55);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scaleY(1.15);
+    opacity: 1;
+  }
+}
+
+.bull-fighter-group {
+  transform-origin: 260px 260px;
+  animation: bullCharge 4.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform;
+}
+
+.bear-fighter-group {
+  transform-origin: 700px 260px;
+  animation: bearStrike 4.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform;
+}
+
+.clash-core-group {
+  transform-origin: 480px 205px;
+  animation: clashCorePulse 2.3s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.clash-ring-outer {
+  transform-origin: 480px 205px;
+  animation: clashRingExpand 2.3s ease-out infinite;
+  will-change: transform, opacity;
+}
+
+.clash-ring-inner {
+  transform-origin: 480px 205px;
+  animation: clashRingExpand 2.3s ease-out infinite 0.55s;
+  will-change: transform, opacity;
+}
+
+.arena-particles {
+  animation: particleDrift 3.6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.arena-aura-pulse {
+  transform-origin: center;
+  animation: clashCorePulse 4.6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.market-live-ring {
+  animation: marketLiveRing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  will-change: transform, opacity;
+}
+
+.live-eq-bar {
+  transform-origin: bottom;
+  animation: liveEqBarBounce 1.2s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* Respect user reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .bull-fighter-group,
+  .bear-fighter-group,
+  .clash-core-group,
+  .clash-ring-outer,
+  .clash-ring-inner,
+  .arena-particles,
+  .arena-aura-pulse,
+  .market-live-ring,
+  .live-eq-bar {
+    animation: none !important;
+    transform: none !important;
+  }
 }
