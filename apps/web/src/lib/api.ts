@@ -4,8 +4,13 @@
 export {
   PUBLIC_API_BASE_URL,
   API_BASE_URL,
+  getApiBaseUrl,
   AuthApiError,
+  buildUrl,
   fetchApi,
+  clientFetch,
+  clientApi,
+  type ApiErrorPayload,
   type FetchApiOptions,
 } from "./clientApi";
 

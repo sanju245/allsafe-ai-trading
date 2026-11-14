@@ -78,7 +78,7 @@ function isCustomer(user: AdminUser): boolean {
 
 function formatDate(value: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleDateString();
 }
 
 type UserActionsProps = {
@@ -181,8 +181,12 @@ function UserActions({ user, busy, onStatusChange, onAllowedIpChange, onDelete }
   );
 }
 
-export default function AdminUsersPanel() {
-  const { session, profile, loading: authLoading, signOut } = useAuth();
+export type AdminUsersPanelProps = {
+  onDirectoryChanged?: () => void;
+};
+
+export function AdminUsersPanel({ onDirectoryChanged }: AdminUsersPanelProps = {}) {
+  const { session, user: profile, loading: authLoading, signOut } = useAuth();
   const accessToken = session?.access_token;
   const isAdmin = profile?.role === "admin";
 
@@ -315,6 +319,21 @@ export default function AdminUsersPanel() {
     setDeleteConfirmation("");
   }
 
+  function notifyDirectoryChanged() {
+    try {
+      const result: unknown = onDirectoryChanged?.();
+      if (
+        result !== null &&
+        typeof result === "object" &&
+        typeof (result as { catch?: unknown }).catch === "function"
+      ) {
+        void (result as Promise<unknown>).catch(() => {});
+      }
+    } catch {
+      // Ignore callback errors so a succeeded mutation is not reported as failed.
+    }
+  }
+
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!accessToken) return;
@@ -331,6 +350,7 @@ export default function AdminUsersPanel() {
       setAllowedIp("");
       setCreateOpen(false);
       await refreshUsers();
+      notifyDirectoryChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create the account.");
     } finally {
@@ -350,6 +370,7 @@ export default function AdminUsersPanel() {
       });
       setSuccess(`${user.email} login ${status === "paused" ? "paused" : "resumed"}.`);
       await refreshUsers();
+      notifyDirectoryChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not update the account status.");
     } finally {
@@ -368,6 +389,7 @@ export default function AdminUsersPanel() {
       });
       setSuccess(`Allowed IP updated for ${user.email}.`);
       await refreshUsers();
+      notifyDirectoryChanged();
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not update the allowed IP.");
@@ -392,6 +414,7 @@ export default function AdminUsersPanel() {
       setUsers((current) => current.filter((user) => user.id !== deleteTarget.id));
       setDeleteTarget(null);
       setDeleteConfirmation("");
+      notifyDirectoryChanged();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not delete the account.");
     } finally {
@@ -402,7 +425,7 @@ export default function AdminUsersPanel() {
   if (authLoading) {
     return (
       <section aria-live="polite" className="py-16 text-center text-sm text-slate-400">
-        Checking your administrator access…
+        Checking your administrator access...
       </section>
     );
   }
@@ -461,7 +484,7 @@ export default function AdminUsersPanel() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => void refreshUsers()} disabled={loadingUsers} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50">
-            {loadingUsers ? "Refreshing…" : "Refresh list"}
+            {loadingUsers ? "Refreshing..." : "Refresh list"}
           </button>
           <button ref={createCustomerButtonRef} type="button" onClick={() => { clearNotices(); setCreateOpen((open) => !open); }} className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
             {createOpen ? "Close form" : "Create customer"}
@@ -487,12 +510,12 @@ export default function AdminUsersPanel() {
             </label>
             <label className="text-sm text-slate-300">
               Allowed public IP
-              <input type="text" required autoComplete="off" value={allowedIp} onChange={(event) => setAllowedIp(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-400 focus:outline-none" placeholder="Customer’s public IPv4 or IPv6" />
+              <input type="text" required autoComplete="off" value={allowedIp} onChange={(event) => setAllowedIp(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-400 focus:outline-none" placeholder="Customer's public IPv4 or IPv6" />
               <span className="mt-1 block text-xs text-slate-500">Enter one public address; the API validates that it is allowed.</span>
             </label>
             <div className="flex flex-wrap items-center gap-3 md:col-span-3">
               <button type="submit" disabled={creating} className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-50">
-                {creating ? "Creating account…" : "Create customer"}
+                {creating ? "Creating account..." : "Create customer"}
               </button>
               <span className="text-xs text-slate-500">Passwords are sent only to the API and are cleared after success.</span>
             </div>
@@ -508,7 +531,7 @@ export default function AdminUsersPanel() {
           <div>
             <h2 id="directory-title" className="text-lg font-semibold text-white">Account directory</h2>
             <p className="mt-1 text-sm text-slate-400" aria-live="polite">
-              {loadingUsers ? "Loading accounts…" : `${visibleUsers.length} ${visibleUsers.length === 1 ? "account" : "accounts"}`}
+              {loadingUsers ? "Loading accounts..." : `${visibleUsers.length} ${visibleUsers.length === 1 ? "account" : "accounts"}`}
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-[minmax(14rem,1fr)_10rem]">
@@ -605,7 +628,7 @@ export default function AdminUsersPanel() {
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button type="button" disabled={busyUserId === deleteTarget.id} onClick={closeDeleteDialog} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50">Cancel</button>
               <button type="button" disabled={busyUserId === deleteTarget.id || deleteConfirmation.trim().toLowerCase() !== deleteTarget.email.trim().toLowerCase()} onClick={() => void deleteUser()} className="rounded-lg bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-40">
-                {busyUserId === deleteTarget.id ? "Deleting…" : "Delete customer"}
+                {busyUserId === deleteTarget.id ? "Deleting..." : "Delete customer"}
               </button>
             </div>
           </section>
@@ -616,3 +639,5 @@ export default function AdminUsersPanel() {
     </div>
   );
 }
+
+export default AdminUsersPanel;

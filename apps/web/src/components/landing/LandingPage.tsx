@@ -278,7 +278,7 @@ const ILLUSTRATIVE_PREVIEWS: Record<
         { time: "09:50", open: 24346, high: 24355, low: 24332, close: 24336 },
         { time: "09:55", open: 24336, high: 24349, low: 24329, close: 24342 },
         { time: "10:00", open: 24342, high: 24347, low: 24331, close: 24338 },
-        { time: "10:05", open: 24338, h: 24346, high: 24346, low: 24334, close: 24340, forming: true },
+        { time: "10:05", open: 24338, high: 24346, low: 24334, close: 24340, forming: true },
       ],
       aiSummary:
         "Illustrative scenario: Contradictory AI Agent verdicts detected during sideways chop. Because 5/5 unanimous consensus is not met, the coordinator enforces NO_TRADE to protect capital.",

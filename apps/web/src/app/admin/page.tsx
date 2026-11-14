@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { AdminUsersPanel } from "@/components/admin/AdminUsersPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { DashboardAccessGate } from "@/components/auth/DashboardAccessGate";
-import { fetchApi } from "@/lib/api";
+import { fetchApi } from "@/lib/clientApi";
 
 type AdminSection = "overview" | "users" | "roles" | "content" | "audit" | "health";
 
@@ -160,7 +160,14 @@ export default function AdminPage() {
   }, [token]);
 
   useEffect(() => {
-    void loadAdminTelemetry();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void loadAdminTelemetry();
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [loadAdminTelemetry]);
 
   const handleSaveContent = async (e: FormEvent<HTMLFormElement>) => {

@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { fetchApi, AuthApiError } from "@/lib/api";
+import { fetchApi, AuthApiError } from "@/lib/clientApi";
 
 export interface AppUser {
   id: string;
@@ -126,9 +126,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     isMountedRef.current = true;
-    void refreshUser();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void refreshUser();
+    });
 
     return () => {
+      cancelled = true;
       isMountedRef.current = false;
     };
   }, [refreshUser]);

@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { DashboardAccessGate } from "@/components/auth/DashboardAccessGate";
-import { fetchApi } from "@/lib/api";
+import { fetchApi } from "@/lib/clientApi";
 
 export default function AccountPage() {
   const { user, token, csrfToken, signOut } = useAuth();

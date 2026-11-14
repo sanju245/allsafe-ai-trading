@@ -4,7 +4,7 @@ import { Suspense, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth, type AppUser } from "@/components/auth/AuthProvider";
-import { API_BASE_URL, fetchApi } from "@/lib/api";
+import { API_BASE_URL, fetchApi } from "@/lib/clientApi";
 
 interface AuthResponse {
   access_token: string;
