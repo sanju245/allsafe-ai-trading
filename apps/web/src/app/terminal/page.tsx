@@ -1,6 +1,7 @@
 import ApiStatus from "@/components/ApiStatus";
 import LiveMarketDashboard from "@/components/LiveMarketDashboard";
 import DashboardAccessGate from "@/components/auth/DashboardAccessGate";
+import CustomerPortalNav from "@/components/customer/CustomerPortalNav";
 
 // Backend status must be checked per request, never cached at build time.
 export const dynamic = "force-dynamic";
@@ -30,7 +31,10 @@ export default function TerminalPage() {
               </span>
             </div>
           </div>
-          <ApiStatus />
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <CustomerPortalNav />
+            <ApiStatus />
+          </div>
         </header>
 
         <main id="main-dashboard" className="flex-1 py-6 sm:py-8">

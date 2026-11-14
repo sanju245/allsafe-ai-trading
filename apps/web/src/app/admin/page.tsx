@@ -732,7 +732,7 @@ export default function AdminPage() {
                             }
                             className="h-4 w-4 rounded border-white/20 bg-slate-950 text-emerald-500"
                           />
-                          Allow Admin Login from Any Legitimate IP Globally (Super Admin always enabled)
+                          Allow admins from any legitimate IP (server-side global exception; default on. Super Admin is always unrestricted.)
                         </label>
 
                         <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-200">

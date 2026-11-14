@@ -5,9 +5,9 @@ import { getApiHealth } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "What We Done — AllSafe AI Trading",
+  title: "How It Works — AllSafe AI Trading",
   description:
-    "Discover how our five autonomous AI agents inspect the Indian stock market (NIFTY 50 and BANK NIFTY) to determine when to buy, when to sell, and when to wait.",
+    "See how five specialized AI agents analyze confirmed NIFTY 50 and BANK NIFTY candles for read-only market decision support.",
 };
 
 export default async function WhatWeDoneRoute() {

@@ -383,8 +383,10 @@ def is_client_ip_allowed(
       can ALWAYS log in and maintain active sessions from ANY legitimate IP address globally
       (Wi-Fi, mobile hotspot, cellular CGNAT, VPN, IPv4, or IPv6), even if an older fixed IP
       was previously stored in `allowed_ip_spec`.
-    * Any account with `allowed_ip_spec in (None, '', '*', 'any', 'global', '0.0.0.0/0', '::/0')`
-      has unrestricted global IP access.
+    * Explicit wildcard values (`'*'`, `'any'`, `'global'`, `'0.0.0.0/0'`, `'::/0'`) grant
+      unrestricted global IP access.
+    * A missing or empty allowlist fails closed for non-super-admins unless the regular-admin
+      global IP exception above applies.
     * If a specific IP or CIDR allowlist is configured on a customer account (or on a non-super
       admin when `global_admin_ip_enabled=False`), it is evaluated against the normalized `client_ip`.
     """
@@ -392,10 +394,12 @@ def is_client_ip_allowed(
         return True
     if role in {"admin", "super_admin"} and global_admin_ip_enabled:
         return True
-    if not allowed_ip_spec:
-        return True
+    if allowed_ip_spec is None:
+        return False
     cleaned_spec = allowed_ip_spec.strip()
-    if not cleaned_spec or cleaned_spec.lower() in {"*", "any", "global", "0.0.0.0/0", "::/0"}:
+    if not cleaned_spec:
+        return False
+    if cleaned_spec.lower() in {"*", "any", "global", "0.0.0.0/0", "::/0"}:
         return True
     if not client_ip:
         return False

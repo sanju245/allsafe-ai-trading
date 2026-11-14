@@ -84,12 +84,12 @@ function AdminLoginFormContent() {
           Administrator <span className="text-emerald-400">Sign In</span>
         </h1>
         <p className="text-xs text-slate-400 sm:text-sm">
-          Dedicated administrative portal with global IP-independent access and server-side RBAC enforcement
+          Dedicated administrator sign-in, separate from customer access. The server allows administrators from any legitimate IP by default. A server-side setting can turn off that global exception; Super Admin access is always IP-independent. Role, account status, rate limits, and configured MFA still apply.
         </p>
       </div>
 
       <div className="flex items-center justify-between rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3.5 py-2.5 text-[11px] text-emerald-200">
-        <span>Admin Global IP Access (*)</span>
+        <span>Admin Global IP Access (enabled by default)</span>
         <span className="font-mono text-emerald-300">PBKDF2 &middot; TOTP MFA &middot; RBAC</span>
       </div>
 

@@ -94,6 +94,48 @@ def test_ip_normalization_ipv4_ipv6_mapped_and_malformed_rejection():
         assert is_client_ip_allowed(malformed, "203.0.113.0/24", role="user") is False
 
 
+def test_missing_allowlist_fails_closed_while_admin_global_access_stays_available():
+    for missing_allowlist in (None, "", "   "):
+        assert is_client_ip_allowed(
+            "198.51.100.24",
+            missing_allowlist,
+            role="user",
+            global_admin_ip_enabled=True,
+        ) is False
+
+    # Explicit wildcard access remains an intentional, configured global rule.
+    assert is_client_ip_allowed("198.51.100.24", "*", role="user") is True
+
+    # The requested admin exception stays global when the server-side setting is enabled.
+    assert is_client_ip_allowed(
+        "198.51.100.24",
+        "203.0.113.10",
+        role="admin",
+        global_admin_ip_enabled=True,
+    ) is True
+    assert is_client_ip_allowed(
+        "198.51.100.24",
+        None,
+        role="admin",
+        global_admin_ip_enabled=True,
+    ) is True
+
+    # If the server-side exception is disabled, a missing admin allowlist is denied too.
+    assert is_client_ip_allowed(
+        "198.51.100.24",
+        None,
+        role="admin",
+        global_admin_ip_enabled=False,
+    ) is False
+    assert is_client_ip_allowed(
+        "198.51.100.24",
+        None,
+        role="admin",
+        is_super_admin=True,
+        global_admin_ip_enabled=False,
+    ) is True
+
+
 def test_anti_spoofing_proxy_trust_duplicate_headers_and_right_to_left_hop_extraction(audit_env):
     client, store, admin_pw = audit_env
 

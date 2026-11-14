@@ -236,7 +236,7 @@ test("Indian Stock Market Status: returns MARKET STATUS UNAVAILABLE when data is
   assert.equal(unverifiedFutureYear.isLive, false);
 });
 
-test("Landing Page & What We Done Page compile cleanly, disclose ZERO indicator names, and present the 5 AI Agents for Buy/Sell decisions", () => {
+test("Landing Page & How It Works page compile cleanly, disclose ZERO indicator names, and present the 5 AI Agents for Buy/Sell decisions", () => {
   const landingFiles = [
     "src/lib/indianMarketStatus.ts",
     "src/components/landing/LiveIstClock.tsx",
@@ -291,9 +291,10 @@ test("Landing Page & What We Done Page compile cleanly, disclose ZERO indicator 
   );
   assert.match(landingSrc, /href="\/login"/);
   assert.match(landingSrc, /href="\/what-we-done"/);
-  assert.match(landingSrc, /What We Done/);
+  assert.match(landingSrc, /How It Works/);
+  assert.doesNotMatch(landingSrc, /What We Done/);
   assert.match(landingSrc, /Customer Sign In/);
-  assert.match(landingSrc, /Explore AI Intelligence/);
+  assert.match(landingSrc, /Explore how the analysis works/);
   assert.match(landingSrc, /ILLUSTRATIVE TERMINAL SIMULATION/);
   assert.match(landingSrc, /NOT LIVE MARKET PRICES/);
 
@@ -301,7 +302,8 @@ test("Landing Page & What We Done Page compile cleanly, disclose ZERO indicator 
     path.join(webRoot, "src/components/landing/WhatWeDonePage.tsx"),
     "utf8",
   );
-  assert.match(whatWeDoneSrc, /What We Done/);
+  assert.match(whatWeDoneSrc, /How It Works/);
+  assert.match(whatWeDoneSrc, /place broker orders/);
   assert.match(whatWeDoneSrc, /AI AGENT 01/);
   assert.match(whatWeDoneSrc, /AI AGENT 02/);
   assert.match(whatWeDoneSrc, /AI AGENT 03/);

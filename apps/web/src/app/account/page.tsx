@@ -40,7 +40,7 @@ export default function AccountPage() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      setPwSuccess("Password updated and re-hashed with PBKDF2-HMAC-SHA256.");
+      setPwSuccess("Your password was updated successfully.");
     } catch (err) {
       setPwError(err instanceof Error ? err.message : "Failed to change password.");
     } finally {
@@ -63,13 +63,19 @@ export default function AccountPage() {
               Identity &amp; Access Profile
             </p>
             <h1 className="mt-1 text-2xl font-bold text-white sm:text-3xl">
-              Account &amp; Security Settings
+              Account &amp; Security
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              Inspect your role permissions, global IP policy, and credential rotation controls
+              Review your profile, network access rule, and password settings.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
+            <Link
+              href="/terminal"
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/10 hover:text-white"
+            >
+              Return to Live Terminal
+            </Link>
             {isAdmin && (
               <Link
                 href="/admin"
@@ -135,10 +141,16 @@ export default function AccountPage() {
               </dd>
             </div>
           </dl>
+          {user?.role === "user" && (
+            <p className="max-w-3xl text-xs leading-relaxed text-slate-400">
+              Your network access rule is enforced by the API and managed by an administrator.
+              Contact your administrator if your allowed network needs to change.
+            </p>
+          )}
         </section>
 
         <section className="rounded-2xl border border-white/10 bg-slate-900/50 p-6 backdrop-blur-xl">
-          <h2 className="text-lg font-semibold text-white">Rotate Account Password</h2>
+          <h2 className="text-lg font-semibold text-white">Change your password</h2>
           <p className="mt-1 text-xs text-slate-400">
             Passwords are never stored in plaintext. New passwords require at least 10 characters with uppercase, lowercase, digit, and special character.
           </p>
@@ -167,6 +179,7 @@ export default function AccountPage() {
               <input
                 type="password"
                 required
+                autoComplete="current-password"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-400 focus:outline-none"
@@ -178,6 +191,7 @@ export default function AccountPage() {
                 type="password"
                 required
                 minLength={10}
+                autoComplete="new-password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-400 focus:outline-none"
@@ -189,6 +203,7 @@ export default function AccountPage() {
                 type="password"
                 required
                 minLength={10}
+                autoComplete="new-password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white focus:border-emerald-400 focus:outline-none"
@@ -200,7 +215,7 @@ export default function AccountPage() {
                 disabled={pwBusy}
                 className="rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
               >
-                {pwBusy ? "Updating Password..." : "Update Password Hash"}
+                {pwBusy ? "Updating password…" : "Update password"}
               </button>
             </div>
           </form>

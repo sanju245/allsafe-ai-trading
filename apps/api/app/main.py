@@ -16,8 +16,9 @@ from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import RequestResponseEndpoint
 
 from app import __version__
 from app.config import get_settings
@@ -69,6 +70,18 @@ app = FastAPI(**cast(Any, _fastapi_kwargs))
 if "lifespan" not in _fastapi_kwargs:
     app.router.on_startup.append(lambda: startup_live_runtime(app))
     app.router.on_shutdown.append(lambda: shutdown_live_runtime(app))
+
+
+@app.middleware("http")
+async def security_response_headers(
+    request: Request,
+    call_next: RequestResponseEndpoint,
+) -> Response:
+    """Set baseline browser security headers on every API response."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    return response
 
 
 @app.exception_handler(RequestValidationError)

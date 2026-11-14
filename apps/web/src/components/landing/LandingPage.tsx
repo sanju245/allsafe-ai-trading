@@ -751,7 +751,7 @@ function LandingPage({
             </Link>
           </div>
 
-          {/* Desktop Navigation Links (Includes "What We Done" Page Link) */}
+          {/* Desktop Navigation Links */}
           <div className="hidden items-center gap-1 md:flex lg:gap-2">
             <a
               href="#home"
@@ -764,7 +764,7 @@ function LandingPage({
               data-testid="nav-what-we-done"
               className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 focus:outline-none focus:ring-2 focus:ring-emerald-400 lg:text-sm"
             >
-              What We Done
+              How It Works
             </Link>
             <a
               href="#ai-intelligence"
@@ -859,7 +859,7 @@ function LandingPage({
                 onClick={() => setMobileMenuOpen(false)}
                 className="flex min-h-[44px] items-center rounded-lg bg-emerald-500/15 px-3 py-2 text-sm font-bold text-emerald-300"
               >
-                What We Done (5 AI Agents)
+                How It Works: Five Agents
               </Link>
               <a
                 href="#ai-intelligence"
@@ -931,10 +931,10 @@ function LandingPage({
 
             <div className="mx-auto max-w-4xl text-center">
               <div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1 text-xs font-semibold text-emerald-300">
-                <span>INSTITUTIONAL NSE INDEX TERMINAL</span>
+                <span>NSE INDEX MARKET ANALYSIS</span>
                 <span aria-hidden="true">&middot;</span>
                 <span className="font-mono text-[11px] text-slate-200">
-                  NIFTY 50 &amp; BANK NIFTY &middot; 5 AI AGENTS CONSENSUS
+                  NIFTY 50 &amp; BANK NIFTY &middot; FIVE AI AGENTS
                 </span>
               </div>
 
@@ -950,11 +950,11 @@ function LandingPage({
               </h1>
 
               <p className="mx-auto mt-5 max-w-3xl text-sm leading-relaxed text-slate-300 sm:text-base lg:text-lg">
-                Engineered for disciplined institutional analysis. AllSafe AI Trading
-                deploys five specialized AI agents that inspect real-time 5-minute IST
-                market structure, multi-timeframe regimes, and volatility-bounded risk
-                limits—reaching unanimous consensus to tell you when to buy, when to
-                sell, and when to wait.
+                A read-only decision-support platform for NIFTY 50 and BANK NIFTY.
+                Five specialized AI agents review confirmed 5-minute candles, compare
+                broader timeframes, and apply defined risk controls. Explore
+                illustrative Buy, Sell, or Wait setups; the platform does not place
+                broker orders.
               </p>
 
               <div className="mt-7 flex flex-col items-center justify-center gap-3.5 sm:flex-row">
@@ -963,7 +963,7 @@ function LandingPage({
                   data-testid="hero-explore-cta"
                   className="inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-slate-950 shadow-[0_0_28px_rgba(16,185,129,0.35)] transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300 sm:w-auto"
                 >
-                  <span>Explore AI Intelligence</span>
+                  <span>Explore how the analysis works</span>
                   <span aria-hidden="true" className="font-mono">
                     &darr;
                   </span>
@@ -974,7 +974,7 @@ function LandingPage({
                   data-testid="hero-what-we-done-cta"
                   className="inline-flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-6 py-3 text-sm font-bold text-emerald-300 transition hover:bg-emerald-500/20 focus:outline-none focus:ring-2 focus:ring-emerald-400 sm:w-auto"
                 >
-                  <span>What We Done (5 AI Agents)</span>
+                  <span>How It Works: Five Agents</span>
                   <span aria-hidden="true" className="font-mono">
                     &rarr;
                   </span>
@@ -1006,7 +1006,7 @@ function LandingPage({
                   5 / 5 AI Agents
                 </div>
                 <div className="mt-0.5 text-xs text-slate-400">
-                  Unanimous Buy / Sell verification
+                  A setup needs agreement from all five agents
                 </div>
               </div>
 
@@ -1018,7 +1018,7 @@ function LandingPage({
                   5m &middot; 15m &middot; 1h
                 </div>
                 <div className="mt-0.5 text-xs text-slate-400">
-                  Confirmed vs. forming bar isolation
+                  Confirmed candles stay separate from forming bars
                 </div>
               </div>
 
@@ -1030,7 +1030,7 @@ function LandingPage({
                   &le; 2.0% Max Risk
                 </div>
                 <div className="mt-0.5 text-xs text-slate-400">
-                  &ge; 1.5x R:R &amp; dynamic volatility stop gate
+                  At least 1.5:1 reward-to-risk; volatility-bounded stops
                 </div>
               </div>
 
@@ -1039,10 +1039,10 @@ function LandingPage({
                   Execution Safety
                 </div>
                 <div className="mt-1 font-mono text-xl font-bold text-amber-300 tabular-nums sm:text-2xl">
-                  100% Read-Only
+                  Read-Only Analysis
                 </div>
                 <div className="mt-0.5 text-xs text-slate-400">
-                  Autonomous order execution disabled
+                  No broker orders are placed
                 </div>
               </div>
             </ScrollReveal>
@@ -1189,7 +1189,7 @@ function LandingPage({
                 </div>
                 <div className="mt-4 border-t border-white/10 pt-3 font-mono text-[11px] text-emerald-300">
                   <Link href="/what-we-done" className="underline hover:text-white">
-                    Read full 5-Agent breakdown on What We Done &rarr;
+                    Meet all five agents &rarr;
                   </Link>
                 </div>
               </ScrollReveal>
@@ -1959,7 +1959,7 @@ function LandingPage({
                   href="/what-we-done"
                   className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl border border-white/15 bg-white/[0.05] px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400 sm:w-auto"
                 >
-                  Explore What We Done (5 AI Agents)
+                  Explore the five-agent approach
                 </Link>
               </div>
             </ScrollReveal>
@@ -1983,9 +1983,9 @@ function LandingPage({
                 </span>
               </div>
               <p className="max-w-md leading-relaxed text-slate-400">
-                Quantitative NSE index analysis platform for NIFTY 50 and BANK NIFTY.
-                Powered by 5 autonomous AI market agents, multi-timeframe regime
-                classification, and read-only risk management.
+                Read-only market analysis for NIFTY 50 and BANK NIFTY, supported by
+                five specialized AI agents, multi-timeframe context, and defined risk
+                controls.
               </p>
               <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-slate-400">
                 <span className="rounded border border-white/10 bg-white/[0.03] px-2 py-0.5">
@@ -2009,7 +2009,7 @@ function LandingPage({
                 </li>
                 <li>
                   <Link href="/what-we-done" className="text-emerald-300 hover:underline">
-                    What We Done (5 AI Agents)
+                    How It Works: Five Agents
                   </Link>
                 </li>
                 <li>

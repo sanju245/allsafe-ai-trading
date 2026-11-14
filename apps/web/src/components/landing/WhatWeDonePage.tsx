@@ -100,7 +100,7 @@ const FIVE_AI_AGENTS: AgentRoleSpec[] = [
 ];
 
 /**
- * Dedicated "What We Done" Page Component.
+ * Dedicated five-agent overview page component.
  * Explains how AllSafe AI Trading built 5 specialized AI agents that inspect the current Indian stock market
  * (NIFTY 50 & BANK NIFTY) and reach unanimous consensus to tell users when to BUY, when to SELL, or when to WAIT.
  * Zero proprietary indicator names are disclosed anywhere on this page.
@@ -127,7 +127,7 @@ function WhatWeDonePage({
         href="#what-we-done-main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-emerald-400 focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-slate-950"
       >
-        Skip to What We Done content
+        Skip to how-it-works content
       </a>
 
       {/* Navigation Bar */}
@@ -167,7 +167,7 @@ function WhatWeDonePage({
               aria-current="page"
               className="rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-300 transition lg:text-sm"
             >
-              What We Done
+              How It Works
             </Link>
             <Link
               href="/#ai-intelligence"
@@ -238,7 +238,7 @@ function WhatWeDonePage({
                 Home
               </Link>
               <Link href="/what-we-done" className="flex min-h-[44px] items-center rounded-lg bg-emerald-500/15 px-3 py-2 text-sm font-bold text-emerald-300">
-                What We Done
+                How It Works
               </Link>
               <Link href="/login" className="mt-2 flex min-h-[44px] items-center justify-center rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-slate-950">
                 Customer Sign In &rarr;
@@ -259,30 +259,28 @@ function WhatWeDonePage({
           />
         </div>
 
-        {/* Page Hero Header: WHAT WE DONE */}
+        {/* Page hero: how the five-agent analysis works */}
         <ScrollReveal className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#0b131e] via-[#080d15] to-[#110b15] p-6 shadow-2xl sm:p-10">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1 font-mono text-xs font-semibold text-emerald-300">
-            <span>WHAT WE DONE</span>
+            <span>HOW IT WORKS</span>
             <span aria-hidden="true">&middot;</span>
-            <span>5 AUTONOMOUS AI MARKET AGENTS</span>
+            <span>5 SPECIALIZED AI MARKET AGENTS</span>
           </div>
 
           <h1
             data-testid="what-we-done-title"
             className="mt-4 text-3xl font-extrabold tracking-tight text-white sm:text-5xl"
           >
-            What We Done: Five AI Agents Built for the Indian Stock Market
+            How It Works: Five AI Agents for NIFTY 50 and BANK NIFTY
           </h1>
 
           <p className="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300 sm:text-base lg:text-lg">
-            We engineered <strong>Five Specialized AI Agents</strong> that continuously
-            inspect multiple live dimensions of the Indian stock market (
+            Five specialized AI agents review confirmed 5-minute IST candles for{" "}
             <strong className="text-white">NIFTY 50</strong> and{" "}
-            <strong className="text-white">BANK NIFTY</strong> during official NSE/BSE
-            trading hours). Instead of relying on a single signal or guesswork, all
-            five AI agents check distinct market conditions on confirmed 5-minute IST
-            candles and work together to tell you <strong>when to BUY</strong>,{" "}
-            <strong>when to SELL</strong>, and <strong>when to stay out (WAIT)</strong>.
+            <strong className="text-white">BANK NIFTY</strong>, alongside broader
+            timeframe context and defined risk controls. Together, they provide a
+            clear Buy, Sell, or Wait analysis. The platform is read-only and does not
+            place broker orders.
           </p>
 
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -487,7 +485,7 @@ function WhatWeDonePage({
               Home
             </Link>
             <Link href="/what-we-done" className="text-emerald-300">
-              What We Done
+              How It Works
             </Link>
             <Link href="/login" className="hover:text-white">
               Customer Sign In
