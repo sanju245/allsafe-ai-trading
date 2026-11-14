@@ -413,8 +413,8 @@ export default function AdminUsersPanel() {
         <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">Sign in required</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">Admin access</h1>
         <p className="mt-3 text-sm leading-relaxed text-slate-300">Sign in with an administrator account to manage customer access.</p>
-        <Link href="/login" className="mt-5 inline-flex rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
-          Go to sign in
+        <Link href="/admin/login" className="mt-5 inline-flex rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
+          Go to admin sign in
         </Link>
       </section>
     );

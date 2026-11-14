@@ -5,9 +5,38 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routers import auth as auth_router
+from app.security import AccountPrincipal, require_active_account
 
 
 client = TestClient(app)
+
+
+def test_current_admin_profile_allows_null_customer_ip_allowlist():
+    principal = AccountPrincipal(
+        id="00000000-0000-4000-8000-000000000002",
+        email="admin@example.com",
+        role="admin",
+        status="active",
+        allowed_ip=None,
+        client_ip="198.51.100.24",
+    )
+    missing = object()
+    previous = app.dependency_overrides.get(require_active_account, missing)
+    app.dependency_overrides[require_active_account] = lambda: principal
+    try:
+        response = client.get(
+            "/api/v1/auth/me", headers={"Authorization": "Bearer test-token"}
+        )
+    finally:
+        if previous is missing:
+            app.dependency_overrides.pop(require_active_account, None)
+        else:
+            app.dependency_overrides[require_active_account] = previous
+
+    assert response.status_code == 200
+    assert response.json()["role"] == "admin"
+    assert response.json()["allowed_ip"] is None
+    assert response.json()["client_ip"] == "198.51.100.24"
 
 
 def test_password_change_requires_a_verified_account(monkeypatch):

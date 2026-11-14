@@ -24,7 +24,7 @@ class CurrentAccountResponse(BaseModel):
     email: str
     role: Literal["user", "admin"]
     status: Literal["active", "paused"]
-    allowed_ip: str
+    allowed_ip: str | None
     client_ip: str
 
 
@@ -55,8 +55,6 @@ def get_current_account(
 ) -> CurrentAccountResponse:
     """Return a profile only when its current active status and IP allowlist pass."""
     response.headers["Cache-Control"] = "no-store"
-    # require_active_account rejects profiles without a single assigned IP.
-    assert account.allowed_ip is not None
     return CurrentAccountResponse(
         id=account.id,
         email=account.email,

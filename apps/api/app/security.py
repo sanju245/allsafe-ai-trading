@@ -141,32 +141,33 @@ def require_active_account(
             status_code=403,
             detail={"code": "account_inactive", "message": "This account is not active."},
         )
-    if raw_allowed_ip is None or (
-        isinstance(raw_allowed_ip, str) and not raw_allowed_ip.strip()
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "ip_not_configured",
-                "message": "An approved IP address has not been configured for this account.",
-            },
-        )
-    if allowed_ip is None:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "ip_configuration_invalid",
-                "message": "The IP restriction for this account is invalid.",
-            },
-        )
-    if allowed_ip != client_ip:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "ip_not_allowed",
-                "message": "This IP address is not approved for this account.",
-            },
-        )
+    if role == "user":
+        if raw_allowed_ip is None or (
+            isinstance(raw_allowed_ip, str) and not raw_allowed_ip.strip()
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ip_not_configured",
+                    "message": "An approved IP address has not been configured for this account.",
+                },
+            )
+        if allowed_ip is None:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ip_configuration_invalid",
+                    "message": "The IP restriction for this account is invalid.",
+                },
+            )
+        if allowed_ip != client_ip:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "ip_not_allowed",
+                    "message": "This IP address is not approved for this account.",
+                },
+            )
 
     return AccountPrincipal(
         id=user_id,
@@ -182,7 +183,7 @@ def require_admin_account(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AccountPrincipal:
-    """Require a currently active, IP-allowed Supabase admin account."""
+    """Require a currently active Supabase admin account."""
     account = require_active_account(request, authorization)
     if account.role != "admin":
         raise HTTPException(status_code=403, detail="Administrator access is required.")
