@@ -18,7 +18,7 @@ def test_current_admin_profile_allows_null_customer_ip_allowlist():
         role="admin",
         status="active",
         allowed_ip=None,
-        client_ip="198.51.100.24",
+        client_ip=None,
     )
     missing = object()
     previous = app.dependency_overrides.get(require_active_account, missing)
@@ -36,7 +36,7 @@ def test_current_admin_profile_allows_null_customer_ip_allowlist():
     assert response.status_code == 200
     assert response.json()["role"] == "admin"
     assert response.json()["allowed_ip"] is None
-    assert response.json()["client_ip"] == "198.51.100.24"
+    assert response.json()["client_ip"] is None
 
 
 def test_password_change_requires_a_verified_account(monkeypatch):

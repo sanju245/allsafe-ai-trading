@@ -258,6 +258,55 @@ def test_active_admin_without_allowed_ip_is_returned_with_nullable_ip(monkeypatc
     assert account.client_ip == "198.51.100.24"
 
 
+def test_active_admin_is_not_blocked_when_production_proxy_ip_is_unavailable(monkeypatch):
+    monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
+    monkeypatch.setattr(security, "get_settings", lambda: _settings())
+    user_id = str(uuid4())
+    monkeypatch.setattr(
+        security,
+        "get_profile",
+        lambda account_id, settings=None: {
+            "id": account_id,
+            "email": "admin@example.com",
+            "role": "admin",
+            "status": "active",
+            "allowed_ip": None,
+        },
+    )
+
+    account = security.require_admin_account(
+        _request(), f"Bearer {_hs256_token(user_id=user_id)}"
+    )
+
+    assert account.role == "admin"
+    assert account.allowed_ip is None
+    assert account.client_ip is None
+
+
+def test_active_customer_is_blocked_when_production_proxy_ip_is_unavailable(monkeypatch):
+    monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
+    monkeypatch.setattr(security, "get_settings", lambda: _settings())
+    user_id = str(uuid4())
+    monkeypatch.setattr(
+        security,
+        "get_profile",
+        lambda account_id, settings=None: {
+            "id": account_id,
+            "email": "customer@example.com",
+            "role": "user",
+            "status": "active",
+            "allowed_ip": "192.0.2.10",
+        },
+    )
+
+    with pytest.raises(HTTPException) as error:
+        security.require_active_account(
+            _request(), f"Bearer {_hs256_token(user_id=user_id)}"
+        )
+
+    assert error.value.status_code == 503
+
+
 def test_active_customer_with_a_different_ip_remains_blocked(monkeypatch):
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
     monkeypatch.setattr(security, "request_client_ip", lambda request: "198.51.100.24")

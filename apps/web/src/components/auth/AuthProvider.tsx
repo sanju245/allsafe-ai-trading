@@ -17,7 +17,7 @@ export type AuthProfile = {
   role: "admin" | "user";
   status: "active" | "paused";
   allowed_ip: string | null;
-  client_ip: string;
+  client_ip: string | null;
 };
 
 type AuthContextValue = {
@@ -145,7 +145,7 @@ function parseProfile(body: unknown): AuthProfile | null {
     (role !== "admin" && role !== "user") ||
     (status !== "active" && status !== "paused") ||
     (allowedIp !== null && typeof allowedIp !== "string") ||
-    typeof clientIp !== "string"
+    (clientIp !== null && typeof clientIp !== "string")
   ) {
     return null;
   }

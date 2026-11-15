@@ -45,7 +45,7 @@ export default function DashboardAccessGate({ children }: { children: ReactNode 
     <>
       <nav aria-label="Account navigation" className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-6">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <Link href="/" className="rounded-lg px-3 py-2 text-slate-200 hover:bg-white/5">Dashboard</Link>
+          <Link href="/terminal" className="rounded-lg px-3 py-2 text-slate-200 hover:bg-white/5">Dashboard</Link>
           <Link href="/account" className="rounded-lg px-3 py-2 text-slate-300 hover:bg-white/5">Account</Link>
           {profile.role === "admin" && (
             <Link href="/admin" className="rounded-lg px-3 py-2 text-emerald-200 hover:bg-emerald-400/10">Admin</Link>

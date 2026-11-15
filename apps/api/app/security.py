@@ -55,7 +55,7 @@ class AccountPrincipal:
     role: str
     status: str
     allowed_ip: str | None
-    client_ip: str
+    client_ip: str | None
 
 
 def request_client_ip(request: Request) -> str:
@@ -99,14 +99,13 @@ def require_active_account(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AccountPrincipal:
-    """Verify the JWT and enforce the current profile status and exact IP allowlist."""
+    """Verify account status and enforce the exact customer IP allowlist."""
     settings = get_settings()
     user_id = verify_supabase_access_token(
         authorization,
         supabase_url=settings.supabase_url,
         jwt_secret=settings.supabase_jwt_secret,
     )
-    client_ip = request_client_ip(request)
     try:
         profile = get_profile(user_id, settings=settings)
     except SupabaseAdminAPIError:
@@ -141,6 +140,14 @@ def require_active_account(
             status_code=403,
             detail={"code": "account_inactive", "message": "This account is not active."},
         )
+    try:
+        client_ip = request_client_ip(request)
+    except HTTPException as error:
+        if role == "user" or error.status_code != 503:
+            raise
+        # Admin authorization does not depend on a customer IP allowlist. A
+        # missing or invalid proxy IP must not lock an active admin out.
+        client_ip = None
     if role == "user":
         if raw_allowed_ip is None or (
             isinstance(raw_allowed_ip, str) and not raw_allowed_ip.strip()

@@ -66,8 +66,8 @@ export default function AccountPage() {
               Admin portal
             </Link>
           )}
-          <Link href="/" className="text-sm text-slate-400 hover:text-white">
-            Back to dashboard
+          <Link href="/terminal" className="text-sm text-slate-400 hover:text-white">
+            Live market terminal
           </Link>
         </div>
       </header>
@@ -104,7 +104,9 @@ export default function AccountPage() {
           </div>
           <div>
             <dt className="text-xs text-slate-500">Current IP</dt>
-            <dd className="mt-1 break-all font-mono text-slate-200">{profile.client_ip}</dd>
+            <dd className="mt-1 break-all font-mono text-slate-200">
+              {profile.client_ip ?? (profile.role === "admin" ? "Unavailable; admin access is not IP-restricted" : "Unavailable")}
+            </dd>
           </div>
         </dl>
 

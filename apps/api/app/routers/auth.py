@@ -25,7 +25,7 @@ class CurrentAccountResponse(BaseModel):
     role: Literal["user", "admin"]
     status: Literal["active", "paused"]
     allowed_ip: str | None
-    client_ip: str
+    client_ip: str | None
 
 
 class ChangePasswordRequest(BaseModel):

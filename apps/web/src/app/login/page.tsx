@@ -91,7 +91,7 @@ export default function LoginPage() {
           AllSafe <span className="text-emerald-400">AI Trading</span>
         </Link>
         <Link href="/" className="text-sm text-slate-400 hover:text-white">
-          Back to dashboard
+          Back to AllSafe home
         </Link>
       </header>
 
