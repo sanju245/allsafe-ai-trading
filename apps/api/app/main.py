@@ -16,34 +16,38 @@ from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.config import get_settings
 from app.routers import admin, auth, live, market_data
-from app.routers.live import build_runtime_from_settings, set_live_runtime
+from app.routers.live import build_runtimes_from_settings, set_live_runtimes
 
 settings = get_settings()
 
 
 def startup_live_runtime(application: FastAPI) -> None:
-    """Initialize the Groww live runtime on app.state and start only if enabled."""
-    existing = getattr(application.state, "live_runtime", None)
-    if existing is None:
-        rt = build_runtime_from_settings(get_settings())
-        set_live_runtime(application, rt)
-    else:
-        rt = existing
-    if rt.stream_manager.streaming_enabled:
-        rt.start(run_warmup=True)
+    """Initialize configured read-only Groww and Upstox market-data runtimes."""
+    runtimes = getattr(application.state, "live_runtimes", None)
+    if not isinstance(runtimes, dict):
+        runtimes = build_runtimes_from_settings(get_settings())
+        set_live_runtimes(application, runtimes)
+    for runtime in runtimes.values():
+        if runtime.stream_manager.streaming_enabled:
+            runtime.start(run_warmup=True)
 
 
 def shutdown_live_runtime(application: FastAPI) -> None:
-    """Cleanly stop any active Groww live stream connection on application shutdown."""
-    rt = getattr(application.state, "live_runtime", None)
-    if rt is not None:
-        rt.stop()
+    """Cleanly stop configured provider feed connections on application shutdown."""
+    runtimes = getattr(application.state, "live_runtimes", None)
+    if isinstance(runtimes, dict):
+        for runtime in runtimes.values():
+            runtime.stop()
+    else:
+        rt = getattr(application.state, "live_runtime", None)
+        if rt is not None:
+            rt.stop()
 
 
 @asynccontextmanager

@@ -220,6 +220,8 @@ function dashboardHarness() {
   let failureStatus = 0;
   let stale = false;
   let signedOut = false;
+  const requests = [];
+  const localStorage = new Map();
   const moduleObj = { exports: {} };
   const hooks = {
     useState: (initial) => {
@@ -252,13 +254,25 @@ function dashboardHarness() {
     },
     process: { env: { NEXT_PUBLIC_API_BASE_URL: "https://api.example.test" } },
     AbortSignal, AbortController, Intl, Date, console,
-    window: { setInterval: (callback) => { interval = callback; return 1; }, clearInterval: () => {} },
+    window: {
+      localStorage: {
+        getItem: (key) => localStorage.get(key) ?? null,
+        setItem: (key, value) => localStorage.set(key, value),
+      },
+      setInterval: (callback) => { interval = callback; return 1; },
+      clearInterval: () => {},
+    },
     fetch: async (url, options) => {
+      requests.push(String(url));
       assert.equal(options.credentials, "omit");
       assert.ok(options.signal instanceof AbortSignal);
       if (failureStatus) return json({ detail: "failed" }, failureStatus);
+      if (url.includes("/providers")) return json({ providers: [
+        { id: "groww", label: "Groww", configured: true, feed_state: "live", connected: true, message: "Connected" },
+        { id: "upstox", label: "Upstox", configured: true, feed_state: "live", connected: true, message: "Connected" },
+      ] });
       if (url.includes("/status")) return json({
-        feed_state: "live", streaming_enabled: true, connected: true, session_open: true, instruments: {},
+        feed_state: "live", provider: "groww", streaming_enabled: true, connected: true, session_open: true, instruments: {},
       });
       if (url.includes("/quote")) return json({
         available: true, feed_state: stale ? "stale" : "live", is_stale: stale,
@@ -272,13 +286,31 @@ function dashboardHarness() {
       });
     },
   });
+  const render = () => { cursor = 0; return moduleObj.exports.default(); };
   return {
-    render: () => { cursor = 0; return moduleObj.exports.default(); },
+    render,
+    chooseProvider: (provider) => {
+      const visit = (node) => {
+        if (!node || typeof node !== "object") return null;
+        if (node.props?.id === "market-data-provider") return node;
+        const children = node.props?.children;
+        for (const child of Array.isArray(children) ? children : [children]) {
+          const match = visit(child);
+          if (match) return match;
+        }
+        return null;
+      };
+      const select = visit(render());
+      assert.ok(select, "provider selector should be rendered");
+      select.props.onChange({ target: { value: provider } });
+      render();
+    },
     start: () => effect(),
     poll: () => interval(),
     fail: (status) => { failureStatus = status; },
     stale: () => { stale = true; },
-    snapshots: () => slots[1],
+    snapshots: () => slots[3],
+    requests: () => requests,
     signedOut: () => signedOut,
   };
 }
@@ -326,5 +358,15 @@ test("a server-reported stale quote is retained only as non-current historical d
   assert.equal(dashboard.snapshots().NIFTY50.current, false);
   assert.equal(dashboard.snapshots().NIFTY50.feedState, "stale");
   assert.equal(dashboard.snapshots().NIFTY50.candles.length, 1);
+  cleanup();
+});
+
+test("customers can select Upstox and the dashboard requests data from that provider", async () => {
+  const dashboard = dashboardHarness();
+  dashboard.chooseProvider("upstox");
+  const cleanup = dashboard.start();
+  await settleUntil(() => dashboard.requests().some((url) => url.includes("/api/v1/live/quote?") && url.includes("provider=upstox")));
+  assert.ok(dashboard.requests().some((url) => url.includes("/api/v1/live/status?provider=upstox")));
+  assert.ok(dashboard.requests().some((url) => url.includes("/api/v1/live/candles?") && url.includes("provider=upstox")));
   cleanup();
 });
