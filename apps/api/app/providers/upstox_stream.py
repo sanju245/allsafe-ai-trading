@@ -29,13 +29,14 @@ from app.market_data.models import DataSource, DataSourceKind
 from app.market_data.sessions import IST, to_ist
 from app.providers.groww_stream import InstrumentFeedStatus, StreamStatusSnapshot
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error.upstox")
 
 UPSTOX_INDEX_KEYS = {
     InstrumentId.NIFTY50: "NSE_INDEX|Nifty 50",
     InstrumentId.BANKNIFTY: "NSE_INDEX|Nifty Bank",
 }
 AUTHORIZE_URL = "https://api.upstox.com/v3/feed/market-data-feed/authorize"
+CLIENT_USER_AGENT = "AllSafeAITrading/0.2"
 
 
 def _timestamp_from_millis(value: Any) -> datetime | None:
@@ -82,6 +83,8 @@ def _request_authorized_uri(access_token: str) -> str:
         headers={
             "Authorization": f"Bearer {token}",
             "Accept": "application/json",
+            # Upstox documents a Cloudflare 1010 block for urllib's default UA.
+            "User-Agent": CLIENT_USER_AGENT,
         },
         method="GET",
     )
@@ -92,9 +95,14 @@ def _request_authorized_uri(access_token: str) -> str:
         # Upstox's response may contain provider diagnostics. Read only a known
         # error-code field and never log the raw response body or token.
         error_code = None
+        gateway_block = False
         try:
             payload = json.loads(exc.read(4096).decode("utf-8"))
             if isinstance(payload, dict):
+                gateway_block = (
+                    payload.get("cloudflare_error") is True
+                    and payload.get("error_code") in (1010, "1010")
+                )
                 error_code = payload.get("errorCode") or payload.get("error_code")
                 errors = payload.get("errors")
                 if not error_code and isinstance(errors, list) and errors:
@@ -105,6 +113,10 @@ def _request_authorized_uri(access_token: str) -> str:
                         )
         except (UnicodeDecodeError, json.JSONDecodeError, OSError):
             pass
+        if gateway_block:
+            raise PermissionError(
+                "Upstox gateway blocked the request client (Cloudflare 1010; HTTP 403)."
+            ) from None
         safe_code = (
             error_code
             if isinstance(error_code, str)
@@ -263,6 +275,7 @@ class UpstoxLiveStreamManager:
                 # returned URL is one-time and already authorized, so it gets no bearer header.
                 authorized_uri = self._authorizer(self.access_token)
                 _validate_authorized_uri(authorized_uri)
+                logger.info("Upstox market-data authorization succeeded.")
                 ws = self._websocket_factory(
                     authorized_uri,
                     timeout=10,
@@ -280,6 +293,10 @@ class UpstoxLiveStreamManager:
                 self._reconnect_attempts = 0
                 self._next_reconnect_delay = None
                 self._send_subscription(ws)
+                logger.info(
+                    "Upstox market-data WebSocket connected; subscription requested for %s indices.",
+                    len(UPSTOX_INDEX_KEYS),
+                )
                 ws.settimeout(5)
                 while not self._stop_event.is_set():
                     try:
@@ -348,6 +365,8 @@ class UpstoxLiveStreamManager:
         if not isinstance(feeds, dict):
             return 0
         accepted = 0
+        if self._last_message_at is None and feeds:
+            logger.info("Upstox market-data snapshot received for %s instruments.", len(feeds))
         self._last_message_at = now
         for instrument, key in UPSTOX_INDEX_KEYS.items():
             feed = feeds.get(key)

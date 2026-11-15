@@ -174,6 +174,7 @@ def test_authorizer_normalizes_bearer_prefix_and_sends_expected_headers(monkeypa
     def fake_urlopen(request, *, timeout):
         captured["authorization"] = request.get_header("Authorization")
         captured["accept"] = request.get_header("Accept")
+        captured["user_agent"] = request.get_header("User-agent")
         captured["timeout"] = timeout
         return Response(
             json.dumps(
@@ -189,6 +190,7 @@ def test_authorizer_normalizes_bearer_prefix_and_sends_expected_headers(monkeypa
     assert captured == {
         "authorization": "Bearer private-token",
         "accept": "application/json",
+        "user_agent": "AllSafeAITrading/0.2",
         "timeout": 10,
     }
 
@@ -211,3 +213,18 @@ def test_authorizer_reports_only_safe_upstox_error_code(monkeypatch):
         _request_authorized_uri("private-token")
     assert "private-token" not in str(error.value)
     assert "message" not in str(error.value)
+
+
+def test_authorizer_distinguishes_gateway_block_from_token_rejection(monkeypatch):
+    def fake_urlopen(_request, *, timeout):
+        raise HTTPError(
+            "https://api.upstox.com/v3/feed/market-data-feed/authorize",
+            403, "Forbidden", None,
+            BytesIO(b'{"cloudflare_error":true,"error_code":1010,"detail":"private-token"}'),
+        )
+
+    monkeypatch.setattr("app.providers.upstox_stream.urlopen", fake_urlopen)
+    with pytest.raises(PermissionError, match="gateway blocked") as error:
+        _request_authorized_uri("private-token")
+    assert "private-token" not in str(error.value)
+    assert "authorization was rejected" not in str(error.value)
