@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 type UserStatus = "active" | "paused" | string;
@@ -207,6 +207,7 @@ export default function AdminUsersPanel() {
   const isAdmin = profile?.role === "admin" && profile.status === "active";
 
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [directoryToken, setDirectoryToken] = useState<string | null>(null);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -226,17 +227,34 @@ export default function AdminUsersPanel() {
   const deleteTriggerRef = useRef<HTMLElement | null>(null);
   const createCustomerButtonRef = useRef<HTMLButtonElement | null>(null);
   const busyUserIdRef = useRef<string | null>(null);
+  const currentTokenRef = useRef(accessToken);
+  const requestGenerationRef = useRef(0);
+
+  useLayoutEffect(() => {
+    currentTokenRef.current = accessToken;
+    requestGenerationRef.current += 1;
+    return () => {
+      currentTokenRef.current = undefined;
+      requestGenerationRef.current += 1;
+    };
+  }, [accessToken]);
+
+  const isCurrentRequest = useCallback((generation: number) => (
+    Boolean(accessToken) && currentTokenRef.current === accessToken && requestGenerationRef.current === generation
+  ), [accessToken]);
 
   function updateBusyUserId(userId: string | null) {
     busyUserIdRef.current = userId;
     setBusyUserId(userId);
   }
 
-  const handleAdminFailure = useCallback(async (cause: unknown, fallback: string) => {
+  const handleAdminFailure = useCallback(async (cause: unknown, fallback: string, generation: number) => {
+    if (!isCurrentRequest(generation)) return;
     if (cause instanceof AdminRequestError && (cause.status === 401 || cause.status === 403)) {
       deniedTokenRef.current = accessToken ?? null;
       setDeniedToken(accessToken ?? null);
       setUsers([]);
+      setDirectoryToken(null);
       setSuccess(null);
       setCreateOpen(false);
       setPassword("");
@@ -249,8 +267,10 @@ export default function AdminUsersPanel() {
         // Sensitive directory data stays cleared even if account revalidation fails.
       }
     }
-    setError(cause instanceof Error ? cause.message : fallback);
-  }, [accessToken, refreshProfile, signOut]);
+    if (isCurrentRequest(generation)) {
+      setError(cause instanceof Error ? cause.message : fallback);
+    }
+  }, [accessToken, isCurrentRequest, refreshProfile, signOut]);
 
   useEffect(() => {
     const targetId = deleteTarget?.id;
@@ -309,24 +329,33 @@ export default function AdminUsersPanel() {
   }, [deleteTarget?.id]);
 
   const refreshUsers = useCallback(async () => {
-    if (!accessToken || !isAdmin || deniedTokenRef.current === accessToken) return;
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
     setLoadingUsers(true);
     setError(null);
     try {
       const reply = await adminRequest<UserListReply>(accessToken, "/api/v1/admin/users");
-      if (deniedTokenRef.current !== accessToken) {
+      if (isCurrentRequest(generation) && deniedTokenRef.current !== accessToken) {
         setUsers(Array.isArray(reply.users) ? reply.users : []);
+        setDirectoryToken(accessToken);
       }
     } catch (cause) {
-      await handleAdminFailure(cause, "Could not load user accounts.");
+      await handleAdminFailure(cause, "Could not load user accounts.", generation);
     } finally {
-      setLoadingUsers(false);
+      if (isCurrentRequest(generation)) setLoadingUsers(false);
     }
-  }, [accessToken, handleAdminFailure, isAdmin]);
+  }, [accessToken, handleAdminFailure, isAdmin, isCurrentRequest]);
 
   useEffect(() => {
     if (authLoading) return;
+    const generation = requestGenerationRef.current;
     const timer = window.setTimeout(() => {
+      if (currentTokenRef.current !== accessToken || requestGenerationRef.current !== generation) return;
+      setCreating(false);
+      updateBusyUserId(null);
+      setPassword("");
+      setDeleteTarget(null);
+      setDeleteConfirmation("");
       if (accessToken && isAdmin) {
         void refreshUsers();
       } else {
@@ -339,6 +368,7 @@ export default function AdminUsersPanel() {
   }, [accessToken, authLoading, isAdmin, refreshUsers]);
 
   const visibleUsers = useMemo(() => {
+    if (directoryToken !== accessToken) return [];
     const query = search.trim().toLowerCase();
     return users.filter((user) => {
       const matchesStatus = statusFilter === "all" || user.status === statusFilter;
@@ -346,7 +376,7 @@ export default function AdminUsersPanel() {
         .some((value) => value.toLowerCase().includes(query));
       return matchesStatus && matchesSearch;
     });
-  }, [search, statusFilter, users]);
+  }, [accessToken, directoryToken, search, statusFilter, users]);
 
   function clearNotices() {
     setError(null);
@@ -361,7 +391,8 @@ export default function AdminUsersPanel() {
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!accessToken || !isAdmin || creating) return;
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || creating || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
     setCreating(true);
     clearNotices();
     try {
@@ -369,6 +400,7 @@ export default function AdminUsersPanel() {
         method: "POST",
         body: { email: email.trim(), password, allowed_ip: allowedIp.trim() },
       });
+      if (!isCurrentRequest(generation)) return;
       setSuccess(`Created the account for ${email.trim()}.`);
       setEmail("");
       setPassword("");
@@ -376,14 +408,15 @@ export default function AdminUsersPanel() {
       setCreateOpen(false);
       await refreshUsers();
     } catch (cause) {
-      await handleAdminFailure(cause, "Could not create the account.");
+      await handleAdminFailure(cause, "Could not create the account.", generation);
     } finally {
-      setCreating(false);
+      if (isCurrentRequest(generation)) setCreating(false);
     }
   }
 
   async function changeStatus(user: AdminUser) {
-    if (!accessToken || !isAdmin || !isCustomer(user) || busyUserIdRef.current) return;
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || !isCustomer(user) || busyUserIdRef.current || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
     const status = user.status === "active" ? "paused" : "active";
     updateBusyUserId(user.id);
     clearNotices();
@@ -392,17 +425,19 @@ export default function AdminUsersPanel() {
         method: "PATCH",
         body: { status },
       });
+      if (!isCurrentRequest(generation)) return;
       setSuccess(`${user.email} login ${status === "paused" ? "paused" : "resumed"}.`);
       await refreshUsers();
     } catch (cause) {
-      await handleAdminFailure(cause, "Could not update the account status.");
+      await handleAdminFailure(cause, "Could not update the account status.", generation);
     } finally {
-      updateBusyUserId(null);
+      if (isCurrentRequest(generation)) updateBusyUserId(null);
     }
   }
 
   async function changeAllowedIp(user: AdminUser, nextAllowedIp: string): Promise<boolean> {
-    if (!accessToken || !isAdmin || !isCustomer(user) || !nextAllowedIp || busyUserIdRef.current) return false;
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || !isCustomer(user) || !nextAllowedIp || busyUserIdRef.current || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return false;
     updateBusyUserId(user.id);
     clearNotices();
     try {
@@ -410,19 +445,21 @@ export default function AdminUsersPanel() {
         method: "PATCH",
         body: { allowed_ip: nextAllowedIp },
       });
+      if (!isCurrentRequest(generation)) return false;
       setSuccess(`Allowed IP updated for ${user.email}.`);
       await refreshUsers();
       return true;
     } catch (cause) {
-      await handleAdminFailure(cause, "Could not update the allowed IP.");
+      await handleAdminFailure(cause, "Could not update the allowed IP.", generation);
       return false;
     } finally {
-      updateBusyUserId(null);
+      if (isCurrentRequest(generation)) updateBusyUserId(null);
     }
   }
 
   async function deleteUser() {
-    if (!accessToken || !isAdmin || !deleteTarget || !isCustomer(deleteTarget) || busyUserIdRef.current) return;
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || !deleteTarget || !isCustomer(deleteTarget) || busyUserIdRef.current || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
     if (deleteConfirmation.trim().toLowerCase() !== deleteTarget.email.trim().toLowerCase()) return;
     updateBusyUserId(deleteTarget.id);
     clearNotices();
@@ -432,14 +469,15 @@ export default function AdminUsersPanel() {
         `/api/v1/admin/users/${encodeURIComponent(deleteTarget.id)}`,
         { method: "DELETE" },
       );
+      if (!isCurrentRequest(generation)) return;
       setSuccess(`Deleted the account for ${deleteTarget.email}.`);
       setUsers((current) => current.filter((user) => user.id !== deleteTarget.id));
       setDeleteTarget(null);
       setDeleteConfirmation("");
     } catch (cause) {
-      await handleAdminFailure(cause, "Could not delete the account.");
+      await handleAdminFailure(cause, "Could not delete the account.", generation);
     } finally {
-      updateBusyUserId(null);
+      if (isCurrentRequest(generation)) updateBusyUserId(null);
     }
   }
 

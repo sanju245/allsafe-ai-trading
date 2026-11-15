@@ -19,6 +19,8 @@ function harness() {
   let cursor = 0;
   let tree;
   let fetchStatus = 200;
+  let customerEmail = "private-customer@example.com";
+  let deferredResponse = null;
   const calls = { signOut: 0, refreshProfile: 0, fetch: 0 };
   const auth = {
     session: { access_token: "verified-admin-token" },
@@ -47,6 +49,14 @@ function harness() {
     },
     useMemo(callback) { cursor++; return callback(); },
     useCallback(callback) { cursor++; return callback; },
+    useLayoutEffect(callback, deps) {
+      const i = cursor++;
+      const previous = slots[i];
+      if (!previous || deps.some((value, n) => value !== previous.deps[n])) {
+        previous?.cleanup?.();
+        slots[i] = { deps, cleanup: callback() };
+      }
+    },
     useEffect(callback, deps) {
       const i = cursor++;
       if (!(i in slots) || deps.some((value, n) => value !== slots[i][n])) {
@@ -64,13 +74,19 @@ function harness() {
     document: { addEventListener() {}, removeEventListener() {} },
     async fetch() {
       calls.fetch++;
+      if (deferredResponse) {
+        const response = deferredResponse;
+        deferredResponse = null;
+        return response;
+      }
       const status = fetchStatus;
+      const email = customerEmail;
       return {
         ok: status === 200,
         status,
         async json() {
           return status === 200 ? {
-            users: [{ id: "customer-id", email: "private-customer@example.com", role: "user", status: "active", allowed_ip: "192.0.2.10", created_at: "2026-01-01T00:00:00Z" }],
+            users: [{ id: "customer-id", email, role: "user", status: "active", allowed_ip: "192.0.2.10", created_at: "2026-01-01T00:00:00Z" }],
           } : { detail: { message: "Administrator access was denied." } };
         },
       };
@@ -87,6 +103,20 @@ function harness() {
   return {
     calls, auth,
     setStatus(status) { fetchStatus = status; },
+    setCustomerEmail(email) { customerEmail = email; },
+    deferNextResponse(status) {
+      let release;
+      deferredResponse = new Promise((resolve) => { release = resolve; });
+      return () => release({
+        ok: status === 200,
+        status,
+        async json() {
+          return status === 200 ? {
+            users: [{ id: "old-customer", email: "stale-customer@example.com", role: "user", status: "active", allowed_ip: "192.0.2.11", created_at: "2026-01-01T00:00:00Z" }],
+          } : { detail: { message: "Old administrator request denied." } };
+        },
+      });
+    },
     render() { cursor = 0; tree = moduleObj.exports.default(); return tree; },
     async flushEffects() { for (const effect of effects.splice(0)) effect(); await new Promise((resolve) => setTimeout(resolve, 5)); },
     get tree() { return tree; },
@@ -152,3 +182,37 @@ test("A denied customer mutation clears the directory and rechecks the role", as
   assert.equal(app.calls.signOut, 0);
   assert.ok(app.auth.session);
 });
+
+for (const status of [200, 401, 403]) {
+  test("An old session's delayed HTTP " + status + " response cannot change a newer sign-in", async () => {
+    const app = harness();
+    app.render();
+    await app.flushEffects();
+    app.render();
+    const releaseOldResponse = app.deferNextResponse(status);
+    const refresh = find(app.tree, (node) => node.type === "button" && node.props.children === "Refresh list");
+    refresh.props.onClick();
+
+    app.auth.session = null;
+    app.auth.profile = null;
+    app.render();
+    app.auth.session = { access_token: "new-admin-token" };
+    app.auth.profile = { role: "admin", status: "active" };
+    app.setCustomerEmail("current-customer@example.com");
+    app.render();
+    await app.flushEffects();
+    app.render();
+    assert.match(JSON.stringify(app.tree), /current-customer@example.com/);
+    assert.doesNotMatch(JSON.stringify(app.tree), /private-customer@example.com/);
+
+    releaseOldResponse();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    app.render();
+    assert.equal(app.auth.session.access_token, "new-admin-token");
+    assert.equal(app.auth.profile.role, "admin");
+    assert.equal(app.calls.signOut, 0);
+    assert.equal(app.calls.refreshProfile, 0);
+    assert.match(JSON.stringify(app.tree), /current-customer@example.com/);
+    assert.doesNotMatch(JSON.stringify(app.tree), /stale-customer@example.com|Old administrator request denied/);
+  });
+}
