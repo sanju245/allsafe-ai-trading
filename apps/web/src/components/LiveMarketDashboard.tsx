@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 type MarketSymbol = "NIFTY50" | "BANKNIFTY";
@@ -20,6 +20,8 @@ type CandleResponse = {
 };
 type QuoteResponse = {
   available: boolean;
+  feed_state: string;
+  is_stale: boolean;
   quote: { ltp: number; timestamp: string } | null;
 };
 type FormingResponse = {
@@ -41,6 +43,8 @@ type MarketSnapshot = {
   message: string;
   loading: boolean;
   error: string | null;
+  current: boolean;
+  feedState: string;
 };
 
 const markets: { symbol: MarketSymbol; title: string }[] = [
@@ -63,13 +67,22 @@ const emptyMarket: MarketSnapshot = {
   message: "",
   loading: true,
   error: null,
+  current: false,
+  feedState: "checking",
 };
 
-async function getJson<T>(path: string, accessToken: string): Promise<T> {
+class MarketAccessError extends Error {}
+
+async function getJson<T>(path: string, accessToken: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
+    credentials: "omit",
+    signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]),
   });
+  if (response.status === 401 || response.status === 403) {
+    throw new MarketAccessError("Your account access has changed. Sign in again.");
+  }
   if (!response.ok) throw new Error(`Market data request failed (HTTP ${response.status}).`);
   return response.json() as Promise<T>;
 }
@@ -90,8 +103,7 @@ function CandlestickChart({ candles, label }: { candles: Candle[]; label: string
   if (candles.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-white/10 px-6 text-center text-sm text-slate-400">
-        No 5-minute candles are available yet. Live candles appear during NSE
-        market hours once Groww sends an update.
+        No validated 5-minute candles are available. Check the feed status and account-service connection.
       </div>
     );
   }
@@ -165,7 +177,7 @@ function MarketCard({
   const forming = snapshot.candles.find((candle) => candle.is_forming);
   const latestConfirmed = [...snapshot.candles].reverse().find((candle) => !candle.is_forming);
   const price = snapshot.quote?.ltp ?? forming?.close ?? latestConfirmed?.close;
-  const stateLabel = feedState.replaceAll("_", " ");
+  const stateLabel = (snapshot.error ? "unavailable" : snapshot.feedState || feedState).replaceAll("_", " ");
 
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
@@ -177,11 +189,13 @@ function MarketCard({
           </p>
         </div>
         <div className="text-right">
-          <p className="text-xs uppercase tracking-wide text-slate-400">Latest price</p>
+          <p className="text-xs uppercase tracking-wide text-slate-400">
+            {snapshot.error ? "Price unavailable" : snapshot.current ? "Latest validated price" : "Last recorded price · not current"}
+          </p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">{formatPrice(price)}</p>
           {snapshot.quote?.timestamp && (
             <p className="mt-1 text-xs text-slate-500">
-              Updated {new Date(snapshot.quote.timestamp).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} IST
+              Recorded {new Date(snapshot.quote.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST
             </p>
           )}
         </div>
@@ -196,13 +210,16 @@ function MarketCard({
         <p className="mt-3 text-sm text-slate-400">{snapshot.message}</p>
       )}
       {snapshot.loading && <p className="mt-3 text-xs text-slate-500">Loading market data…</p>}
+      {!snapshot.loading && !snapshot.current && !snapshot.error && snapshot.candles.length > 0 && (
+        <p className="mt-2 text-xs text-amber-300">Historical candles are shown. This feed is not current.</p>
+      )}
       {forming && <p className="mt-2 text-xs text-amber-300">The latest candle is still forming.</p>}
     </section>
   );
 }
 
 export default function LiveMarketDashboard() {
-  const { session } = useAuth();
+  const { session, signOut } = useAuth();
   const accessToken = session?.access_token;
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [marketsState, setMarketsState] = useState<Record<MarketSymbol, MarketSnapshot>>({
@@ -210,26 +227,36 @@ export default function LiveMarketDashboard() {
     BANKNIFTY: emptyMarket,
   });
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+  const activeRefresh = useRef<AbortSignal | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (!accessToken) return;
+  const refresh = useCallback(async (signal: AbortSignal) => {
+    if (!accessToken || signal.aborted || (activeRefresh.current && !activeRefresh.current.aborted)) return;
+    activeRefresh.current = signal;
     try {
-      const latestStatus = await getJson<StatusResponse>("/api/v1/live/status", accessToken);
-      setStatus(latestStatus);
-    } catch {
+      const latestStatus = await getJson<StatusResponse>("/api/v1/live/status", accessToken, signal);
+      if (!signal.aborted) setStatus(latestStatus);
+    } catch (error) {
+      if (signal.aborted) return;
       setStatus(null);
+      if (error instanceof MarketAccessError) {
+        await signOut();
+        activeRefresh.current = null;
+        return;
+      }
     }
 
     await Promise.all(markets.map(async ({ symbol }) => {
       const query = `?symbol=${symbol}`;
       try {
         const [candleResponse, quoteResponse, formingResponse] = await Promise.all([
-          getJson<CandleResponse>(`/api/v1/live/candles${query}`, accessToken),
-          getJson<QuoteResponse>(`/api/v1/live/quote${query}`, accessToken),
-          getJson<FormingResponse>(`/api/v1/live/forming-candle${query}`, accessToken),
+          getJson<CandleResponse>(`/api/v1/live/candles${query}`, accessToken, signal),
+          getJson<QuoteResponse>(`/api/v1/live/quote${query}`, accessToken, signal),
+          getJson<FormingResponse>(`/api/v1/live/forming-candle${query}`, accessToken, signal),
         ]);
+        if (signal.aborted) return;
+        const isCurrent = quoteResponse.available && quoteResponse.feed_state === "live" && !quoteResponse.is_stale;
         const candles = [...candleResponse.candles];
-        if (formingResponse.forming_candle) {
+        if (isCurrent && formingResponse.available && formingResponse.forming_candle) {
           candles.push({ ...formingResponse.forming_candle, is_forming: true });
         }
         const uniqueCandles = Array.from(
@@ -243,38 +270,57 @@ export default function LiveMarketDashboard() {
             message: candleResponse.message,
             loading: false,
             error: null,
+            current: isCurrent,
+            feedState: quoteResponse.feed_state || candleResponse.feed_state,
           },
         }));
       } catch (error) {
+        if (signal.aborted) return;
+        if (error instanceof MarketAccessError) {
+          await signOut();
+          return;
+        }
         setMarketsState((current) => ({
           ...current,
           [symbol]: {
             ...current[symbol],
+            candles: [],
+            quote: null,
+            message: "",
+            current: false,
+            feedState: "unavailable",
             loading: false,
             error: error instanceof Error ? error.message : "Could not load market data.",
           },
         }));
       }
     }));
-    setCheckedAt(new Date());
-  }, [accessToken]);
+    if (!signal.aborted) setCheckedAt(new Date());
+    if (activeRefresh.current === signal) activeRefresh.current = null;
+  }, [accessToken, signOut]);
 
   useEffect(() => {
     if (!accessToken) return;
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 15000);
-    return () => window.clearInterval(timer);
+    const controller = new AbortController();
+    void refresh(controller.signal);
+    const timer = window.setInterval(() => void refresh(controller.signal), 15000);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
   }, [accessToken, refresh]);
 
   const backendMessage = !status
     ? "Waiting for the live-data service."
-    : status.last_error
-      ? `Groww reports: ${status.last_error}`
-      : !status.session_open
-        ? "NSE is currently closed. Live updates resume during regular market hours."
-        : status.connected
-          ? "Groww is connected. Prices refresh automatically."
-          : "Groww is not connected yet.";
+    : !status.streaming_enabled
+      ? "Live streaming is disabled. Available history is not a current quote."
+      : status.last_error
+        ? `Groww reports: ${status.last_error}`
+        : !status.session_open
+          ? "NSE is currently closed. Available data is historical."
+          : status.connected && status.feed_state === "live"
+            ? "Groww is connected. Prices refresh automatically."
+            : `The live feed is ${status.feed_state.replaceAll("_", " ")}. Displayed history is not current.`;
 
   return (
     <div className="space-y-6">

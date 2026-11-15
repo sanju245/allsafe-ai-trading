@@ -33,7 +33,7 @@ export default function DashboardAccessGate({ children }: { children: ReactNode 
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
             Your administrator creates your account and approves the public IP address it can use.
           </p>
-          <Link href="/login" className="mt-5 inline-flex rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
+          <Link href="/login?next=%2Fterminal" className="mt-5 inline-flex rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
             Go to sign in
           </Link>
         </section>

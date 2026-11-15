@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { customerDestination } from "@/lib/customerNavigation";
 
 const SUPABASE_CONFIGURED = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
@@ -33,7 +34,7 @@ export default function LoginPage() {
   const [ipUnavailable, setIpUnavailable] = useState(false);
 
   useEffect(() => {
-    if (!loading && session) router.replace("/account");
+    if (!loading && session) router.replace(customerDestination(window.location.search));
   }, [loading, router, session]);
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export default function LoginPage() {
     try {
       await signIn(email, password);
       setPassword("");
-      router.replace("/account");
+      router.replace(customerDestination(window.location.search));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Sign-in failed. Try again.");
       setPassword("");
@@ -122,9 +123,7 @@ export default function LoginPage() {
           <div className="mt-5 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
             <p className="font-semibold">Sign-in is not configured yet.</p>
             <p className="mt-1 leading-relaxed">
-              The administrator must set <code>NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-              <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in the web app environment, then redeploy the site.
-              Do not put a Supabase service-role key in the web app.
+              Account access is temporarily unavailable. Contact the administrator to finish setting up sign-in.
             </p>
           </div>
         ) : (

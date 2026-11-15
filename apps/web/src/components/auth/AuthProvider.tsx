@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -113,6 +114,7 @@ function accessDeniedMessage(body: unknown, status: number): string {
     const current = clientIp ? ` The current IP is ${clientIp}.` : "";
     return `This login is not allowed from the current IP.${allowed}${current}`;
   }
+  if (status >= 500) return "Account verification is temporarily unavailable. Try again soon.";
   if (/paused.*ip|ip.*paused/.test(text)) {
     return "Account access could not be verified. Ask the administrator to check the account status and approved IP.";
   }
@@ -129,7 +131,6 @@ function accessDeniedMessage(body: unknown, status: number): string {
   }
   if (status === 401) return "The email or password is incorrect, or the sign-in has expired.";
   if (status === 403) return "This login is not allowed to access the account.";
-  if (status >= 500) return "Account verification is temporarily unavailable. Try again soon.";
   return "Could not verify this account. Check your connection and try again.";
 }
 
@@ -179,19 +180,21 @@ async function signOutFromSupabase(accessToken: string): Promise<void> {
       },
       cache: "no-store",
       credentials: "omit",
+      signal: AbortSignal.timeout(8000),
     });
   } catch {
     // Local memory is still cleared even if Supabase logout is temporarily unreachable.
   }
 }
 
-async function fetchProfile(accessToken: string): Promise<AuthProfile> {
+async function fetchProfile(accessToken: string, expectedUserId: string): Promise<AuthProfile> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
       cache: "no-store",
       credentials: "omit",
+      signal: AbortSignal.timeout(12000),
     });
   } catch {
     throw new Error("Could not reach the account service. Try again soon.");
@@ -207,7 +210,7 @@ async function fetchProfile(accessToken: string): Promise<AuthProfile> {
   }
 
   const profile = parseProfile(body);
-  if (!profile) {
+  if (!profile || profile.id !== expectedUserId) {
     throw new ProfileCheckError(
       "The account service returned an unexpected profile. Please contact the administrator.",
       response.status,
@@ -234,9 +237,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [loading, setLoading] = useState(false);
+  const authGeneration = useRef(0);
 
   const signIn = useCallback(async (email: string, password: string) => {
     requireSupabaseConfig();
+    const generation = ++authGeneration.current;
     setLoading(true);
     try {
       const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
@@ -249,6 +254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email: email.trim(), password }),
         cache: "no-store",
         credentials: "omit",
+        signal: AbortSignal.timeout(12000),
       });
       const body = await readJson(response);
       if (!response.ok) {
@@ -263,32 +269,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const nextProfile = await fetchProfile(accessToken);
+        const nextProfile = await fetchProfile(accessToken, user.id);
+        if (generation !== authGeneration.current) {
+          throw new Error("Sign-in was cancelled. Please sign in again.");
+        }
         setSession({ access_token: accessToken, user });
         setProfile(nextProfile);
       } catch (cause) {
-        await signOutFromSupabase(accessToken);
+        void signOutFromSupabase(accessToken);
         throw cause;
       }
     } finally {
-      setLoading(false);
+      if (generation === authGeneration.current) setLoading(false);
     }
   }, []);
 
   const signOut = useCallback(async () => {
-    setLoading(true);
-    try {
-      if (session) await signOutFromSupabase(session.access_token);
-    } finally {
-      setSession(null);
-      setProfile(null);
-      setLoading(false);
-    }
+    ++authGeneration.current;
+    setSession(null);
+    setProfile(null);
+    setLoading(false);
+    // Revoke upstream in the background; losing connectivity cannot delay
+    // clearing the in-memory session or returning to the sign-in page.
+    if (session) void signOutFromSupabase(session.access_token);
   }, [session]);
 
   const changePassword = useCallback(async (password: string) => {
     if (!session) throw new Error("Sign in before changing your password.");
+    if (password.length < 8 || password.length > 128) {
+      throw new Error("Choose a password between 8 and 128 characters.");
+    }
     setLoading(true);
+    const generation = authGeneration.current;
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/auth/password`, {
         method: "PUT",
@@ -300,13 +312,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ password }),
         cache: "no-store",
         credentials: "omit",
+        signal: AbortSignal.timeout(12000),
       });
       const body = await readJson(response);
       if (!response.ok) {
+        if (generation === authGeneration.current && (response.status === 401 || response.status === 403)) {
+          ++authGeneration.current;
+          setSession(null);
+          setProfile(null);
+          setLoading(false);
+          void signOutFromSupabase(session.access_token);
+        }
         throw new Error(accessDeniedMessage(body, response.status));
       }
     } finally {
-      setLoading(false);
+      if (generation === authGeneration.current) setLoading(false);
     }
   }, [session]);
 
@@ -316,17 +336,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     setLoading(true);
+    const generation = authGeneration.current;
     try {
-      setProfile(await fetchProfile(session.access_token));
+      const nextProfile = await fetchProfile(session.access_token, session.user.id);
+      if (generation === authGeneration.current) setProfile(nextProfile);
     } catch (cause) {
-      if (cause instanceof ProfileCheckError && cause.shouldSignOut) {
-        await signOutFromSupabase(session.access_token);
+      if (generation === authGeneration.current && cause instanceof ProfileCheckError && cause.shouldSignOut) {
+        ++authGeneration.current;
         setSession(null);
         setProfile(null);
+        setLoading(false);
+        void signOutFromSupabase(session.access_token);
       }
       throw cause;
     } finally {
-      setLoading(false);
+      if (generation === authGeneration.current) setLoading(false);
     }
   }, [session]);
 
