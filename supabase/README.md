@@ -26,8 +26,9 @@ partial unique index, `profiles_single_admin_idx`). It never modifies accounts.
 4. After it succeeds, change the administrator in one transaction: demote the current
    admin, then promote the new one before committing. Promoting a second admin while
    one exists fails with a unique-violation error naming `profiles_single_admin_idx`.
-   The reviewed owner-transfer scripts are under `supabase/admin-transfer/`; inspect
-   their exact account IDs and preconditions before use.
+   Keep account-specific transfer and rollback records in the private operational
+   handover. Verify both Auth identities, active status, expected roles, and the
+   single-admin constraint before running a guarded transaction.
 
 Rollback: `drop index if exists public.profiles_single_admin_idx;`
 
