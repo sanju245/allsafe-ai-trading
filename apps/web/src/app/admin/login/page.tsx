@@ -64,11 +64,9 @@ export default function AdminLoginPage() {
 
         {!SUPABASE_CONFIGURED ? (
           <div className="mt-5 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-            <p className="font-semibold">Sign-in is not configured yet.</p>
+            <p className="font-semibold">Administrator sign-in is temporarily unavailable.</p>
             <p className="mt-1 leading-relaxed">
-              The administrator must set <code>NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-              <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in the web app environment, then redeploy the site.
-              Do not put a Supabase service-role key in the web app.
+              Contact the account owner to restore access.
             </p>
           </div>
         ) : (
