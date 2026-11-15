@@ -194,9 +194,13 @@ async function fetchProfile(accessToken: string, expectedUserId: string): Promis
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
       cache: "no-store",
       credentials: "omit",
-      signal: AbortSignal.timeout(12000),
+      // Allow about a minute for the account API to wake after inactivity.
+      signal: AbortSignal.timeout(65000),
     });
-  } catch {
+  } catch (cause) {
+    if (cause && typeof cause === "object" && "name" in cause && cause.name === "TimeoutError") {
+      throw new Error("The account service is taking longer than usual to start. Please try signing in again.");
+    }
     throw new Error("Could not reach the account service. Try again soon.");
   }
 

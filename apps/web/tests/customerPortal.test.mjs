@@ -31,6 +31,7 @@ function authHarness(fetchImpl) {
   const slots = [];
   let cursor = 0;
   const calls = [];
+  const timeouts = [];
   const hooks = {
     createContext: () => ({ Provider: "AuthContextProvider" }),
     useState: (initial) => {
@@ -59,7 +60,13 @@ function authHarness(fetchImpl) {
       NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-anon-key",
       NEXT_PUBLIC_API_BASE_URL: "https://api.example.test",
     } },
-    AbortSignal, console,
+    AbortSignal: {
+      timeout: (milliseconds) => {
+        timeouts.push(milliseconds);
+        return AbortSignal.timeout(milliseconds);
+      },
+    },
+    console,
     fetch: async (url, options) => {
       calls.push({ url, options });
       return fetchImpl(url, options);
@@ -67,6 +74,7 @@ function authHarness(fetchImpl) {
   });
   return {
     calls,
+    timeouts,
     context: () => {
       cursor = 0;
       return moduleObj.exports.AuthProvider({ children: null }).props.value;
@@ -81,6 +89,7 @@ test("sign-in establishes only the API-verified profile for the authenticated su
   assert.equal(harness.context().profile.id, userId);
   assert.equal(harness.context().loading, false);
   assert.equal(JSON.parse(harness.calls[0].options.body).email, "customer@example.com");
+  assert.deepEqual(harness.timeouts, [12000, 65000]);
   for (const { options } of harness.calls) {
     assert.equal(options.credentials, "omit");
     assert.ok(options.signal instanceof AbortSignal);
@@ -108,6 +117,18 @@ test("customer IP denial remains a sign-in failure and never opens the portal", 
   await assert.rejects(harness.context().signIn("customer@example.com", "password-123"), /not allowed from the current IP/);
   assert.equal(harness.context().session, null);
   assert.equal(harness.context().profile, null);
+});
+
+test("a profile startup timeout explains the wait and leaves the portal signed out", async () => {
+  const harness = authHarness(async (url) => {
+    if (url.includes("/token?")) return json(authReply);
+    if (url.includes("/logout")) return new Response(null, { status: 204 });
+    throw { name: "TimeoutError" };
+  });
+  await assert.rejects(harness.context().signIn("customer@example.com", "password-123"), /taking longer than usual to start/);
+  assert.equal(harness.context().session, null);
+  assert.equal(harness.context().profile, null);
+  assert.equal(harness.context().loading, false);
 });
 
 test("sign-out clears local credentials immediately even if upstream logout never responds", async () => {
