@@ -79,7 +79,7 @@ function LiveIstClock({
         data-testid="ist-clock-time"
         className="mt-1.5 font-mono text-xl font-bold tracking-wider text-white tabular-nums sm:text-2xl"
       >
-        {snapshot ? snapshot.time12hWithZone : "05:30:00 AM IST"}
+        {snapshot ? snapshot.time12hWithZone : "—:—:— IST"}
       </div>
 
       <div

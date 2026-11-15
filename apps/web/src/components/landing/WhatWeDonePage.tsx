@@ -106,7 +106,6 @@ const SIGNAL_CHECKS: SignalCheckSpec[] = [
 function WhatWeDonePage({
   serverTimeUtc = null,
   backendOnline = false,
-  backendVersion = "0.1.0",
 }: WhatWeDonePageProps) {
   const { session } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -118,7 +117,8 @@ function WhatWeDonePage({
     if (!Number.isFinite(parsed)) return 0;
     return parsed - Date.now();
   });
-  const initialEpochMs = serverTimeUtc ? new Date(serverTimeUtc).getTime() : undefined;
+  const parsedEpoch = serverTimeUtc ? Date.parse(serverTimeUtc) : Number.NaN;
+  const initialEpochMs = Number.isFinite(parsedEpoch) ? parsedEpoch : undefined;
 
   return (
     <div className="min-h-screen bg-[#06090f] text-slate-100 selection:bg-emerald-500/30 selection:text-emerald-200">
@@ -279,7 +279,7 @@ function WhatWeDonePage({
           </h1>
 
           <p className="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300 sm:text-base lg:text-lg">
-            The current main branch evaluates confirmed 5-minute candles for{" "}
+            AllSafe evaluates confirmed 5-minute candles for{" "}
             <strong className="text-white">NIFTY 50</strong> and{" "}
             <strong className="text-white">BANK NIFTY</strong> through one
             deterministic signal engine. A candidate direction needs agreement from
@@ -495,7 +495,7 @@ function WhatWeDonePage({
               Customer Sign In
             </Link>
             <span className="font-mono text-[11px] text-slate-500">
-              API: {backendOnline ? `Online (v${backendVersion})` : "Read-Only Mode"}
+              Account service: {backendOnline ? "Reachable" : "Currently unavailable"}
             </span>
           </div>
         </div>

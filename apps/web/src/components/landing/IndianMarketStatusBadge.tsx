@@ -94,21 +94,19 @@ function IndianMarketStatusBadge({
             }`}
           />
         </span>
-        <span>{status.label}</span>
+        <span>{isLive ? "NSE SESSION OPEN" : status.label}</span>
       </div>
     );
   }
 
   return (
     <div
-      role="status"
-      aria-live="polite"
       data-testid="market-status-card"
       className={`flex flex-col justify-between rounded-xl border px-4 py-3 shadow-inner backdrop-blur-md transition-colors ${borderTone} ${className}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-          NSE Equity Session
+          Scheduled NSE Equity Session
         </span>
         <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-300">
           {status.scheduleSummary}
@@ -133,6 +131,8 @@ function IndianMarketStatusBadge({
         </span>
 
         <span
+          role="status"
+          aria-live="polite"
           data-testid="market-status-label"
           className={`font-mono text-base font-bold tracking-wider sm:text-lg ${
             isLive
@@ -142,7 +142,7 @@ function IndianMarketStatusBadge({
                 : "text-amber-200"
           }`}
         >
-          {status.label}
+          {isLive ? "NSE SESSION OPEN" : status.label}
         </span>
 
         {isLive && (
@@ -158,7 +158,7 @@ function IndianMarketStatusBadge({
         )}
       </div>
 
-      <div className="mt-1 flex flex-col gap-0.5 text-[11px] text-slate-300 tabular-nums">
+      <div aria-live="off" className="mt-1 flex flex-col gap-0.5 text-[11px] text-slate-300 tabular-nums">
         {showCountdown && status.countdown ? (
           <span data-testid="market-status-countdown" className="font-mono font-medium text-slate-200">
             {status.countdown.summaryText}
