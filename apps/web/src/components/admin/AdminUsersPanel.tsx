@@ -18,6 +18,12 @@ type AdminUser = {
 
 type UserListReply = { users: AdminUser[] };
 
+class AdminRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
   (process.env.NODE_ENV === "development"
@@ -81,7 +87,7 @@ async function adminRequest<T>(
     );
   }
 
-  if (!response.ok) throw new Error(await responseMessage(response));
+  if (!response.ok) throw new AdminRequestError(await responseMessage(response), response.status);
   if (response.status === 204) return {} as T;
   return response.json() as Promise<T>;
 }
@@ -196,7 +202,7 @@ function UserActions({ user, busy, onStatusChange, onAllowedIpChange, onDelete }
 }
 
 export default function AdminUsersPanel() {
-  const { session, profile, loading: authLoading, signOut } = useAuth();
+  const { session, profile, loading: authLoading, signOut, refreshProfile } = useAuth();
   const accessToken = session?.access_token;
   const isAdmin = profile?.role === "admin" && profile.status === "active";
 
@@ -214,6 +220,8 @@ export default function AdminUsersPanel() {
   const [allowedIp, setAllowedIp] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deniedToken, setDeniedToken] = useState<string | null>(null);
+  const deniedTokenRef = useRef<string | null>(null);
   const deleteDialogRef = useRef<HTMLElement | null>(null);
   const deleteTriggerRef = useRef<HTMLElement | null>(null);
   const createCustomerButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -223,6 +231,26 @@ export default function AdminUsersPanel() {
     busyUserIdRef.current = userId;
     setBusyUserId(userId);
   }
+
+  const handleAdminFailure = useCallback(async (cause: unknown, fallback: string) => {
+    if (cause instanceof AdminRequestError && (cause.status === 401 || cause.status === 403)) {
+      deniedTokenRef.current = accessToken ?? null;
+      setDeniedToken(accessToken ?? null);
+      setUsers([]);
+      setSuccess(null);
+      setCreateOpen(false);
+      setPassword("");
+      setDeleteTarget(null);
+      setDeleteConfirmation("");
+      try {
+        if (cause.status === 401) await signOut();
+        else await refreshProfile();
+      } catch {
+        // Sensitive directory data stays cleared even if account revalidation fails.
+      }
+    }
+    setError(cause instanceof Error ? cause.message : fallback);
+  }, [accessToken, refreshProfile, signOut]);
 
   useEffect(() => {
     const targetId = deleteTarget?.id;
@@ -281,18 +309,20 @@ export default function AdminUsersPanel() {
   }, [deleteTarget?.id]);
 
   const refreshUsers = useCallback(async () => {
-    if (!accessToken || !isAdmin) return;
+    if (!accessToken || !isAdmin || deniedTokenRef.current === accessToken) return;
     setLoadingUsers(true);
     setError(null);
     try {
       const reply = await adminRequest<UserListReply>(accessToken, "/api/v1/admin/users");
-      setUsers(Array.isArray(reply.users) ? reply.users : []);
+      if (deniedTokenRef.current !== accessToken) {
+        setUsers(Array.isArray(reply.users) ? reply.users : []);
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load user accounts.");
+      await handleAdminFailure(cause, "Could not load user accounts.");
     } finally {
       setLoadingUsers(false);
     }
-  }, [accessToken, isAdmin]);
+  }, [accessToken, handleAdminFailure, isAdmin]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -346,7 +376,7 @@ export default function AdminUsersPanel() {
       setCreateOpen(false);
       await refreshUsers();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create the account.");
+      await handleAdminFailure(cause, "Could not create the account.");
     } finally {
       setCreating(false);
     }
@@ -365,7 +395,7 @@ export default function AdminUsersPanel() {
       setSuccess(`${user.email} login ${status === "paused" ? "paused" : "resumed"}.`);
       await refreshUsers();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not update the account status.");
+      await handleAdminFailure(cause, "Could not update the account status.");
     } finally {
       updateBusyUserId(null);
     }
@@ -384,7 +414,7 @@ export default function AdminUsersPanel() {
       await refreshUsers();
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not update the allowed IP.");
+      await handleAdminFailure(cause, "Could not update the allowed IP.");
       return false;
     } finally {
       updateBusyUserId(null);
@@ -407,7 +437,7 @@ export default function AdminUsersPanel() {
       setDeleteTarget(null);
       setDeleteConfirmation("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not delete the account.");
+      await handleAdminFailure(cause, "Could not delete the account.");
     } finally {
       updateBusyUserId(null);
     }
@@ -434,12 +464,14 @@ export default function AdminUsersPanel() {
     );
   }
 
-  if (!isAdmin) {
+  if (!isAdmin || deniedToken === accessToken) {
     return (
       <section className="mx-auto mt-10 max-w-xl rounded-2xl border border-rose-400/20 bg-rose-400/5 p-6 sm:p-8">
         <p className="text-xs font-medium uppercase tracking-widest text-rose-200">Access denied</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">Administrator account required</h1>
-        <p className="mt-3 text-sm leading-relaxed text-slate-300">This account does not have access to the admin portal.</p>
+        <p className="mt-3 text-sm leading-relaxed text-slate-300">Administrator access could not be verified. Customer details have been cleared.</p>
+        {error && <p role="alert" className="mt-3 text-sm text-rose-100">{error}</p>}
+        <Link href="/account" className="mt-5 mr-4 inline-flex text-sm font-medium text-emerald-200 hover:text-white">Go to your account</Link>
         <button type="button" onClick={() => void signOut()} className="mt-5 rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/5">
           Sign out
         </button>

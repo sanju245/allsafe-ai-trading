@@ -108,7 +108,9 @@ export default function AdminLoginPage() {
         )}
 
         {loading && !session && (
-          <p role="status" className="mt-4 text-sm text-slate-400">Checking administrator access…</p>
+          <p role="status" className="mt-4 text-sm text-slate-400">
+            Checking administrator access… The account service can take up to a minute to wake up.
+          </p>
         )}
         {displayError && (
           <p role="alert" className="mt-4 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
