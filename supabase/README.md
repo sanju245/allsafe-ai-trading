@@ -23,9 +23,12 @@ partial unique index, `profiles_single_admin_idx`). It never modifies accounts.
    Paused admins count as admins until demoted.
 3. Run the migration. If duplicates remain it stops with an error before creating
    the index and changes nothing, so it is safe to fix the data and run it again.
-4. After it succeeds, changing the administrator takes two steps: demote the current
-   admin, then promote the new one. Promoting a second admin while one exists fails
-   with a unique-violation error naming `profiles_single_admin_idx`.
+4. After it succeeds, change the administrator in one transaction: demote the current
+   admin, then promote the new one before committing. Promoting a second admin while
+   one exists fails with a unique-violation error naming `profiles_single_admin_idx`.
+   Keep account-specific transfer and rollback records in the private operational
+   handover. Verify both Auth identities, active status, expected roles, and the
+   single-admin constraint before running a guarded transaction.
 
 Rollback: `drop index if exists public.profiles_single_admin_idx;`
 
@@ -64,28 +67,27 @@ environment file, a response, or a browser request.
    intended administrator with a confirmed email and a temporary password.
    Public self-signup is disabled. The auth trigger creates the matching
    `public.profiles` row with role `user`.
-2. From the intended administrator's permitted network, open
-   `https://allsafe-ai-api.onrender.com/api/v1/auth/client-ip` and copy the
-   returned `client_ip` value.
-3. In Supabase SQL Editor, promote only that account and bind its exact IP:
+2. In Supabase SQL Editor, promote only that account. Administrators have no
+   customer IP restriction:
 
    ```sql
    update public.profiles
    set role = 'admin',
-       status = 'active',
-       allowed_ip = '203.0.113.42'::inet
+       status = 'active'
    where lower(email) = lower('admin@example.com');
    ```
 
-   Replace the example address and email with the values from steps 1 and 2.
-   Confirm exactly one row was updated. Do not use a CIDR range; the migration
-   rejects anything other than one IPv4 or IPv6 host address.
-4. Sign in at `https://allsafe-ai-trading.vercel.app/login` from that IP, then
+   Replace the example email with the intended administrator's verified Auth email.
+   Confirm exactly one row was updated and only one administrator exists.
+3. Sign in at `https://allsafe-ai-trading.vercel.app/admin/login`, then
    confirm `GET /api/v1/auth/me` returns the `admin` role. Admin actions are
-   served by the API and checked against the current profile status and IP on
-   every request.
+   served by the API and checked against the current profile role and active status
+   on every request. The customer `allowed_ip` comparison does not apply to active
+   administrators, including when current IP metadata is unavailable.
 
 The public `GET /api/v1/auth/client-ip` endpoint reports the API's trusted
 client address and does not require a login. In production, the API accepts this
-address only from Render's `CF-Connecting-IP` header; if it is absent or invalid,
-the API fails closed.
+address only from Render's `CF-Connecting-IP` header. A missing, invalid, comma-separated,
+or duplicated header fails closed for customers. Active administrators may continue
+with unavailable IP metadata after token, role, and active-status verification.
+Direct-origin header spoof resistance must still be verified against the live edge.

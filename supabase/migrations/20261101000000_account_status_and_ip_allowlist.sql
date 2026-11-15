@@ -25,7 +25,7 @@ alter table public.profiles
 comment on column public.profiles.status is
   'Account access state. API routes reject paused accounts even while old JWTs remain unexpired.';
 comment on column public.profiles.allowed_ip is
-  'One exact IPv4/IPv6 host address; NULL only until first-admin bootstrap is completed.';
+  'One exact IPv4/IPv6 host address required for customer access; admins are IP-unrestricted.';
 
 -- Keep profile data read-only to browser roles. Supabase service_role bypasses RLS
 -- and is used only by the server-side API.
@@ -33,7 +33,7 @@ revoke all on table public.profiles from anon, authenticated;
 grant select on table public.profiles to authenticated;
 
 -- Paused admins lose the existing RLS-based profile-directory read as well.
--- API admin endpoints additionally enforce the caller's exact allowed IP.
+-- API endpoints enforce customer IP restrictions; active administrators are exempt.
 create or replace function private.is_admin()
 returns boolean
 language sql

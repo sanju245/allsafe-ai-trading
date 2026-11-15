@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 type UserStatus = "active" | "paused" | string;
@@ -17,6 +17,12 @@ type AdminUser = {
 };
 
 type UserListReply = { users: AdminUser[] };
+
+class AdminRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ||
@@ -34,6 +40,10 @@ async function responseMessage(response: Response): Promise<string> {
       for (const key of ["detail", "message", "error"]) {
         const value = record[key];
         if (typeof value === "string") return value;
+        if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+          const message = (value as Record<string, unknown>).message;
+          if (typeof message === "string") return message;
+        }
         if (Array.isArray(value) && value.length > 0) {
           const first = value[0];
           if (typeof first === "object" && first !== null) {
@@ -55,19 +65,29 @@ async function adminRequest<T>(
   options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown } = {},
 ): Promise<T> {
   const hasBody = options.body !== undefined;
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method ?? "GET",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${accessToken}`,
-      ...(hasBody ? { "Content-Type": "application/json" } : {}),
-    },
-    ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
-    cache: "no-store",
-    credentials: "omit",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: options.method ?? "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        ...(hasBody ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
+      cache: "no-store",
+      credentials: "omit",
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch {
+    throw new Error(
+      options.method && options.method !== "GET"
+        ? "The account service did not confirm this change. Refresh the list to check its status before trying again."
+        : "The account service could not be reached. Try refreshing the list shortly.",
+    );
+  }
 
-  if (!response.ok) throw new Error(await responseMessage(response));
+  if (!response.ok) throw new AdminRequestError(await responseMessage(response), response.status);
   if (response.status === 204) return {} as T;
   return response.json() as Promise<T>;
 }
@@ -182,11 +202,12 @@ function UserActions({ user, busy, onStatusChange, onAllowedIpChange, onDelete }
 }
 
 export default function AdminUsersPanel() {
-  const { session, profile, loading: authLoading, signOut } = useAuth();
+  const { session, profile, loading: authLoading, signOut, refreshProfile } = useAuth();
   const accessToken = session?.access_token;
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = profile?.role === "admin" && profile.status === "active";
 
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [directoryToken, setDirectoryToken] = useState<string | null>(null);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -200,15 +221,56 @@ export default function AdminUsersPanel() {
   const [allowedIp, setAllowedIp] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deniedToken, setDeniedToken] = useState<string | null>(null);
+  const deniedTokenRef = useRef<string | null>(null);
   const deleteDialogRef = useRef<HTMLElement | null>(null);
   const deleteTriggerRef = useRef<HTMLElement | null>(null);
   const createCustomerButtonRef = useRef<HTMLButtonElement | null>(null);
   const busyUserIdRef = useRef<string | null>(null);
+  const currentTokenRef = useRef(accessToken);
+  const requestGenerationRef = useRef(0);
+
+  useLayoutEffect(() => {
+    currentTokenRef.current = accessToken;
+    requestGenerationRef.current += 1;
+    return () => {
+      currentTokenRef.current = undefined;
+      requestGenerationRef.current += 1;
+    };
+  }, [accessToken]);
+
+  const isCurrentRequest = useCallback((generation: number) => (
+    Boolean(accessToken) && currentTokenRef.current === accessToken && requestGenerationRef.current === generation
+  ), [accessToken]);
 
   function updateBusyUserId(userId: string | null) {
     busyUserIdRef.current = userId;
     setBusyUserId(userId);
   }
+
+  const handleAdminFailure = useCallback(async (cause: unknown, fallback: string, generation: number) => {
+    if (!isCurrentRequest(generation)) return;
+    if (cause instanceof AdminRequestError && (cause.status === 401 || cause.status === 403)) {
+      deniedTokenRef.current = accessToken ?? null;
+      setDeniedToken(accessToken ?? null);
+      setUsers([]);
+      setDirectoryToken(null);
+      setSuccess(null);
+      setCreateOpen(false);
+      setPassword("");
+      setDeleteTarget(null);
+      setDeleteConfirmation("");
+      try {
+        if (cause.status === 401) await signOut();
+        else await refreshProfile();
+      } catch {
+        // Sensitive directory data stays cleared even if account revalidation fails.
+      }
+    }
+    if (isCurrentRequest(generation)) {
+      setError(cause instanceof Error ? cause.message : fallback);
+    }
+  }, [accessToken, isCurrentRequest, refreshProfile, signOut]);
 
   useEffect(() => {
     const targetId = deleteTarget?.id;
@@ -267,22 +329,33 @@ export default function AdminUsersPanel() {
   }, [deleteTarget?.id]);
 
   const refreshUsers = useCallback(async () => {
-    if (!accessToken || !isAdmin) return;
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
     setLoadingUsers(true);
     setError(null);
     try {
       const reply = await adminRequest<UserListReply>(accessToken, "/api/v1/admin/users");
-      setUsers(Array.isArray(reply.users) ? reply.users : []);
+      if (isCurrentRequest(generation) && deniedTokenRef.current !== accessToken) {
+        setUsers(Array.isArray(reply.users) ? reply.users : []);
+        setDirectoryToken(accessToken);
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load user accounts.");
+      await handleAdminFailure(cause, "Could not load user accounts.", generation);
     } finally {
-      setLoadingUsers(false);
+      if (isCurrentRequest(generation)) setLoadingUsers(false);
     }
-  }, [accessToken, isAdmin]);
+  }, [accessToken, handleAdminFailure, isAdmin, isCurrentRequest]);
 
   useEffect(() => {
     if (authLoading) return;
+    const generation = requestGenerationRef.current;
     const timer = window.setTimeout(() => {
+      if (currentTokenRef.current !== accessToken || requestGenerationRef.current !== generation) return;
+      setCreating(false);
+      updateBusyUserId(null);
+      setPassword("");
+      setDeleteTarget(null);
+      setDeleteConfirmation("");
       if (accessToken && isAdmin) {
         void refreshUsers();
       } else {
@@ -295,6 +368,7 @@ export default function AdminUsersPanel() {
   }, [accessToken, authLoading, isAdmin, refreshUsers]);
 
   const visibleUsers = useMemo(() => {
+    if (directoryToken !== accessToken) return [];
     const query = search.trim().toLowerCase();
     return users.filter((user) => {
       const matchesStatus = statusFilter === "all" || user.status === statusFilter;
@@ -302,7 +376,7 @@ export default function AdminUsersPanel() {
         .some((value) => value.toLowerCase().includes(query));
       return matchesStatus && matchesSearch;
     });
-  }, [search, statusFilter, users]);
+  }, [accessToken, directoryToken, search, statusFilter, users]);
 
   function clearNotices() {
     setError(null);
@@ -317,7 +391,8 @@ export default function AdminUsersPanel() {
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!accessToken) return;
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || creating || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
     setCreating(true);
     clearNotices();
     try {
@@ -325,6 +400,7 @@ export default function AdminUsersPanel() {
         method: "POST",
         body: { email: email.trim(), password, allowed_ip: allowedIp.trim() },
       });
+      if (!isCurrentRequest(generation)) return;
       setSuccess(`Created the account for ${email.trim()}.`);
       setEmail("");
       setPassword("");
@@ -332,14 +408,15 @@ export default function AdminUsersPanel() {
       setCreateOpen(false);
       await refreshUsers();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not create the account.");
+      await handleAdminFailure(cause, "Could not create the account.", generation);
     } finally {
-      setCreating(false);
+      if (isCurrentRequest(generation)) setCreating(false);
     }
   }
 
   async function changeStatus(user: AdminUser) {
-    if (!accessToken || !isCustomer(user)) return;
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || !isCustomer(user) || busyUserIdRef.current || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
     const status = user.status === "active" ? "paused" : "active";
     updateBusyUserId(user.id);
     clearNotices();
@@ -348,17 +425,19 @@ export default function AdminUsersPanel() {
         method: "PATCH",
         body: { status },
       });
+      if (!isCurrentRequest(generation)) return;
       setSuccess(`${user.email} login ${status === "paused" ? "paused" : "resumed"}.`);
       await refreshUsers();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not update the account status.");
+      await handleAdminFailure(cause, "Could not update the account status.", generation);
     } finally {
-      updateBusyUserId(null);
+      if (isCurrentRequest(generation)) updateBusyUserId(null);
     }
   }
 
   async function changeAllowedIp(user: AdminUser, nextAllowedIp: string): Promise<boolean> {
-    if (!accessToken || !isCustomer(user) || !nextAllowedIp) return false;
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || !isCustomer(user) || !nextAllowedIp || busyUserIdRef.current || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return false;
     updateBusyUserId(user.id);
     clearNotices();
     try {
@@ -366,19 +445,21 @@ export default function AdminUsersPanel() {
         method: "PATCH",
         body: { allowed_ip: nextAllowedIp },
       });
+      if (!isCurrentRequest(generation)) return false;
       setSuccess(`Allowed IP updated for ${user.email}.`);
       await refreshUsers();
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not update the allowed IP.");
+      await handleAdminFailure(cause, "Could not update the allowed IP.", generation);
       return false;
     } finally {
-      updateBusyUserId(null);
+      if (isCurrentRequest(generation)) updateBusyUserId(null);
     }
   }
 
   async function deleteUser() {
-    if (!accessToken || !deleteTarget || !isCustomer(deleteTarget)) return;
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || !deleteTarget || !isCustomer(deleteTarget) || busyUserIdRef.current || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
     if (deleteConfirmation.trim().toLowerCase() !== deleteTarget.email.trim().toLowerCase()) return;
     updateBusyUserId(deleteTarget.id);
     clearNotices();
@@ -388,14 +469,15 @@ export default function AdminUsersPanel() {
         `/api/v1/admin/users/${encodeURIComponent(deleteTarget.id)}`,
         { method: "DELETE" },
       );
+      if (!isCurrentRequest(generation)) return;
       setSuccess(`Deleted the account for ${deleteTarget.email}.`);
       setUsers((current) => current.filter((user) => user.id !== deleteTarget.id));
       setDeleteTarget(null);
       setDeleteConfirmation("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not delete the account.");
+      await handleAdminFailure(cause, "Could not delete the account.", generation);
     } finally {
-      updateBusyUserId(null);
+      if (isCurrentRequest(generation)) updateBusyUserId(null);
     }
   }
 
@@ -420,12 +502,14 @@ export default function AdminUsersPanel() {
     );
   }
 
-  if (!isAdmin) {
+  if (!isAdmin || deniedToken === accessToken) {
     return (
       <section className="mx-auto mt-10 max-w-xl rounded-2xl border border-rose-400/20 bg-rose-400/5 p-6 sm:p-8">
         <p className="text-xs font-medium uppercase tracking-widest text-rose-200">Access denied</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">Administrator account required</h1>
-        <p className="mt-3 text-sm leading-relaxed text-slate-300">This account does not have access to the admin portal.</p>
+        <p className="mt-3 text-sm leading-relaxed text-slate-300">Administrator access could not be verified. Customer details have been cleared.</p>
+        {error && <p role="alert" className="mt-3 text-sm text-rose-100">{error}</p>}
+        <Link href="/account" className="mt-5 mr-4 inline-flex text-sm font-medium text-emerald-200 hover:text-white">Go to your account</Link>
         <button type="button" onClick={() => void signOut()} className="mt-5 rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/5">
           Sign out
         </button>
@@ -437,7 +521,7 @@ export default function AdminUsersPanel() {
     <UserActions
       key={user.id}
       user={user}
-      busy={busyUserId === user.id}
+      busy={busyUserId !== null}
       onStatusChange={changeStatus}
       onAllowedIpChange={changeAllowedIp}
       onDelete={(target) => {

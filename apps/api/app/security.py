@@ -55,7 +55,7 @@ class AccountPrincipal:
     role: str
     status: str
     allowed_ip: str | None
-    client_ip: str
+    client_ip: str | None
 
 
 def request_client_ip(request: Request) -> str:
@@ -64,7 +64,8 @@ def request_client_ip(request: Request) -> str:
     on_render = bool(os.getenv("RENDER_SERVICE_ID"))
     production = settings.app_env.strip().lower() == "production" or on_render
     if production:
-        candidate = request.headers.get("cf-connecting-ip")
+        candidates = request.headers.getlist("cf-connecting-ip")
+        candidate = candidates[0] if len(candidates) == 1 else None
     else:
         candidate = request.client.host if request.client is not None else None
 
@@ -99,14 +100,13 @@ def require_active_account(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AccountPrincipal:
-    """Verify the JWT and enforce the current profile status and exact IP allowlist."""
+    """Verify account status and enforce the exact customer IP allowlist."""
     settings = get_settings()
     user_id = verify_supabase_access_token(
         authorization,
         supabase_url=settings.supabase_url,
         jwt_secret=settings.supabase_jwt_secret,
     )
-    client_ip = request_client_ip(request)
     try:
         profile = get_profile(user_id, settings=settings)
     except SupabaseAdminAPIError:
@@ -126,7 +126,7 @@ def require_active_account(
     email = profile.get("email")
     raw_allowed_ip = profile.get("allowed_ip")
     allowed_ip = _normalize_stored_ip(raw_allowed_ip)
-    if role not in {"user", "admin"} or not isinstance(email, str):
+    if role not in {"user", "admin"} or not isinstance(email, str) or not email.strip():
         raise HTTPException(
             status_code=403,
             detail={"code": "account_unavailable", "message": "This account is not available."},
@@ -141,6 +141,14 @@ def require_active_account(
             status_code=403,
             detail={"code": "account_inactive", "message": "This account is not active."},
         )
+    try:
+        client_ip = request_client_ip(request)
+    except HTTPException as error:
+        if role == "user" or error.status_code != 503:
+            raise
+        # Admin authorization does not depend on a customer IP allowlist. A
+        # missing or invalid proxy IP must not lock an active admin out.
+        client_ip = None
     if role == "user":
         if raw_allowed_ip is None or (
             isinstance(raw_allowed_ip, str) and not raw_allowed_ip.strip()

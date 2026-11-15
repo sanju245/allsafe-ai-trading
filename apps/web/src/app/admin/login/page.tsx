@@ -22,7 +22,7 @@ export default function AdminLoginPage() {
     if (loading || !session || handledSession.current === session.access_token) return;
     handledSession.current = session.access_token;
 
-    if (profile?.role === "admin") {
+    if (profile?.role === "admin" && profile.status === "active") {
       router.replace("/admin");
     }
   }, [loading, profile, router, session]);
@@ -59,15 +59,14 @@ export default function AdminLoginPage() {
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Admin sign in</h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-300">
           Sign in with an active administrator account to manage customer access.
+          Administrator access is available from any IP address.
         </p>
 
         {!SUPABASE_CONFIGURED ? (
           <div className="mt-5 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-            <p className="font-semibold">Sign-in is not configured yet.</p>
+            <p className="font-semibold">Administrator sign-in is temporarily unavailable.</p>
             <p className="mt-1 leading-relaxed">
-              The administrator must set <code>NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-              <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in the web app environment, then redeploy the site.
-              Do not put a Supabase service-role key in the web app.
+              Contact the account owner to restore access.
             </p>
           </div>
         ) : (
@@ -78,6 +77,7 @@ export default function AdminLoginPage() {
                 type="email"
                 autoComplete="username"
                 required
+                disabled={loading}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/60"
@@ -89,6 +89,7 @@ export default function AdminLoginPage() {
                 type="password"
                 autoComplete="current-password"
                 required
+                disabled={loading}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/60"
@@ -105,7 +106,9 @@ export default function AdminLoginPage() {
         )}
 
         {loading && !session && (
-          <p role="status" className="mt-4 text-sm text-slate-400">Checking administrator access…</p>
+          <p role="status" className="mt-4 text-sm text-slate-400">
+            Checking administrator access… The account service can take up to a minute to wake up.
+          </p>
         )}
         {displayError && (
           <p role="alert" className="mt-4 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
