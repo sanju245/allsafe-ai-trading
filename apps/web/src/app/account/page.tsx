@@ -14,15 +14,15 @@ export default function AccountPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!loading && !session) router.replace("/login");
+    if (!loading && !session) router.replace("/login?next=%2Faccount");
   }, [loading, router, session]);
 
   async function submitPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setMessage(null);
-    if (password.length < 8) {
-      setError("Choose a password with at least 8 characters.");
+    if (password.length < 8 || password.length > 128) {
+      setError("Choose a password between 8 and 128 characters.");
       return;
     }
     if (password !== confirmation) {
@@ -66,8 +66,8 @@ export default function AccountPage() {
               Admin portal
             </Link>
           )}
-          <Link href="/" className="text-sm text-slate-400 hover:text-white">
-            Back to dashboard
+          <Link href="/terminal" className="text-sm text-slate-400 hover:text-white">
+            Live market terminal
           </Link>
         </div>
       </header>
@@ -100,11 +100,13 @@ export default function AccountPage() {
           </div>
           <div>
             <dt className="text-xs text-slate-500">Allowed IP</dt>
-            <dd className="mt-1 break-all font-mono text-slate-200">{profile.allowed_ip ?? "Not restricted"}</dd>
+            <dd className="mt-1 break-all font-mono text-slate-200">{profile.role === "admin" ? "Not restricted for administrators" : profile.allowed_ip ?? "Not configured"}</dd>
           </div>
           <div>
             <dt className="text-xs text-slate-500">Current IP</dt>
-            <dd className="mt-1 break-all font-mono text-slate-200">{profile.client_ip}</dd>
+            <dd className="mt-1 break-all font-mono text-slate-200">
+              {profile.client_ip ?? (profile.role === "admin" ? "Unavailable; admin access is not IP-restricted" : "Unavailable")}
+            </dd>
           </div>
         </dl>
 
@@ -115,7 +117,7 @@ export default function AccountPage() {
         ) : (
           <form onSubmit={submitPassword} className="mt-7 max-w-xl">
             <h2 className="text-lg font-semibold text-white">Change password</h2>
-            <p className="mt-1 text-sm text-slate-400">Use at least 8 characters and enter it twice.</p>
+            <p className="mt-1 text-sm text-slate-400">Use between 8 and 128 characters and enter it twice.</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="text-sm text-slate-300">
                 New password
@@ -123,6 +125,7 @@ export default function AccountPage() {
                   type="password"
                   autoComplete="new-password"
                   minLength={8}
+                  maxLength={128}
                   required
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -135,6 +138,7 @@ export default function AccountPage() {
                   type="password"
                   autoComplete="new-password"
                   minLength={8}
+                  maxLength={128}
                   required
                   value={confirmation}
                   onChange={(event) => setConfirmation(event.target.value)}
