@@ -12,6 +12,7 @@ class EMAPoint:
     ema21: float | None
     ema50: float | None
     bullish: bool | None
+    bearish: bool | None = None
 
 def _ema(values: list[float], period: int) -> list[float | None]:
     out: list[float | None] = [None] * len(values)
@@ -32,5 +33,6 @@ def calculate_ema_trend(candles: list[Candle]) -> list[EMAPoint]:
     for i, candle in enumerate(candles):
         a, b, c = (values[i] for values in arrays)
         bullish = None if a is None or b is None or c is None else a > b > c
-        result.append(EMAPoint(candle.timestamp, a, b, c, bullish))
+        bearish = None if a is None or b is None or c is None else a < b < c
+        result.append(EMAPoint(candle.timestamp, a, b, c, bullish, bearish))
     return result

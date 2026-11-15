@@ -1,0 +1,100 @@
+# AllSafe — five-indicator and decision-engine audit
+
+**Requested period:** 2025-11-15 to 2026-11-14.
+**Scope:** NIFTY 50 and BANK NIFTY, regular weekday NSE sessions, five-minute candles. No autonomous orders.
+
+## Result
+
+The current five-indicator system has weak directional accuracy under the agreed test. Correcting SELL confirmation logic removes mixed/neutral confirmations, but does not establish a profitable strategy or a statistically reliable predictive improvement. Production has not been changed by this indicator audit.
+
+## How a signal was scored
+
+A signal uses a completed five-minute candle. Entry is the next candle's real open. The main result uses the close 30 minutes after entry. BUY is correct when exit is higher; SELL is correct when exit is lower. Flat outcomes are not wins. WAIT and warmup are excluded from the denominator. Events whose holding period crosses the session close or a data gap are excluded and counted in JSON.
+
+EMA, RSI, MACD and Supertrend are confirmation states in the product. For their individual audit, a new non-neutral direction is an event; repeated bars in the same state are not counted as new signals. UT Bot and the decision engine use their emitted BUY/SELL triggers. Thus individual signal percentages use a declared event rule, not a claim that those confirmations place trades alone.
+
+The original decision engine at commit d7e41fb is compared against the corrected version. Indicator formulas and production parameter defaults are retained. The changes were chosen from code defects before fetching outcomes. No parameters were tuned on this year. The last 90 calendar days are also reported separately as an untuned time split; small samples and correlated signals still limit inference.
+
+## Data coverage and provenance
+
+- **NIFTY50:** 245 sessions, 18,375 candles from 2025-11-17 to 2026-11-13; 0 partial regular sessions; 0 unexplained missing weekday sessions. Coverage status: verified_regular_weekday_sessions.
+- **BANKNIFTY:** 245 sessions, 18,375 candles from 2025-11-17 to 2026-11-13; 0 partial regular sessions; 0 unexplained missing weekday sessions. Coverage status: verified_regular_weekday_sessions.
+
+Source: authenticated Upstox Historical V3, fetched in 28-day chunks, with 35 calendar days of pre-period warmup. Raw responses include the request ranges and are archived with SHA-256 hashes. Weekends and nonregular rows are explicitly excluded, including special trading sessions. Overnight gaps remain part of indicator true range; missing intraday bars reset indicator history. No candles are imputed. This audit covers regular weekday sessions rather than every special exchange session.
+
+An independent agent checked all 12,812 eligible 30-minute ledger rows against raw prices and timestamps: zero mismatches. The manager independently executed the reproduction from the saved raw files and the regression suite.
+
+## Primary results before trading costs
+
+| Indicator | NIFTY correct | Signals | BANK NIFTY correct | Signals |
+|---|---:|---:|---:|---:|
+| EMA | 53.12% | 465 | 53.03% | 462 |
+| RSI | 48.95% | 1673 | 48.36% | 1770 |
+| MACD | 48.80% | 1166 | 48.67% | 1274 |
+| Supertrend | 53.07% | 424 | 52.93% | 393 |
+| UT Bot | 48.74% | 2101 | 47.80% | 2050 |
+| Decision baseline | 53.61% | 291 | 50.00% | 274 |
+| Decision corrected | 53.78% | 238 | 50.22% | 231 |
+
+## BUY and SELL separately, 30 minutes
+
+| Instrument | Indicator | BUY signals | BUY correct | SELL signals | SELL correct |
+|---|---|---:|---:|---:|---:|
+| NIFTY50 | EMA | 236 | 56.36% | 229 | 49.78% |
+| NIFTY50 | RSI | 833 | 50.90% | 840 | 47.02% |
+| NIFTY50 | MACD | 583 | 49.40% | 583 | 48.20% |
+| NIFTY50 | Supertrend | 210 | 54.29% | 214 | 51.87% |
+| NIFTY50 | UT Bot | 1053 | 47.86% | 1048 | 49.62% |
+| NIFTY50 | Decision baseline | 111 | 50.45% | 180 | 55.56% |
+| NIFTY50 | Decision corrected | 111 | 50.45% | 127 | 56.69% |
+| BANKNIFTY | EMA | 238 | 50.00% | 224 | 56.25% |
+| BANKNIFTY | RSI | 884 | 48.64% | 886 | 48.08% |
+| BANKNIFTY | MACD | 642 | 49.07% | 632 | 48.26% |
+| BANKNIFTY | Supertrend | 193 | 50.26% | 200 | 55.50% |
+| BANKNIFTY | UT Bot | 1031 | 47.43% | 1019 | 48.18% |
+| BANKNIFTY | Decision baseline | 114 | 45.61% | 160 | 53.12% |
+| BANKNIFTY | Decision corrected | 114 | 45.61% | 117 | 54.70% |
+
+## Decision fixes and practical effect
+
+1. EMA: a mixed or equal 9/21/50 arrangement no longer counts as bearish. SELL now requires EMA9 < EMA21 < EMA50.
+2. RSI: exactly 50 is neutral; SELL requires RSI < 50.
+3. MACD: a zero histogram is neutral; SELL requires histogram < 0.
+
+The BUY rule and numeric indicator formulas are retained. Supertrend's midpoint-based seed differs from TradingView's initial downtrend convention. That is documented as a variant; changing it without a defined parity target was not presented as an accuracy improvement.
+
+| Instrument | Original → corrected signals | Accuracy change | Mean gross move, corrected | Corrected after 2 bps cost |
+|---|---:|---:|---:|---:|
+| NIFTY50 | 291 → 238 | +0.17 percentage points | 0.227 bps | 47.90% |
+| BANKNIFTY | 274 → 231 | +0.22 percentage points | 0.557 bps | 47.19% |
+
+A basis point is 0.01%. Both corrected average moves are below 2 bps, so the mean directional return after even that illustrative round-trip cost is negative. Index levels are not directly executable instruments: these figures do not model option premiums, futures basis, spreads, brokerage, taxes or actual fills. The small accuracy increase alone is not evidence of a reliable edge.
+
+## Untuned last 90 days
+
+| Instrument | Original signals / correct | Corrected signals / correct | Corrected mean gross move |
+|---|---:|---:|---:|
+| NIFTY50 | 75 / 58.67% | 59 / 55.93% | -0.434 bps |
+| BANKNIFTY | 69 / 56.52% | 57 / 61.40% | 3.062 bps |
+
+NIFTY's last-period accuracy and mean move worsen after correction; BANK NIFTY improves on a small sample. This mixed outcome supports fixing the classification defect but does not support promoting an optimized trading strategy. Overall Wilson intervals include 50% for both corrected decisions, and are only descriptive because events overlap and the two indices are correlated.
+
+## Tests and reproducibility
+
+Backend and audit suite: 290 passed; one existing Starlette/httpx deprecation warning. Added checks cover mixed/equal EMA, neutral RSI/MACD SELL gating, exact UT Bot reversal prices, prefix causality, realistic entry/exit timing, missing intraday gaps and empty denominators. Full diffs, modified files, raw responses, per-signal CSV ledgers, monthly splits, 5/30/60-minute metrics, illustrative 2/5/10-bps cost sensitivity and nonoverlapping event results are included.
+
+Reproduce without a credential: `python scripts/audit_indicators.py --input-dir <raw-data-folder> --output <new-results-folder>`. A new broker fetch uses `--fetch --token-dialog`; the token is used in memory and is never included in reports, files or command arguments.
+
+Five specialist scopes: UT Bot, EMA, RSI, MACD and Supertrend. The manager reviewed the decision engine, implemented the fixes, checked real data, reproduced the results and reviewed agent findings against source.
+
+## Next improvements justified by the evidence
+
+Use the corrected neutral handling in a reviewed release. Retain supervised analysis mode. Collect a separate forward paper-trading period using actual intended instruments and costs before claiming strategy improvement. If optimization is requested, predeclare a small candidate set, use rolling training/validation windows, and reserve later untouched data; do not tune until this year's headline percentage looks good.
+
+## Primary sources
+
+- Upstox historical endpoint, limits and timestamps: https://upstox.com/developer/api-documentation/v3/get-historical-candle-data/
+- NSE 2025 holiday circular: https://nsearchives.nseindia.com/content/circulars/CMTR65587.pdf
+- NSE 2026 holiday circular: https://nsearchives.nseindia.com/content/circulars/CMTR71775.pdf
+- Additional 15 January 2026 holiday: https://nsearchives.nseindia.com/content/circulars/CMTR72260.pdf
+- Formula references and parity limitations are recorded in the five specialist reports.

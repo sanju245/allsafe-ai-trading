@@ -47,7 +47,10 @@ def calculate_decisions(candles: list[Candle], *, sensitivity: float = 1.0,
             decision, reason = TradeDecision.DATA_UNAVAILABLE, "Indicator warm-up: insufficient candle history."
         elif trigger == UTBotSignal.BUY and all(v is True for v in filters):
             decision, reason = TradeDecision.BUY, "UT Bot BUY; all four confirmation indicators bullish."
-        elif trigger == UTBotSignal.SELL and all(v is False for v in filters):
+        elif (trigger == UTBotSignal.SELL and ema[i].bearish is True
+              and rsi[i].rsi is not None and rsi[i].rsi < 50
+              and macd[i].histogram is not None and macd[i].histogram < 0
+              and st[i].bullish is False):
             decision, reason = TradeDecision.SELL, "UT Bot SELL; all four confirmation indicators bearish."
         else:
             decision, reason = TradeDecision.WAIT, "No unanimous confirmed signal on this candle."
