@@ -15,6 +15,8 @@ EMA, RSI, MACD and Supertrend are confirmation states in the product. For their 
 
 The original decision engine at commit d7e41fb is compared against the corrected version. Indicator formulas and production parameter defaults are retained. The changes were chosen from code defects before fetching outcomes. No parameters were tuned on this year. The last 90 calendar days are also reported separately as an untuned time split; small samples and correlated signals still limit inference.
 
+This is a causal offline calculation replay on continuous complete history, not a recovered log of past deployed alerts. Live restarts, missing feed intervals, historical warmup and rolling-buffer reseeding can change which signals were actually available. The current Upstox adapter does not seed historical candles into the live runtime; it needs live candle warmup after restart. The live buffer is finite, whereas this annual calculation carries recursive history forward. These integration differences must be resolved or simulated before claiming exact parity with deployed alerts.
+
 ## Data coverage and provenance
 
 - **NIFTY50:** 245 sessions, 18,375 candles from 2025-11-17 to 2026-11-13; 0 partial regular sessions; 0 unexplained missing weekday sessions. Coverage status: verified_regular_weekday_sessions.
