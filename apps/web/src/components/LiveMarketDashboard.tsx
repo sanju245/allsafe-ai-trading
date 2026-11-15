@@ -31,12 +31,22 @@ type FormingResponse = {
 type InstrumentStatus = { feed_state: string };
 type StatusResponse = {
   feed_state: string;
+  provider: string;
   streaming_enabled: boolean;
   connected: boolean;
   session_open: boolean;
   last_error: string | null;
   instruments: Record<string, InstrumentStatus>;
 };
+type ProviderOption = {
+  id: "groww" | "upstox";
+  label: string;
+  configured: boolean;
+  feed_state: string;
+  connected: boolean;
+  message: string;
+};
+type ProviderResponse = { providers: ProviderOption[] };
 type MarketSnapshot = {
   candles: Candle[];
   quote: QuoteResponse["quote"];
@@ -222,6 +232,8 @@ export default function LiveMarketDashboard() {
   const { session, signOut } = useAuth();
   const accessToken = session?.access_token;
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<"groww" | "upstox">("groww");
   const [marketsState, setMarketsState] = useState<Record<MarketSymbol, MarketSnapshot>>({
     NIFTY50: emptyMarket,
     BANKNIFTY: emptyMarket,
@@ -229,12 +241,30 @@ export default function LiveMarketDashboard() {
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const activeRefresh = useRef<AbortSignal | null>(null);
 
+  useEffect(() => {
+    const saved = window.localStorage.getItem("allsafe-market-provider");
+    if (saved === "groww" || saved === "upstox") setSelectedProvider(saved);
+  }, []);
+
+  const selectProvider = (provider: "groww" | "upstox") => {
+    setSelectedProvider(provider);
+    window.localStorage.setItem("allsafe-market-provider", provider);
+    setStatus(null);
+    setMarketsState({ NIFTY50: emptyMarket, BANKNIFTY: emptyMarket });
+  };
+
   const refresh = useCallback(async (signal: AbortSignal) => {
     if (!accessToken || signal.aborted || (activeRefresh.current && !activeRefresh.current.aborted)) return;
     activeRefresh.current = signal;
     try {
-      const latestStatus = await getJson<StatusResponse>("/api/v1/live/status", accessToken, signal);
-      if (!signal.aborted) setStatus(latestStatus);
+      const [latestStatus, providerResponse] = await Promise.all([
+        getJson<StatusResponse>(`/api/v1/live/status?provider=${selectedProvider}`, accessToken, signal),
+        getJson<ProviderResponse>("/api/v1/live/providers", accessToken, signal),
+      ]);
+      if (!signal.aborted) {
+        setStatus(latestStatus);
+        setProviders(providerResponse.providers);
+      }
     } catch (error) {
       if (signal.aborted) return;
       setStatus(null);
@@ -246,10 +276,10 @@ export default function LiveMarketDashboard() {
     }
 
     await Promise.all(markets.map(async ({ symbol }) => {
-      const query = `?symbol=${symbol}`;
+      const query = `?symbol=${symbol}&provider=${selectedProvider}`;
       try {
         const [candleResponse, quoteResponse, formingResponse] = await Promise.all([
-          getJson<CandleResponse>(`/api/v1/live/candles${query}`, accessToken, signal),
+          getJson<CandleResponse>(`/api/v1/live/candles${query}&timeframe=5m`, accessToken, signal),
           getJson<QuoteResponse>(`/api/v1/live/quote${query}`, accessToken, signal),
           getJson<FormingResponse>(`/api/v1/live/forming-candle${query}`, accessToken, signal),
         ]);
@@ -297,7 +327,7 @@ export default function LiveMarketDashboard() {
     }));
     if (!signal.aborted) setCheckedAt(new Date());
     if (activeRefresh.current === signal) activeRefresh.current = null;
-  }, [accessToken, signOut]);
+  }, [accessToken, selectedProvider, signOut]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -312,21 +342,35 @@ export default function LiveMarketDashboard() {
 
   const backendMessage = !status
     ? "Waiting for the live-data service."
-    : !status.streaming_enabled
-      ? "Live streaming is disabled. Available history is not a current quote."
+    : !providers.find((provider) => provider.id === selectedProvider)?.configured
+      ? `${selectedProvider === "groww" ? "Groww" : "Upstox"} is not configured for this platform yet. No live prices are being shown.`
       : status.last_error
-        ? `Groww reports: ${status.last_error}`
+        ? `${selectedProvider === "groww" ? "Groww" : "Upstox"} reports: ${status.last_error}`
         : !status.session_open
           ? "NSE is currently closed. Available data is historical."
           : status.connected && status.feed_state === "live"
-            ? "Groww is connected. Prices refresh automatically."
+            ? `${selectedProvider === "groww" ? "Groww" : "Upstox"} is connected. Prices refresh automatically.`
             : `The live feed is ${status.feed_state.replaceAll("_", " ")}. Displayed history is not current.`;
 
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-slate-300">{backendMessage}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <label htmlFor="market-data-provider" className="text-sm text-slate-300">Market data</label>
+            <select
+              id="market-data-provider"
+              value={selectedProvider}
+              onChange={(event) => selectProvider(event.target.value as "groww" | "upstox")}
+              className="rounded-md border border-white/15 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
+            >
+              {(["groww", "upstox"] as const).map((id) => {
+                const option = providers.find((item) => item.id === id);
+                return <option key={id} value={id}>{option?.label ?? (id === "groww" ? "Groww" : "Upstox")}{option?.connected ? " · live" : option?.configured ? " · configured" : " · unavailable"}</option>;
+              })}
+            </select>
+            <p className="text-sm text-slate-300">{backendMessage}</p>
+          </div>
           <p className="text-xs text-slate-500">
             {checkedAt ? `Checked ${checkedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} IST · refreshes every 15 seconds` : "Connecting…"}
           </p>
@@ -343,7 +387,7 @@ export default function LiveMarketDashboard() {
         ))}
       </div>
       <p className="text-xs text-slate-500">
-        Charts use Groww market data and show 5-minute candles. Educational analysis only;
+        Charts use the selected provider and show 5-minute candles. Educational analysis only;
         no orders are placed by this site.
       </p>
     </div>

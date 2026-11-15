@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Live Groww market-data streaming (disabled by default for safety).
     live_stream_enabled: bool = False
     market_data_provider: str = "groww"
+    # Upstox market data is a separate, read-only feed and is disabled unless explicitly configured.
+    upstox_live_stream_enabled: bool = False
+    upstox_access_token: SecretStr = SecretStr("")
     # Explicit Groww authentication mode: "access_token", "totp", or "api_key_secret"
     groww_auth_mode: str = ""
     groww_access_token: str = ""
@@ -44,6 +47,8 @@ class Settings(BaseSettings):
             f"Settings(app_env={self.app_env!r}, "
             f"live_stream_enabled={self.live_stream_enabled!r}, "
             f"market_data_provider={self.market_data_provider!r}, "
+            f"upstox_live_stream_enabled={self.upstox_live_stream_enabled!r}, "
+            f"upstox_access_token={'[REDACTED]' if self.upstox_access_token.get_secret_value().strip() else '[EMPTY]'}, "
             f"groww_auth_mode={self.groww_auth_mode!r}, "
             f"groww_access_token={'[REDACTED]' if self.groww_access_token.strip() else '[EMPTY]'}, "
             f"groww_api_key={'[REDACTED]' if self.groww_api_key.strip() else '[EMPTY]'}, "

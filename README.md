@@ -33,7 +33,9 @@ The local review environment has no Supabase URL or anon key configured. Sign-in
 
 ## Trading safety
 
-The reviewed API is read-only and does not place broker orders. No live stream or production credentials were started or used during this audit. Keep LIVE_STREAM_ENABLED=false for local tests. Do not add execution or autonomous-order behavior without a separately reviewed change and explicit approval.
+The reviewed API is read-only and does not place broker orders. Local checks do not start production feeds. Keep both feed flags false for local tests. Do not add execution or autonomous-order behavior without a separately reviewed change and explicit approval.
+
+The customer market dashboard supports a server-managed market-data source selector for Groww and Upstox. Groww uses `LIVE_STREAM_ENABLED` and the existing `GROWW_*` settings. Upstox V3 is separately disabled unless `UPSTOX_LIVE_STREAM_ENABLED=true` and the server-only `UPSTOX_ACCESS_TOKEN` are configured. The Upstox credential is an Analytics token and must never be exposed in browser settings or logs. Customers can choose a source, but a source reports live only after its connected feed produces fresh, validated updates. Confirm that the provider and exchange permissions cover displaying a shared feed to customers before enabling either source for customer distribution.
 
 ## Local checks
 
@@ -48,7 +50,7 @@ Backend, from apps/api/:
 
     .venv\Scripts\python.exe -m pytest -q
 
-Set LIVE_STREAM_ENABLED=false while testing. Browser configuration uses NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and NEXT_PUBLIC_API_BASE_URL. The API service-role key and provider credentials belong only in the backend environment. Never put them in a NEXT_PUBLIC_* variable or commit them.
+Set LIVE_STREAM_ENABLED=false and UPSTOX_LIVE_STREAM_ENABLED=false while testing. Browser configuration uses NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and NEXT_PUBLIC_API_BASE_URL. The API service-role key and provider credentials belong only in the backend environment. Never put them in a NEXT_PUBLIC_* variable or commit them.
 
 ## Release records
 

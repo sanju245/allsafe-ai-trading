@@ -1,4 +1,4 @@
-"""Response schemas for read-only Groww live market-data endpoints."""
+"""Response schemas for read-only live market-data endpoints."""
 
 from datetime import datetime
 
@@ -19,6 +19,7 @@ class InstrumentStatusSchema(BaseModel):
 
     instrument: InstrumentId
     groww_symbol: str
+    provider_symbol: str | None = None
     trading_symbol: str
     exchange_token: str | None = None
     feed_state: FeedState
@@ -74,6 +75,7 @@ class LiveQuoteResponse(BaseModel):
     instrument: InstrumentId
     symbol: str
     groww_symbol: str
+    provider_symbol: str | None = None
     trading_symbol: str
     available: bool
     feed_state: FeedState
@@ -145,6 +147,7 @@ class LiveCandlesResponse(BaseModel):
     instrument: InstrumentId
     symbol: str
     groww_symbol: str
+    provider_symbol: str | None = None
     trading_symbol: str
     timeframe: Timeframe
     feed_state: FeedState
@@ -189,6 +192,7 @@ class LiveFormingCandleResponse(BaseModel):
     instrument: InstrumentId
     symbol: str
     groww_symbol: str
+    provider_symbol: str | None = None
     trading_symbol: str
     timeframe: Timeframe
     available: bool

@@ -11,7 +11,8 @@ from app.main import app
 from app.market_data.live_runtime import LiveMarketDataRuntime
 from app.providers.groww_auth import GrowwCredentials
 from app.providers.groww_stream import GrowwLiveStreamManager
-from app.routers.live import set_live_runtime
+from app.providers.upstox_stream import UpstoxLiveStreamManager
+from app.routers.live import set_live_runtime, set_live_runtimes
 from app.security import require_active_account
 from tests.fixtures.sample_data import ist
 from tests.test_groww_historical import HistoricalFakeGrowwAPI
@@ -58,6 +59,35 @@ def test_default_startup_has_live_streaming_disabled_and_no_store_headers():
         assert "NSE-BANKNIFTY" in body["subscribed_symbols"]
         assert "NIFTY50" in body["instruments"]
         assert "BANKNIFTY" in body["instruments"]
+
+
+def test_customer_can_select_upstox_feed_runtime_without_changing_groww_default():
+    upstox = LiveMarketDataRuntime(
+        stream_manager=UpstoxLiveStreamManager(access_token="test-only", streaming_enabled=False)
+    )
+    set_live_runtimes(app, {"groww": make_test_runtime(), "upstox": upstox})
+    try:
+        with TestClient(app) as client:
+            selected = client.get("/api/v1/live/status", params={"provider": "upstox"})
+            default = client.get("/api/v1/live/status")
+
+        assert selected.status_code == 200
+        assert selected.json()["provider"] == "upstox"
+        assert default.status_code == 200
+        assert default.json()["provider"] == "groww"
+    finally:
+        set_live_runtime(app, None)
+
+
+def test_provider_availability_does_not_return_server_tokens():
+    set_live_runtime(app, None)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/live/providers")
+
+    assert response.status_code == 200
+    assert response.headers.get("cache-control") == "no-store"
+    assert {item["id"] for item in response.json()["providers"]} == {"groww", "upstox"}
+    assert "access_token" not in response.text
 
 
 def test_quote_endpoint_unavailable_never_invents_prices_or_volume():
@@ -194,7 +224,7 @@ def test_http_responses_never_leak_groww_secrets():
 
 
 def test_live_api_rejects_requests_without_a_signed_in_account(monkeypatch):
-    import app.security as security
+    from app import security
 
     app.dependency_overrides.pop(require_active_account, None)
     monkeypatch.setattr(

@@ -1,8 +1,8 @@
 """Provider-agnostic Live Market-Data & 5-Indicator Decision Runtime.
 
 Coordinates:
-* Historical 5-minute candle warm-up from `GrowwHistoricalProvider`.
-* Live 5-minute session-aligned candle aggregation from `GrowwLiveStreamManager`.
+* Historical 5-minute candle warm-up when the selected provider supports it.
+* Live 5-minute session-aligned candle aggregation from the selected feed manager.
 * Strict separation between forming (in-progress) and confirmed (closed) candles.
 * Connection of validated, complete, confirmed candles to the existing 5-indicator
   decision engine (`calculate_decisions`), ensuring:
@@ -13,9 +13,11 @@ Coordinates:
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, Protocol
 
 from app.indicators.decision import DecisionPoint, TradeDecision, calculate_decisions
 from app.market_data.instruments import InstrumentId
+from app.market_data.live_aggregator import LiveSessionAggregator
 from app.market_data.live_models import (
     FeedState,
 )
@@ -25,9 +27,23 @@ from app.market_data.timeframes import Timeframe
 from app.market_data.validation import ValidationReport, validate_candles
 from app.providers.base import CandleRequest
 from app.providers.groww_historical import GrowwHistoricalProvider
-from app.providers.groww_stream import (
-    GrowwLiveStreamManager,
-)
+
+
+class LiveStreamManager(Protocol):
+    """Minimum read-only feed interface consumed by the shared market runtime."""
+
+    aggregator: LiveSessionAggregator
+    streaming_enabled: bool
+    groww_client: Any
+    instrument_resolver: Any
+
+    def start(self, *, as_of: datetime | None = None) -> bool: ...
+
+    def stop(self, *, as_of: datetime | None = None) -> None: ...
+
+    def set_historical_candle_count(self, instrument: InstrumentId, count: int) -> None: ...
+
+    def _record_error(self, message: Any, *, permanent: bool = False) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -58,7 +74,7 @@ class LiveMarketDataRuntime:
     def __init__(
         self,
         *,
-        stream_manager: GrowwLiveStreamManager,
+        stream_manager: LiveStreamManager,
         historical_provider: GrowwHistoricalProvider | None = None,
         warmup_lookback_days: int = 5,
     ) -> None:
