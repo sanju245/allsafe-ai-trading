@@ -250,6 +250,7 @@ function dashboardHarness() {
           signOut: async () => { signedOut = true; },
         }),
       };
+      if (name === "@/components/StrategyDecisionPanel") return { default: () => null };
       throw new Error("Unexpected import: " + name);
     },
     process: { env: { NEXT_PUBLIC_API_BASE_URL: "https://api.example.test" } },

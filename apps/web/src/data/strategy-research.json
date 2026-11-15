@@ -1,0 +1,1962 @@
+{
+  "version": "strategy-research-v1",
+  "audit_start": "2025-11-15",
+  "audit_end": "2026-11-14",
+  "horizon_minutes": 30,
+  "evidence_status": "exploratory_reused_data",
+  "walk_forward": {
+    "signals": 0,
+    "accuracy_pct": null,
+    "wins": 0,
+    "buy_signals": 0,
+    "sell_signals": 0,
+    "mean_gross_bps": null,
+    "mean_net_2bps": null,
+    "session_bootstrap_95": null,
+    "blocks": 10,
+    "wait_blocks": 10
+  },
+  "target_gates": {
+    "adx_confirmation": {
+      "passed_retrospective_gate": false,
+      "failures": [
+        "NIFTY50: fewer than100 test observations",
+        "NIFTY50: accuracy below60%",
+        "NIFTY50: mean after2bps not positive",
+        "NIFTY50: lower descriptive accuracy bound not above50%",
+        "BANKNIFTY: fewer than100 test observations",
+        "BANKNIFTY: accuracy below60%",
+        "BANKNIFTY: mean after2bps not positive",
+        "BANKNIFTY: lower descriptive accuracy bound not above50%"
+      ],
+      "forward_validation_required": true,
+      "production_eligible": false
+    },
+    "ema_pullback": {
+      "passed_retrospective_gate": false,
+      "failures": [
+        "NIFTY50: accuracy below60%",
+        "NIFTY50: mean after2bps not positive",
+        "NIFTY50: lower descriptive accuracy bound not above50%",
+        "BANKNIFTY: accuracy below60%",
+        "BANKNIFTY: mean after2bps not positive",
+        "BANKNIFTY: lower descriptive accuracy bound not above50%"
+      ],
+      "forward_validation_required": true,
+      "production_eligible": false
+    },
+    "donchian_breakout": {
+      "passed_retrospective_gate": false,
+      "failures": [
+        "NIFTY50: accuracy below60%",
+        "NIFTY50: mean after2bps not positive",
+        "NIFTY50: lower descriptive accuracy bound not above50%",
+        "BANKNIFTY: accuracy below60%",
+        "BANKNIFTY: mean after2bps not positive",
+        "BANKNIFTY: lower descriptive accuracy bound not above50%"
+      ],
+      "forward_validation_required": true,
+      "production_eligible": false
+    },
+    "bollinger_reentry": {
+      "passed_retrospective_gate": false,
+      "failures": [
+        "NIFTY50: accuracy below60%",
+        "NIFTY50: mean after2bps not positive",
+        "NIFTY50: lower descriptive accuracy bound not above50%",
+        "BANKNIFTY: accuracy below60%",
+        "BANKNIFTY: mean after2bps not positive",
+        "BANKNIFTY: lower descriptive accuracy bound not above50%"
+      ],
+      "forward_validation_required": true,
+      "production_eligible": false
+    },
+    "stochastic_reversal": {
+      "passed_retrospective_gate": false,
+      "failures": [
+        "NIFTY50: accuracy below60%",
+        "NIFTY50: mean after2bps not positive",
+        "NIFTY50: lower descriptive accuracy bound not above50%",
+        "BANKNIFTY: accuracy below60%",
+        "BANKNIFTY: mean after2bps not positive",
+        "BANKNIFTY: lower descriptive accuracy bound not above50%"
+      ],
+      "forward_validation_required": true,
+      "production_eligible": false
+    },
+    "higher_timeframe_ut": {
+      "passed_retrospective_gate": false,
+      "failures": [
+        "NIFTY50: accuracy below60%",
+        "NIFTY50: mean after2bps not positive",
+        "NIFTY50: lower descriptive accuracy bound not above50%",
+        "BANKNIFTY: accuracy below60%",
+        "BANKNIFTY: mean after2bps not positive",
+        "BANKNIFTY: lower descriptive accuracy bound not above50%"
+      ],
+      "forward_validation_required": true,
+      "production_eligible": false
+    },
+    "regime_consensus": {
+      "passed_retrospective_gate": false,
+      "failures": [
+        "NIFTY50: accuracy below60%",
+        "NIFTY50: mean after2bps not positive",
+        "NIFTY50: lower descriptive accuracy bound not above50%",
+        "BANKNIFTY: accuracy below60%",
+        "BANKNIFTY: mean after2bps not positive",
+        "BANKNIFTY: lower descriptive accuracy bound not above50%"
+      ],
+      "forward_validation_required": true,
+      "production_eligible": false
+    }
+  },
+  "instruments": {
+    "NIFTY50": {
+      "coverage": {
+        "sessions": 245,
+        "candles": 18375,
+        "first": "2025-11-17",
+        "last": "2026-11-13",
+        "raw_file_sha256": "0b145bdfb20d11e43effcca9bbe58d3d2e3b1d3e5adfd2c81ea449e2197d8d77",
+        "excluded_nonregular": 89,
+        "zero_volume_rows": 20126,
+        "raw_rows": 20126
+      },
+      "strategies": [
+        {
+          "id": "decision_corrected",
+          "label": "Original corrected decision",
+          "evaluation_label": "All-year descriptive",
+          "signals": 238,
+          "side_results": {
+            "BUY": {
+              "signals": 111,
+              "accuracy_pct": 50.450450450450454
+            },
+            "SELL": {
+              "signals": 127,
+              "accuracy_pct": 56.69291338582677
+            }
+          },
+          "buy_signals": 111,
+          "sell_signals": 127,
+          "wins": 128,
+          "losses": 110,
+          "flat": 0,
+          "accuracy_pct": 53.78151260504202,
+          "wilson_95_interval_pct": [
+            47.437464315311885,
+            60.00542392227835
+          ],
+          "mean_gross_bps": 0.22700825242382508,
+          "accuracy_after_cost_pct": {
+            "2": 47.89915966386555,
+            "5": 37.39495798319328,
+            "10": 23.949579831932773
+          },
+          "same_time_always_buy_pct": 46.63865546218487,
+          "same_time_always_sell_pct": 53.36134453781513,
+          "nonoverlapping_signals": 227,
+          "nonoverlapping_accuracy_pct": 54.18502202643172,
+          "mean_net_2bps": -1.772991747576175,
+          "profit_factor_gross": 1.037068092778084,
+          "active_sessions": 163,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              47.21030042918455,
+              60.2510460251046
+            ],
+            "mean_net_2bps": [
+              -4.039344370055788,
+              0.5457009320069756
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 179,
+            "side_results": {
+              "BUY": {
+                "signals": 83,
+                "accuracy_pct": 51.80722891566265
+              },
+              "SELL": {
+                "signals": 96,
+                "accuracy_pct": 58.333333333333336
+              }
+            },
+            "buy_signals": 83,
+            "sell_signals": 96,
+            "wins": 99,
+            "losses": 80,
+            "flat": 0,
+            "accuracy_pct": 55.3072625698324,
+            "wilson_95_interval_pct": [
+              47.98832954023403,
+              62.403178737969625
+            ],
+            "mean_gross_bps": 0.8796793968407893,
+            "accuracy_after_cost_pct": {
+              "2": 51.95530726256983,
+              "5": 40.78212290502793,
+              "10": 26.256983240223462
+            },
+            "same_time_always_buy_pct": 46.36871508379888,
+            "same_time_always_sell_pct": 53.63128491620112,
+            "nonoverlapping_signals": 170,
+            "nonoverlapping_accuracy_pct": 55.294117647058826,
+            "mean_net_2bps": -1.1203206031592106,
+            "profit_factor_gross": 1.1387064089078975,
+            "active_sessions": 123,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                47.89473684210526,
+                62.637362637362635
+              ],
+              "mean_net_2bps": [
+                -4.037657056440258,
+                1.6825188793744332
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "decision_cooldown",
+          "label": "Original with 30-minute spacing",
+          "evaluation_label": "All-year descriptive",
+          "signals": 227,
+          "side_results": {
+            "BUY": {
+              "signals": 107,
+              "accuracy_pct": 50.467289719626166
+            },
+            "SELL": {
+              "signals": 120,
+              "accuracy_pct": 57.5
+            }
+          },
+          "buy_signals": 107,
+          "sell_signals": 120,
+          "wins": 123,
+          "losses": 104,
+          "flat": 0,
+          "accuracy_pct": 54.18502202643172,
+          "wilson_95_interval_pct": [
+            47.68749408625453,
+            60.54325808319846
+          ],
+          "mean_gross_bps": 0.34204785373106467,
+          "accuracy_after_cost_pct": {
+            "2": 48.89867841409691,
+            "5": 38.76651982378855,
+            "10": 24.669603524229075
+          },
+          "same_time_always_buy_pct": 46.25550660792952,
+          "same_time_always_sell_pct": 53.74449339207048,
+          "nonoverlapping_signals": 227,
+          "nonoverlapping_accuracy_pct": 54.18502202643172,
+          "mean_net_2bps": -1.6579521462689353,
+          "profit_factor_gross": 1.0555110814419775,
+          "active_sessions": 163,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              47.34513274336283,
+              61.18143459915612
+            ],
+            "mean_net_2bps": [
+              -3.9786775688633975,
+              0.7095519896930758
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 170,
+            "side_results": {
+              "BUY": {
+                "signals": 79,
+                "accuracy_pct": 51.89873417721519
+              },
+              "SELL": {
+                "signals": 91,
+                "accuracy_pct": 58.24175824175824
+              }
+            },
+            "buy_signals": 79,
+            "sell_signals": 91,
+            "wins": 94,
+            "losses": 76,
+            "flat": 0,
+            "accuracy_pct": 55.294117647058826,
+            "wilson_95_interval_pct": [
+              47.78523808093565,
+              62.5690154464134
+            ],
+            "mean_gross_bps": 0.8963892468820677,
+            "accuracy_after_cost_pct": {
+              "2": 52.94117647058823,
+              "5": 42.35294117647059,
+              "10": 27.058823529411764
+            },
+            "same_time_always_buy_pct": 46.470588235294116,
+            "same_time_always_sell_pct": 53.529411764705884,
+            "nonoverlapping_signals": 170,
+            "nonoverlapping_accuracy_pct": 55.294117647058826,
+            "mean_net_2bps": -1.1036107531179322,
+            "profit_factor_gross": 1.1378923059520931,
+            "active_sessions": 123,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                47.15909090909091,
+                63.03030303030303
+              ],
+              "mean_net_2bps": [
+                -4.181150845228224,
+                1.800860916644432
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "adx_confirmation",
+          "label": "ADX filtered five-indicator confirmation",
+          "evaluation_label": "All-year descriptive",
+          "signals": 117,
+          "side_results": {
+            "BUY": {
+              "signals": 46,
+              "accuracy_pct": 43.47826086956522
+            },
+            "SELL": {
+              "signals": 71,
+              "accuracy_pct": 60.563380281690144
+            }
+          },
+          "buy_signals": 46,
+          "sell_signals": 71,
+          "wins": 63,
+          "losses": 54,
+          "flat": 0,
+          "accuracy_pct": 53.84615384615385,
+          "wilson_95_interval_pct": [
+            44.8345288401061,
+            62.61323749201792
+          ],
+          "mean_gross_bps": -0.16155362331668122,
+          "accuracy_after_cost_pct": {
+            "2": 47.863247863247864,
+            "5": 37.60683760683761,
+            "10": 23.931623931623932
+          },
+          "same_time_always_buy_pct": 41.02564102564103,
+          "same_time_always_sell_pct": 58.97435897435897,
+          "nonoverlapping_signals": 117,
+          "nonoverlapping_accuracy_pct": 53.84615384615385,
+          "mean_net_2bps": -2.1615536233166814,
+          "profit_factor_gross": 0.9747809595615747,
+          "active_sessions": 103,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              45.19230769230769,
+              63.06306306306306
+            ],
+            "mean_net_2bps": [
+              -4.895252374372098,
+              0.6676806659449351
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 95,
+            "side_results": {
+              "BUY": {
+                "signals": 38,
+                "accuracy_pct": 42.10526315789474
+              },
+              "SELL": {
+                "signals": 57,
+                "accuracy_pct": 63.1578947368421
+              }
+            },
+            "buy_signals": 38,
+            "sell_signals": 57,
+            "wins": 52,
+            "losses": 43,
+            "flat": 0,
+            "accuracy_pct": 54.736842105263165,
+            "wilson_95_interval_pct": [
+              44.73808701274312,
+              64.36739084273474
+            ],
+            "mean_gross_bps": 0.16077857347707755,
+            "accuracy_after_cost_pct": {
+              "2": 51.578947368421055,
+              "5": 40.0,
+              "10": 25.263157894736842
+            },
+            "same_time_always_buy_pct": 38.94736842105263,
+            "same_time_always_sell_pct": 61.05263157894737,
+            "nonoverlapping_signals": 95,
+            "nonoverlapping_accuracy_pct": 54.73684210526316,
+            "mean_net_2bps": -1.8392214265229225,
+            "profit_factor_gross": 1.0237877439443324,
+            "active_sessions": 85,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                44.791666666666664,
+                64.07766990291262
+              ],
+              "mean_net_2bps": [
+                -5.115766878541707,
+                1.1984307476052503
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "ema_pullback",
+          "label": "EMA trend pullback",
+          "evaluation_label": "All-year descriptive",
+          "signals": 199,
+          "side_results": {
+            "BUY": {
+              "signals": 73,
+              "accuracy_pct": 42.465753424657535
+            },
+            "SELL": {
+              "signals": 126,
+              "accuracy_pct": 54.76190476190476
+            }
+          },
+          "buy_signals": 73,
+          "sell_signals": 126,
+          "wins": 100,
+          "losses": 99,
+          "flat": 0,
+          "accuracy_pct": 50.25125628140703,
+          "wilson_95_interval_pct": [
+            43.365646305035725,
+            57.12734921462099
+          ],
+          "mean_gross_bps": 0.6394477585605587,
+          "accuracy_after_cost_pct": {
+            "2": 43.71859296482412,
+            "5": 32.663316582914575,
+            "10": 19.09547738693467
+          },
+          "same_time_always_buy_pct": 44.221105527638194,
+          "same_time_always_sell_pct": 55.778894472361806,
+          "nonoverlapping_signals": 199,
+          "nonoverlapping_accuracy_pct": 50.25125628140704,
+          "mean_net_2bps": -1.3605522414394413,
+          "profit_factor_gross": 1.1231355318804812,
+          "active_sessions": 132,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              43.40425531914894,
+              57.27699530516432
+            ],
+            "mean_net_2bps": [
+              -3.5784117603822256,
+              1.1800962876173098
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 159,
+            "side_results": {
+              "BUY": {
+                "signals": 60,
+                "accuracy_pct": 43.333333333333336
+              },
+              "SELL": {
+                "signals": 99,
+                "accuracy_pct": 53.535353535353536
+              }
+            },
+            "buy_signals": 60,
+            "sell_signals": 99,
+            "wins": 79,
+            "losses": 80,
+            "flat": 0,
+            "accuracy_pct": 49.685534591194966,
+            "wilson_95_interval_pct": [
+              42.01341666117273,
+              57.37248964286754
+            ],
+            "mean_gross_bps": 0.7283765861615004,
+            "accuracy_after_cost_pct": {
+              "2": 42.76729559748428,
+              "5": 34.59119496855346,
+              "10": 20.754716981132077
+            },
+            "same_time_always_buy_pct": 45.283018867924525,
+            "same_time_always_sell_pct": 54.716981132075475,
+            "nonoverlapping_signals": 159,
+            "nonoverlapping_accuracy_pct": 49.685534591194966,
+            "mean_net_2bps": -1.2716234138384996,
+            "profit_factor_gross": 1.1287017775019066,
+            "active_sessions": 102,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                41.55844155844156,
+                57.32484076433121
+              ],
+              "mean_net_2bps": [
+                -4.1076745878926575,
+                1.7395399293836058
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "donchian_breakout",
+          "label": "Donchian trend breakout",
+          "evaluation_label": "All-year descriptive",
+          "signals": 632,
+          "side_results": {
+            "BUY": {
+              "signals": 290,
+              "accuracy_pct": 50.0
+            },
+            "SELL": {
+              "signals": 342,
+              "accuracy_pct": 48.538011695906434
+            }
+          },
+          "buy_signals": 290,
+          "sell_signals": 342,
+          "wins": 311,
+          "losses": 319,
+          "flat": 2,
+          "accuracy_pct": 49.208860759493675,
+          "wilson_95_interval_pct": [
+            45.32768745437067,
+            53.099593805616095
+          ],
+          "mean_gross_bps": -0.8015798775921514,
+          "accuracy_after_cost_pct": {
+            "2": 43.5126582278481,
+            "5": 33.54430379746835,
+            "10": 21.20253164556962
+          },
+          "same_time_always_buy_pct": 50.63291139240506,
+          "same_time_always_sell_pct": 49.050632911392405,
+          "nonoverlapping_signals": 632,
+          "nonoverlapping_accuracy_pct": 49.20886075949367,
+          "mean_net_2bps": -2.801579877592151,
+          "profit_factor_gross": 0.8792097385648171,
+          "active_sessions": 210,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              45.26627218934911,
+              53.25264750378215
+            ],
+            "mean_net_2bps": [
+              -4.300346711639763,
+              -1.2277208379797566
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 492,
+            "side_results": {
+              "BUY": {
+                "signals": 228,
+                "accuracy_pct": 52.19298245614035
+              },
+              "SELL": {
+                "signals": 264,
+                "accuracy_pct": 48.10606060606061
+              }
+            },
+            "buy_signals": 228,
+            "sell_signals": 264,
+            "wins": 246,
+            "losses": 244,
+            "flat": 2,
+            "accuracy_pct": 50.0,
+            "wilson_95_interval_pct": [
+              45.598967298684514,
+              54.401032701315486
+            ],
+            "mean_gross_bps": -0.5176593742889978,
+            "accuracy_after_cost_pct": {
+              "2": 44.10569105691057,
+              "5": 34.552845528455286,
+              "10": 23.78048780487805
+            },
+            "same_time_always_buy_pct": 51.829268292682926,
+            "same_time_always_sell_pct": 47.764227642276424,
+            "nonoverlapping_signals": 492,
+            "nonoverlapping_accuracy_pct": 50.0,
+            "mean_net_2bps": -2.5176593742889977,
+            "profit_factor_gross": 0.9223490172270816,
+            "active_sessions": 160,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                45.56962025316456,
+                54.59662288930581
+              ],
+              "mean_net_2bps": [
+                -4.306374523528985,
+                -0.7701938634249429
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "bollinger_reentry",
+          "label": "Bollinger range reentry",
+          "evaluation_label": "All-year descriptive",
+          "signals": 185,
+          "side_results": {
+            "BUY": {
+              "signals": 93,
+              "accuracy_pct": 46.236559139784944
+            },
+            "SELL": {
+              "signals": 92,
+              "accuracy_pct": 40.21739130434783
+            }
+          },
+          "buy_signals": 93,
+          "sell_signals": 92,
+          "wins": 80,
+          "losses": 104,
+          "flat": 1,
+          "accuracy_pct": 43.24324324324324,
+          "wilson_95_interval_pct": [
+            36.31333431636039,
+            50.44805724143197
+          ],
+          "mean_gross_bps": -0.844052160822455,
+          "accuracy_after_cost_pct": {
+            "2": 39.45945945945946,
+            "5": 29.72972972972973,
+            "10": 19.45945945945946
+          },
+          "same_time_always_buy_pct": 52.972972972972975,
+          "same_time_always_sell_pct": 46.486486486486484,
+          "nonoverlapping_signals": 185,
+          "nonoverlapping_accuracy_pct": 43.24324324324324,
+          "mean_net_2bps": -2.844052160822455,
+          "profit_factor_gross": 0.8683578764676753,
+          "active_sessions": 122,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              36.08247422680412,
+              50.53763440860215
+            ],
+            "mean_net_2bps": [
+              -5.466222074306522,
+              -0.22396922367307817
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 134,
+            "side_results": {
+              "BUY": {
+                "signals": 71,
+                "accuracy_pct": 47.88732394366197
+              },
+              "SELL": {
+                "signals": 63,
+                "accuracy_pct": 47.61904761904762
+              }
+            },
+            "buy_signals": 71,
+            "sell_signals": 63,
+            "wins": 64,
+            "losses": 69,
+            "flat": 1,
+            "accuracy_pct": 47.76119402985074,
+            "wilson_95_interval_pct": [
+              39.484621251317826,
+              56.16255637865747
+            ],
+            "mean_gross_bps": 0.31188762906139167,
+            "accuracy_after_cost_pct": {
+              "2": 42.53731343283582,
+              "5": 31.34328358208955,
+              "10": 20.895522388059703
+            },
+            "same_time_always_buy_pct": 50.0,
+            "same_time_always_sell_pct": 49.25373134328358,
+            "nonoverlapping_signals": 134,
+            "nonoverlapping_accuracy_pct": 47.76119402985075,
+            "mean_net_2bps": -1.6881123709386083,
+            "profit_factor_gross": 1.0518422416523558,
+            "active_sessions": 88,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                39.23076923076923,
+                56.209150326797385
+              ],
+              "mean_net_2bps": [
+                -4.659045903983404,
+                1.5928346961766013
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "stochastic_reversal",
+          "label": "Stochastic range reversal",
+          "evaluation_label": "All-year descriptive",
+          "signals": 403,
+          "side_results": {
+            "BUY": {
+              "signals": 194,
+              "accuracy_pct": 47.93814432989691
+            },
+            "SELL": {
+              "signals": 209,
+              "accuracy_pct": 49.282296650717704
+            }
+          },
+          "buy_signals": 194,
+          "sell_signals": 209,
+          "wins": 196,
+          "losses": 207,
+          "flat": 0,
+          "accuracy_pct": 48.635235732009924,
+          "wilson_95_interval_pct": [
+            43.79129046464287,
+            53.50495456044797
+          ],
+          "mean_gross_bps": -0.540794321586142,
+          "accuracy_after_cost_pct": {
+            "2": 41.935483870967744,
+            "5": 33.99503722084367,
+            "10": 21.83622828784119
+          },
+          "same_time_always_buy_pct": 49.37965260545906,
+          "same_time_always_sell_pct": 50.62034739454094,
+          "nonoverlapping_signals": 403,
+          "nonoverlapping_accuracy_pct": 48.635235732009924,
+          "mean_net_2bps": -2.540794321586142,
+          "profit_factor_gross": 0.9175562462477654,
+          "active_sessions": 167,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              43.717277486910994,
+              53.562005277044854
+            ],
+            "mean_net_2bps": [
+              -4.309101985329349,
+              -0.8141855439178904
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 291,
+            "side_results": {
+              "BUY": {
+                "signals": 144,
+                "accuracy_pct": 45.138888888888886
+              },
+              "SELL": {
+                "signals": 147,
+                "accuracy_pct": 51.70068027210884
+              }
+            },
+            "buy_signals": 144,
+            "sell_signals": 147,
+            "wins": 141,
+            "losses": 150,
+            "flat": 0,
+            "accuracy_pct": 48.45360824742268,
+            "wilson_95_interval_pct": [
+              42.76913836843949,
+              54.178375143900716
+            ],
+            "mean_gross_bps": -0.4245280633575266,
+            "accuracy_after_cost_pct": {
+              "2": 41.92439862542955,
+              "5": 33.67697594501718,
+              "10": 22.33676975945017
+            },
+            "same_time_always_buy_pct": 46.735395189003434,
+            "same_time_always_sell_pct": 53.264604810996566,
+            "nonoverlapping_signals": 291,
+            "nonoverlapping_accuracy_pct": 48.45360824742268,
+            "mean_net_2bps": -2.424528063357527,
+            "profit_factor_gross": 0.9362803345724142,
+            "active_sessions": 125,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                42.857142857142854,
+                54.74452554744526
+              ],
+              "mean_net_2bps": [
+                -4.511919026474722,
+                -0.09175668579144088
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "higher_timeframe_ut",
+          "label": "Closed M15 confirmed UT Bot",
+          "evaluation_label": "All-year descriptive",
+          "signals": 345,
+          "side_results": {
+            "BUY": {
+              "signals": 138,
+              "accuracy_pct": 47.82608695652174
+            },
+            "SELL": {
+              "signals": 207,
+              "accuracy_pct": 54.106280193236714
+            }
+          },
+          "buy_signals": 138,
+          "sell_signals": 207,
+          "wins": 178,
+          "losses": 167,
+          "flat": 0,
+          "accuracy_pct": 51.59420289855072,
+          "wilson_95_interval_pct": [
+            46.33227456119683,
+            56.82101908268049
+          ],
+          "mean_gross_bps": -0.7628143999171981,
+          "accuracy_after_cost_pct": {
+            "2": 43.18840579710145,
+            "5": 35.072463768115945,
+            "10": 19.71014492753623
+          },
+          "same_time_always_buy_pct": 46.666666666666664,
+          "same_time_always_sell_pct": 53.333333333333336,
+          "nonoverlapping_signals": 345,
+          "nonoverlapping_accuracy_pct": 51.594202898550726,
+          "mean_net_2bps": -2.762814399917198,
+          "profit_factor_gross": 0.8781995938027624,
+          "active_sessions": 172,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              46.646341463414636,
+              56.41025641025641
+            ],
+            "mean_net_2bps": [
+              -4.469997373742378,
+              -1.105805255854878
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 278,
+            "side_results": {
+              "BUY": {
+                "signals": 113,
+                "accuracy_pct": 45.13274336283186
+              },
+              "SELL": {
+                "signals": 165,
+                "accuracy_pct": 53.333333333333336
+              }
+            },
+            "buy_signals": 113,
+            "sell_signals": 165,
+            "wins": 139,
+            "losses": 139,
+            "flat": 0,
+            "accuracy_pct": 50.0,
+            "wilson_95_interval_pct": [
+              44.1625452394153,
+              55.83745476058469
+            ],
+            "mean_gross_bps": -1.1237762108603038,
+            "accuracy_after_cost_pct": {
+              "2": 42.805755395683455,
+              "5": 34.53237410071942,
+              "10": 20.863309352517987
+            },
+            "same_time_always_buy_pct": 46.0431654676259,
+            "same_time_always_sell_pct": 53.9568345323741,
+            "nonoverlapping_signals": 278,
+            "nonoverlapping_accuracy_pct": 50.0,
+            "mean_net_2bps": -3.1237762108603038,
+            "profit_factor_gross": 0.8363300251335832,
+            "active_sessions": 138,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                44.06130268199234,
+                55.51948051948052
+              ],
+              "mean_net_2bps": [
+                -5.117087835036044,
+                -1.0578679098286095
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "regime_consensus",
+          "label": "Regime-specific setup consensus",
+          "evaluation_label": "All-year descriptive",
+          "signals": 208,
+          "side_results": {
+            "BUY": {
+              "signals": 88,
+              "accuracy_pct": 47.72727272727273
+            },
+            "SELL": {
+              "signals": 120,
+              "accuracy_pct": 46.666666666666664
+            }
+          },
+          "buy_signals": 88,
+          "sell_signals": 120,
+          "wins": 98,
+          "losses": 110,
+          "flat": 0,
+          "accuracy_pct": 47.11538461538461,
+          "wilson_95_interval_pct": [
+            40.445522762761435,
+            53.889867453324555
+          ],
+          "mean_gross_bps": -0.7263973109130221,
+          "accuracy_after_cost_pct": {
+            "2": 42.78846153846154,
+            "5": 34.61538461538461,
+            "10": 21.634615384615383
+          },
+          "same_time_always_buy_pct": 50.96153846153846,
+          "same_time_always_sell_pct": 49.03846153846154,
+          "nonoverlapping_signals": 208,
+          "nonoverlapping_accuracy_pct": 47.11538461538461,
+          "mean_net_2bps": -2.726397310913022,
+          "profit_factor_gross": 0.8915785856971499,
+          "active_sessions": 150,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              40.64171122994652,
+              53.57142857142857
+            ],
+            "mean_net_2bps": [
+              -5.200114957638002,
+              -0.1520739432077849
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 166,
+            "side_results": {
+              "BUY": {
+                "signals": 74,
+                "accuracy_pct": 50.0
+              },
+              "SELL": {
+                "signals": 92,
+                "accuracy_pct": 50.0
+              }
+            },
+            "buy_signals": 74,
+            "sell_signals": 92,
+            "wins": 83,
+            "losses": 83,
+            "flat": 0,
+            "accuracy_pct": 50.0,
+            "wilson_95_interval_pct": [
+              42.48023896888422,
+              57.51976103111578
+            ],
+            "mean_gross_bps": 0.04545618857418848,
+            "accuracy_after_cost_pct": {
+              "2": 45.18072289156626,
+              "5": 36.144578313253014,
+              "10": 24.698795180722893
+            },
+            "same_time_always_buy_pct": 50.0,
+            "same_time_always_sell_pct": 50.0,
+            "nonoverlapping_signals": 166,
+            "nonoverlapping_accuracy_pct": 50.0,
+            "mean_net_2bps": -1.9545438114258116,
+            "profit_factor_gross": 1.006908712448723,
+            "active_sessions": 117,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                42.857142857142854,
+                57.615894039735096
+              ],
+              "mean_net_2bps": [
+                -4.840648767583009,
+                1.1022255369753018
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        }
+      ]
+    },
+    "BANKNIFTY": {
+      "coverage": {
+        "sessions": 245,
+        "candles": 18375,
+        "first": "2025-11-17",
+        "last": "2026-11-13",
+        "raw_file_sha256": "c557b2639422ca7dfb28601763e0ad428e2e1965fb18dba3f1b740fcc5a54bb5",
+        "excluded_nonregular": 89,
+        "zero_volume_rows": 20126,
+        "raw_rows": 20126
+      },
+      "strategies": [
+        {
+          "id": "decision_corrected",
+          "label": "Original corrected decision",
+          "evaluation_label": "All-year descriptive",
+          "signals": 231,
+          "side_results": {
+            "BUY": {
+              "signals": 114,
+              "accuracy_pct": 45.6140350877193
+            },
+            "SELL": {
+              "signals": 117,
+              "accuracy_pct": 54.7008547008547
+            }
+          },
+          "buy_signals": 114,
+          "sell_signals": 117,
+          "wins": 116,
+          "losses": 115,
+          "flat": 0,
+          "accuracy_pct": 50.21645021645021,
+          "wilson_95_interval_pct": [
+            43.817997688886514,
+            56.60782124608924
+          ],
+          "mean_gross_bps": 0.5568553858737372,
+          "accuracy_after_cost_pct": {
+            "2": 47.18614718614719,
+            "5": 39.39393939393939,
+            "10": 24.242424242424242
+          },
+          "same_time_always_buy_pct": 45.45454545454545,
+          "same_time_always_sell_pct": 54.54545454545455,
+          "nonoverlapping_signals": 220,
+          "nonoverlapping_accuracy_pct": 50.45454545454545,
+          "mean_net_2bps": -1.443144614126263,
+          "profit_factor_gross": 1.0670853446324773,
+          "active_sessions": 147,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              43.36283185840708,
+              57.142857142857146
+            ],
+            "mean_net_2bps": [
+              -4.715981193100601,
+              1.9175785728908497
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 181,
+            "side_results": {
+              "BUY": {
+                "signals": 86,
+                "accuracy_pct": 46.51162790697674
+              },
+              "SELL": {
+                "signals": 95,
+                "accuracy_pct": 61.05263157894737
+              }
+            },
+            "buy_signals": 86,
+            "sell_signals": 95,
+            "wins": 98,
+            "losses": 83,
+            "flat": 0,
+            "accuracy_pct": 54.14364640883977,
+            "wilson_95_interval_pct": [
+              46.873617427278646,
+              61.24143892367264
+            ],
+            "mean_gross_bps": 1.8054948385138632,
+            "accuracy_after_cost_pct": {
+              "2": 50.27624309392265,
+              "5": 43.646408839779006,
+              "10": 28.176795580110497
+            },
+            "same_time_always_buy_pct": 42.5414364640884,
+            "same_time_always_sell_pct": 57.4585635359116,
+            "nonoverlapping_signals": 172,
+            "nonoverlapping_accuracy_pct": 54.06976744186046,
+            "mean_net_2bps": -0.19450516148613683,
+            "profit_factor_gross": 1.2110550745551734,
+            "active_sessions": 113,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                46.354166666666664,
+                62.01923076923077
+              ],
+              "mean_net_2bps": [
+                -4.194433854468009,
+                3.9025330403851703
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "decision_cooldown",
+          "label": "Original with 30-minute spacing",
+          "evaluation_label": "All-year descriptive",
+          "signals": 220,
+          "side_results": {
+            "BUY": {
+              "signals": 109,
+              "accuracy_pct": 46.788990825688074
+            },
+            "SELL": {
+              "signals": 111,
+              "accuracy_pct": 54.054054054054056
+            }
+          },
+          "buy_signals": 109,
+          "sell_signals": 111,
+          "wins": 111,
+          "losses": 109,
+          "flat": 0,
+          "accuracy_pct": 50.45454545454545,
+          "wilson_95_interval_pct": [
+            43.89679370789689,
+            56.99669525930133
+          ],
+          "mean_gross_bps": 0.5868038239645526,
+          "accuracy_after_cost_pct": {
+            "2": 47.27272727272727,
+            "5": 40.0,
+            "10": 24.545454545454547
+          },
+          "same_time_always_buy_pct": 46.36363636363637,
+          "same_time_always_sell_pct": 53.63636363636363,
+          "nonoverlapping_signals": 220,
+          "nonoverlapping_accuracy_pct": 50.45454545454545,
+          "mean_net_2bps": -1.4131961760354474,
+          "profit_factor_gross": 1.0704274190312748,
+          "active_sessions": 147,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              43.41463414634146,
+              57.61316872427984
+            ],
+            "mean_net_2bps": [
+              -4.6168995218230755,
+              1.9712037598432501
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 172,
+            "side_results": {
+              "BUY": {
+                "signals": 83,
+                "accuracy_pct": 46.98795180722892
+              },
+              "SELL": {
+                "signals": 89,
+                "accuracy_pct": 60.674157303370784
+              }
+            },
+            "buy_signals": 83,
+            "sell_signals": 89,
+            "wins": 93,
+            "losses": 79,
+            "flat": 0,
+            "accuracy_pct": 54.06976744186046,
+            "wilson_95_interval_pct": [
+              46.6144865261279,
+              61.347224468312554
+            ],
+            "mean_gross_bps": 1.85064664243286,
+            "accuracy_after_cost_pct": {
+              "2": 50.0,
+              "5": 44.18604651162791,
+              "10": 28.488372093023255
+            },
+            "same_time_always_buy_pct": 43.02325581395349,
+            "same_time_always_sell_pct": 56.97674418604651,
+            "nonoverlapping_signals": 172,
+            "nonoverlapping_accuracy_pct": 54.06976744186046,
+            "mean_net_2bps": -0.14935335756713997,
+            "profit_factor_gross": 1.216109270493884,
+            "active_sessions": 113,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                46.35761589403973,
+                61.76470588235294
+              ],
+              "mean_net_2bps": [
+                -3.9752903959256254,
+                3.9576512700904662
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "adx_confirmation",
+          "label": "ADX filtered five-indicator confirmation",
+          "evaluation_label": "All-year descriptive",
+          "signals": 100,
+          "side_results": {
+            "BUY": {
+              "signals": 48,
+              "accuracy_pct": 39.583333333333336
+            },
+            "SELL": {
+              "signals": 52,
+              "accuracy_pct": 53.84615384615385
+            }
+          },
+          "buy_signals": 48,
+          "sell_signals": 52,
+          "wins": 47,
+          "losses": 53,
+          "flat": 0,
+          "accuracy_pct": 47.0,
+          "wilson_95_interval_pct": [
+            37.51065198210374,
+            56.71131686275227
+          ],
+          "mean_gross_bps": -2.726897573420517,
+          "accuracy_after_cost_pct": {
+            "2": 44.0,
+            "5": 36.0,
+            "10": 24.0
+          },
+          "same_time_always_buy_pct": 43.0,
+          "same_time_always_sell_pct": 57.0,
+          "nonoverlapping_signals": 100,
+          "nonoverlapping_accuracy_pct": 47.0,
+          "mean_net_2bps": -4.726897573420517,
+          "profit_factor_gross": 0.7138698478097038,
+          "active_sessions": 84,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              36.8421052631579,
+              57.0
+            ],
+            "mean_net_2bps": [
+              -9.201422832884008,
+              -0.7872794546556631
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 87,
+            "side_results": {
+              "BUY": {
+                "signals": 43,
+                "accuracy_pct": 39.53488372093023
+              },
+              "SELL": {
+                "signals": 44,
+                "accuracy_pct": 56.81818181818182
+              }
+            },
+            "buy_signals": 43,
+            "sell_signals": 44,
+            "wins": 42,
+            "losses": 45,
+            "flat": 0,
+            "accuracy_pct": 48.275862068965516,
+            "wilson_95_interval_pct": [
+              38.07248617685969,
+              58.62506208296843
+            ],
+            "mean_gross_bps": -2.6135324902169335,
+            "accuracy_after_cost_pct": {
+              "2": 44.827586206896555,
+              "5": 35.632183908045974,
+              "10": 24.137931034482758
+            },
+            "same_time_always_buy_pct": 41.37931034482759,
+            "same_time_always_sell_pct": 58.62068965517241,
+            "nonoverlapping_signals": 87,
+            "nonoverlapping_accuracy_pct": 48.275862068965516,
+            "mean_net_2bps": -4.613532490216933,
+            "profit_factor_gross": 0.7292211788929952,
+            "active_sessions": 73,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                38.35616438356164,
+                58.8235294117647
+              ],
+              "mean_net_2bps": [
+                -9.101752265613992,
+                -0.34107348962661066
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "ema_pullback",
+          "label": "EMA trend pullback",
+          "evaluation_label": "All-year descriptive",
+          "signals": 167,
+          "side_results": {
+            "BUY": {
+              "signals": 82,
+              "accuracy_pct": 54.8780487804878
+            },
+            "SELL": {
+              "signals": 85,
+              "accuracy_pct": 47.05882352941177
+            }
+          },
+          "buy_signals": 82,
+          "sell_signals": 85,
+          "wins": 85,
+          "losses": 82,
+          "flat": 0,
+          "accuracy_pct": 50.898203592814376,
+          "wilson_95_interval_pct": [
+            43.3814682303871,
+            58.374544356711134
+          ],
+          "mean_gross_bps": 0.305049402248764,
+          "accuracy_after_cost_pct": {
+            "2": 46.706586826347305,
+            "5": 38.32335329341317,
+            "10": 24.550898203592816
+          },
+          "same_time_always_buy_pct": 53.89221556886228,
+          "same_time_always_sell_pct": 46.10778443113772,
+          "nonoverlapping_signals": 167,
+          "nonoverlapping_accuracy_pct": 50.89820359281437,
+          "mean_net_2bps": -1.694950597751236,
+          "profit_factor_gross": 1.0484917464307109,
+          "active_sessions": 125,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              43.20987654320987,
+              58.169934640522875
+            ],
+            "mean_net_2bps": [
+              -4.389373109263311,
+              0.8274225285524599
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 125,
+            "side_results": {
+              "BUY": {
+                "signals": 65,
+                "accuracy_pct": 56.92307692307692
+              },
+              "SELL": {
+                "signals": 60,
+                "accuracy_pct": 50.0
+              }
+            },
+            "buy_signals": 65,
+            "sell_signals": 60,
+            "wins": 67,
+            "losses": 58,
+            "flat": 0,
+            "accuracy_pct": 53.6,
+            "wilson_95_interval_pct": [
+              44.880678264565155,
+              62.10464324649959
+            ],
+            "mean_gross_bps": 0.9158096936563442,
+            "accuracy_after_cost_pct": {
+              "2": 49.6,
+              "5": 42.4,
+              "10": 28.8
+            },
+            "same_time_always_buy_pct": 53.6,
+            "same_time_always_sell_pct": 46.4,
+            "nonoverlapping_signals": 125,
+            "nonoverlapping_accuracy_pct": 53.6,
+            "mean_net_2bps": -1.0841903063436558,
+            "profit_factor_gross": 1.1372673031165836,
+            "active_sessions": 98,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                45.038167938931295,
+                61.940298507462686
+              ],
+              "mean_net_2bps": [
+                -4.47637288780048,
+                1.9950002481860043
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "donchian_breakout",
+          "label": "Donchian trend breakout",
+          "evaluation_label": "All-year descriptive",
+          "signals": 559,
+          "side_results": {
+            "BUY": {
+              "signals": 282,
+              "accuracy_pct": 47.87234042553192
+            },
+            "SELL": {
+              "signals": 277,
+              "accuracy_pct": 42.96028880866426
+            }
+          },
+          "buy_signals": 282,
+          "sell_signals": 277,
+          "wins": 254,
+          "losses": 304,
+          "flat": 1,
+          "accuracy_pct": 45.43828264758497,
+          "wilson_95_interval_pct": [
+            41.355739160466875,
+            49.583096917037
+          ],
+          "mean_gross_bps": 0.41594893223305396,
+          "accuracy_after_cost_pct": {
+            "2": 40.96601073345259,
+            "5": 36.314847942754916,
+            "10": 28.443649373881932
+          },
+          "same_time_always_buy_pct": 52.23613595706619,
+          "same_time_always_sell_pct": 47.58497316636851,
+          "nonoverlapping_signals": 559,
+          "nonoverlapping_accuracy_pct": 45.43828264758497,
+          "mean_net_2bps": -1.584051067766946,
+          "profit_factor_gross": 1.052191646157567,
+          "active_sessions": 209,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              41.39886578449905,
+              49.397590361445786
+            ],
+            "mean_net_2bps": [
+              -3.513292758234517,
+              0.24027579966059176
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 457,
+            "side_results": {
+              "BUY": {
+                "signals": 234,
+                "accuracy_pct": 49.572649572649574
+              },
+              "SELL": {
+                "signals": 223,
+                "accuracy_pct": 41.70403587443946
+              }
+            },
+            "buy_signals": 234,
+            "sell_signals": 223,
+            "wins": 209,
+            "losses": 247,
+            "flat": 1,
+            "accuracy_pct": 45.73304157549234,
+            "wilson_95_interval_pct": [
+              41.22002636344746,
+              50.31719597064737
+            ],
+            "mean_gross_bps": 0.4361776262129184,
+            "accuracy_after_cost_pct": {
+              "2": 41.35667396061269,
+              "5": 37.199124726477024,
+              "10": 29.9781181619256
+            },
+            "same_time_always_buy_pct": 53.61050328227571,
+            "same_time_always_sell_pct": 46.17067833698031,
+            "nonoverlapping_signals": 457,
+            "nonoverlapping_accuracy_pct": 45.733041575492344,
+            "mean_net_2bps": -1.5638223737870816,
+            "profit_factor_gross": 1.0513563906866255,
+            "active_sessions": 164,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                41.2037037037037,
+                50.204918032786885
+              ],
+              "mean_net_2bps": [
+                -3.627914410504164,
+                0.6276287251444443
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "bollinger_reentry",
+          "label": "Bollinger range reentry",
+          "evaluation_label": "All-year descriptive",
+          "signals": 199,
+          "side_results": {
+            "BUY": {
+              "signals": 108,
+              "accuracy_pct": 58.333333333333336
+            },
+            "SELL": {
+              "signals": 91,
+              "accuracy_pct": 51.64835164835165
+            }
+          },
+          "buy_signals": 108,
+          "sell_signals": 91,
+          "wins": 110,
+          "losses": 89,
+          "flat": 0,
+          "accuracy_pct": 55.27638190954774,
+          "wilson_95_interval_pct": [
+            48.333207221887896,
+            62.019698690903155
+          ],
+          "mean_gross_bps": 1.5881347074440715,
+          "accuracy_after_cost_pct": {
+            "2": 48.743718592964825,
+            "5": 39.698492462311556,
+            "10": 27.63819095477387
+          },
+          "same_time_always_buy_pct": 53.768844221105525,
+          "same_time_always_sell_pct": 46.231155778894475,
+          "nonoverlapping_signals": 199,
+          "nonoverlapping_accuracy_pct": 55.27638190954774,
+          "mean_net_2bps": -0.4118652925559285,
+          "profit_factor_gross": 1.2454455430082034,
+          "active_sessions": 126,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              48.734177215189874,
+              62.234042553191486
+            ],
+            "mean_net_2bps": [
+              -3.240549851629327,
+              2.32499086622633
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 142,
+            "side_results": {
+              "BUY": {
+                "signals": 75,
+                "accuracy_pct": 56.0
+              },
+              "SELL": {
+                "signals": 67,
+                "accuracy_pct": 50.74626865671642
+              }
+            },
+            "buy_signals": 75,
+            "sell_signals": 67,
+            "wins": 76,
+            "losses": 66,
+            "flat": 0,
+            "accuracy_pct": 53.52112676056338,
+            "wilson_95_interval_pct": [
+              45.33305212493814,
+              61.523702052196484
+            ],
+            "mean_gross_bps": 1.9448198759409714,
+            "accuracy_after_cost_pct": {
+              "2": 49.29577464788732,
+              "5": 42.95774647887324,
+              "10": 33.098591549295776
+            },
+            "same_time_always_buy_pct": 52.816901408450704,
+            "same_time_always_sell_pct": 47.183098591549296,
+            "nonoverlapping_signals": 142,
+            "nonoverlapping_accuracy_pct": 53.521126760563384,
+            "mean_net_2bps": -0.05518012405902861,
+            "profit_factor_gross": 1.2663282142811925,
+            "active_sessions": 90,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                44.973544973544975,
+                61.594202898550726
+              ],
+              "mean_net_2bps": [
+                -3.661266542021887,
+                3.553179456740671
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "stochastic_reversal",
+          "label": "Stochastic range reversal",
+          "evaluation_label": "All-year descriptive",
+          "signals": 436,
+          "side_results": {
+            "BUY": {
+              "signals": 238,
+              "accuracy_pct": 52.10084033613445
+            },
+            "SELL": {
+              "signals": 198,
+              "accuracy_pct": 53.03030303030303
+            }
+          },
+          "buy_signals": 238,
+          "sell_signals": 198,
+          "wins": 229,
+          "losses": 207,
+          "flat": 0,
+          "accuracy_pct": 52.522935779816514,
+          "wilson_95_interval_pct": [
+            47.8339929008881,
+            57.167807747345265
+          ],
+          "mean_gross_bps": 0.2781016946503469,
+          "accuracy_after_cost_pct": {
+            "2": 44.03669724770642,
+            "5": 36.00917431192661,
+            "10": 23.853211009174313
+          },
+          "same_time_always_buy_pct": 49.77064220183486,
+          "same_time_always_sell_pct": 50.22935779816514,
+          "nonoverlapping_signals": 436,
+          "nonoverlapping_accuracy_pct": 52.522935779816514,
+          "mean_net_2bps": -1.721898305349653,
+          "profit_factor_gross": 1.0455101752304008,
+          "active_sessions": 164,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              47.40406320541761,
+              57.840616966580974
+            ],
+            "mean_net_2bps": [
+              -3.4542393777681575,
+              0.060495732703650294
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 296,
+            "side_results": {
+              "BUY": {
+                "signals": 173,
+                "accuracy_pct": 47.39884393063584
+              },
+              "SELL": {
+                "signals": 123,
+                "accuracy_pct": 55.28455284552845
+              }
+            },
+            "buy_signals": 173,
+            "sell_signals": 123,
+            "wins": 150,
+            "losses": 146,
+            "flat": 0,
+            "accuracy_pct": 50.67567567567568,
+            "wilson_95_interval_pct": [
+              45.00800206181065,
+              56.32603564343107
+            ],
+            "mean_gross_bps": 0.17334505811940604,
+            "accuracy_after_cost_pct": {
+              "2": 42.9054054054054,
+              "5": 37.5,
+              "10": 27.027027027027028
+            },
+            "same_time_always_buy_pct": 46.28378378378378,
+            "same_time_always_sell_pct": 53.71621621621622,
+            "nonoverlapping_signals": 296,
+            "nonoverlapping_accuracy_pct": 50.67567567567568,
+            "mean_net_2bps": -1.826654941880594,
+            "profit_factor_gross": 1.0251658784501683,
+            "active_sessions": 115,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                43.888888888888886,
+                57.5
+              ],
+              "mean_net_2bps": [
+                -4.3180416533687955,
+                0.6066156311983828
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "higher_timeframe_ut",
+          "label": "Closed M15 confirmed UT Bot",
+          "evaluation_label": "All-year descriptive",
+          "signals": 305,
+          "side_results": {
+            "BUY": {
+              "signals": 158,
+              "accuracy_pct": 46.20253164556962
+            },
+            "SELL": {
+              "signals": 147,
+              "accuracy_pct": 48.97959183673469
+            }
+          },
+          "buy_signals": 158,
+          "sell_signals": 147,
+          "wins": 145,
+          "losses": 160,
+          "flat": 0,
+          "accuracy_pct": 47.540983606557376,
+          "wilson_95_interval_pct": [
+            42.001779960715716,
+            53.141361377756816
+          ],
+          "mean_gross_bps": -1.9751981055817478,
+          "accuracy_after_cost_pct": {
+            "2": 40.65573770491803,
+            "5": 34.09836065573771,
+            "10": 21.9672131147541
+          },
+          "same_time_always_buy_pct": 48.52459016393443,
+          "same_time_always_sell_pct": 51.47540983606557,
+          "nonoverlapping_signals": 305,
+          "nonoverlapping_accuracy_pct": 47.540983606557376,
+          "mean_net_2bps": -3.9751981055817476,
+          "profit_factor_gross": 0.7527539167278637,
+          "active_sessions": 173,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              41.666666666666664,
+              53.191489361702125
+            ],
+            "mean_net_2bps": [
+              -6.039538938237651,
+              -1.9188784177503968
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 247,
+            "side_results": {
+              "BUY": {
+                "signals": 128,
+                "accuracy_pct": 46.875
+              },
+              "SELL": {
+                "signals": 119,
+                "accuracy_pct": 49.57983193277311
+              }
+            },
+            "buy_signals": 128,
+            "sell_signals": 119,
+            "wins": 119,
+            "losses": 128,
+            "flat": 0,
+            "accuracy_pct": 48.178137651821864,
+            "wilson_95_interval_pct": [
+              42.022427299641144,
+              54.38965107970263
+            ],
+            "mean_gross_bps": -2.1529867868973698,
+            "accuracy_after_cost_pct": {
+              "2": 40.89068825910931,
+              "5": 33.60323886639676,
+              "10": 23.076923076923077
+            },
+            "same_time_always_buy_pct": 48.582995951417004,
+            "same_time_always_sell_pct": 51.417004048582996,
+            "nonoverlapping_signals": 247,
+            "nonoverlapping_accuracy_pct": 48.178137651821864,
+            "mean_net_2bps": -4.15298678689737,
+            "profit_factor_gross": 0.7457526624324262,
+            "active_sessions": 140,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                41.851851851851855,
+                54.23728813559322
+              ],
+              "mean_net_2bps": [
+                -6.552446074063704,
+                -1.7107477663248183
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        },
+        {
+          "id": "regime_consensus",
+          "label": "Regime-specific setup consensus",
+          "evaluation_label": "All-year descriptive",
+          "signals": 189,
+          "side_results": {
+            "BUY": {
+              "signals": 103,
+              "accuracy_pct": 53.398058252427184
+            },
+            "SELL": {
+              "signals": 86,
+              "accuracy_pct": 48.83720930232558
+            }
+          },
+          "buy_signals": 103,
+          "sell_signals": 86,
+          "wins": 97,
+          "losses": 92,
+          "flat": 0,
+          "accuracy_pct": 51.32275132275132,
+          "wilson_95_interval_pct": [
+            44.24173059541741,
+            58.35107095777443
+          ],
+          "mean_gross_bps": -0.05884127268166405,
+          "accuracy_after_cost_pct": {
+            "2": 44.973544973544975,
+            "5": 36.507936507936506,
+            "10": 24.33862433862434
+          },
+          "same_time_always_buy_pct": 52.38095238095238,
+          "same_time_always_sell_pct": 47.61904761904762,
+          "nonoverlapping_signals": 189,
+          "nonoverlapping_accuracy_pct": 51.32275132275132,
+          "mean_net_2bps": -2.058841272681664,
+          "profit_factor_gross": 0.992191477414067,
+          "active_sessions": 139,
+          "session_bootstrap_95": {
+            "accuracy_pct": [
+              44.339622641509436,
+              58.8235294117647
+            ],
+            "mean_net_2bps": [
+              -5.195314354915538,
+              1.0694723521762037
+            ],
+            "draws": 2000,
+            "valid_draws": 2000,
+            "unit": "paired_session_if_pooled"
+          },
+          "forward": {
+            "signals": 145,
+            "side_results": {
+              "BUY": {
+                "signals": 80,
+                "accuracy_pct": 53.75
+              },
+              "SELL": {
+                "signals": 65,
+                "accuracy_pct": 52.30769230769231
+              }
+            },
+            "buy_signals": 80,
+            "sell_signals": 65,
+            "wins": 77,
+            "losses": 68,
+            "flat": 0,
+            "accuracy_pct": 53.103448275862064,
+            "wilson_95_interval_pct": [
+              45.005692704969015,
+              61.041003917480616
+            ],
+            "mean_gross_bps": 0.723505727994829,
+            "accuracy_after_cost_pct": {
+              "2": 46.89655172413793,
+              "5": 41.37931034482759,
+              "10": 28.96551724137931
+            },
+            "same_time_always_buy_pct": 51.03448275862069,
+            "same_time_always_sell_pct": 48.96551724137931,
+            "nonoverlapping_signals": 145,
+            "nonoverlapping_accuracy_pct": 53.10344827586207,
+            "mean_net_2bps": -1.2764942720051708,
+            "profit_factor_gross": 1.0920356434958778,
+            "active_sessions": 109,
+            "session_bootstrap_95": {
+              "accuracy_pct": [
+                45.138888888888886,
+                61.34969325153374
+              ],
+              "mean_net_2bps": [
+                -4.922808724752884,
+                2.590025427515405
+              ],
+              "draws": 2000,
+              "valid_draws": 2000,
+              "unit": "paired_session_if_pooled"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import StrategyDecisionPanel from "@/components/StrategyDecisionPanel";
+import type { IndicatorDecision, ResearchObservation } from "@/lib/strategyPresentation";
 
 type MarketSymbol = "NIFTY50" | "BANKNIFTY";
 type Candle = {
@@ -11,12 +13,15 @@ type Candle = {
   low: number;
   close: number;
   is_forming: boolean;
+  is_incomplete?: boolean;
   source?: { kind?: string; name?: string } | null;
 };
 type CandleResponse = {
   candles: Candle[];
   feed_state: string;
   message: string;
+  indicator_decision?: IndicatorDecision;
+  research?: ResearchObservation;
 };
 type QuoteResponse = {
   available: boolean;
@@ -55,6 +60,8 @@ type MarketSnapshot = {
   error: string | null;
   current: boolean;
   feedState: string;
+  decision: IndicatorDecision | null;
+  research: ResearchObservation | null;
 };
 
 const markets: { symbol: MarketSymbol; title: string }[] = [
@@ -79,6 +86,8 @@ const emptyMarket: MarketSnapshot = {
   error: null,
   current: false,
   feedState: "checking",
+  decision: null,
+  research: null,
 };
 
 class MarketAccessError extends Error {}
@@ -179,10 +188,12 @@ function MarketCard({
   title,
   snapshot,
   feedState,
+  evaluatedNow,
 }: {
   title: string;
   snapshot: MarketSnapshot;
   feedState: string;
+  evaluatedNow: number;
 }) {
   const forming = snapshot.candles.find((candle) => candle.is_forming);
   const latestConfirmed = [...snapshot.candles].reverse().find((candle) => !candle.is_forming);
@@ -214,6 +225,13 @@ function MarketCard({
       <div className="mt-5">
         <CandlestickChart candles={snapshot.candles} label={title} />
       </div>
+      <StrategyDecisionPanel
+        decision={snapshot.decision}
+        research={snapshot.research}
+        latestConfirmed={latestConfirmed}
+        feedCurrent={snapshot.current && !snapshot.error}
+        evaluatedNow={evaluatedNow}
+      />
 
       {snapshot.error && <p className="mt-3 text-sm text-rose-300">{snapshot.error}</p>}
       {snapshot.message && !snapshot.error && (
@@ -239,7 +257,13 @@ export default function LiveMarketDashboard() {
     BANKNIFTY: emptyMarket,
   });
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+  const [clockNow, setClockNow] = useState(0);
   const activeRefresh = useRef<AbortSignal | null>(null);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("allsafe-market-provider");
@@ -302,6 +326,8 @@ export default function LiveMarketDashboard() {
             error: null,
             current: isCurrent,
             feedState: quoteResponse.feed_state || candleResponse.feed_state,
+            decision: candleResponse.indicator_decision ?? null,
+            research: candleResponse.research ?? null,
           },
         }));
       } catch (error) {
@@ -319,6 +345,8 @@ export default function LiveMarketDashboard() {
             message: "",
             current: false,
             feedState: "unavailable",
+            decision: null,
+            research: null,
             loading: false,
             error: error instanceof Error ? error.message : "Could not load market data.",
           },
@@ -383,6 +411,7 @@ export default function LiveMarketDashboard() {
             title={title}
             snapshot={marketsState[symbol]}
             feedState={status?.instruments?.[symbol]?.feed_state ?? status?.feed_state ?? "checking"}
+            evaluatedNow={Math.max(clockNow, checkedAt?.getTime() ?? 0)}
           />
         ))}
       </div>

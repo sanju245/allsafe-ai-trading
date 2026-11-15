@@ -16,6 +16,7 @@ Safety guarantees:
 """
 
 from datetime import datetime
+from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
@@ -30,6 +31,7 @@ from app.market_data.live_schemas import (
     ConfirmedCandleSchema,
     FormingCandleSchema,
     IndicatorDecisionSchema,
+    ResearchDecisionSchema,
     InstrumentStatusSchema,
     LiveCandlesResponse,
     LiveFormingCandleResponse,
@@ -340,6 +342,7 @@ def get_live_candles(
     forming = mgr.aggregator.get_forming_candle(instrument, as_of=now_ist)
     missing = mgr.aggregator.get_missing_intervals(instrument)
     decision_summary = rt.evaluate_decision_for_instrument(instrument, as_of=now_ist)
+    research = rt.evaluate_research_for_instrument(instrument, as_of=now_ist, decision_summary=decision_summary)
 
     candle_schemas = [
         ConfirmedCandleSchema(
@@ -415,6 +418,7 @@ def get_live_candles(
         missing_interval_count=len(missing_schemas),
         missing_intervals=missing_schemas,
         indicator_decision=decision_schema,
+        research=ResearchDecisionSchema.model_validate(asdict(research)),
         message=_status_message(
             inst_status.feed_state,
             mgr.streaming_enabled,

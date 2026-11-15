@@ -19,7 +19,7 @@ export default function Home() {
         <main className="flex-1 py-10">
           <section>
             <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">
-              Groww live market data
+              Live market data and strategy research
             </p>
             <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">
               Rule-based analysis for NIFTY 50 and BANK NIFTY

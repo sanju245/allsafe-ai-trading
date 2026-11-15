@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 from app.indicators.decision import DecisionPoint, TradeDecision, calculate_decisions
+from app.indicators.research_decision import ResearchDecisionSummary, research_summary
+from app.indicators.strategies import StrategyPoint, calculate_strategy_points
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_aggregator import LiveSessionAggregator
 from app.market_data.live_models import (
@@ -84,6 +86,8 @@ class LiveMarketDataRuntime:
         self._historical_candles: dict[InstrumentId, list[Candle]] = {
             inst: [] for inst in InstrumentId
         }
+        # One validated snapshot per instrument. Freshness is NEVER cached.
+        self._research_cache: dict[InstrumentId, tuple[tuple, StrategyPoint]] = {}
 
     def seed_historical_candles(self, instrument: InstrumentId, candles: list[Candle]) -> None:
         """Seed validated historical closed 5m candles for indicator warm-up."""
@@ -293,12 +297,13 @@ class LiveMarketDataRuntime:
         last_pt = points[-1]
         is_live_and_fresh = (
             inst_status.feed_state == FeedState.LIVE and not inst_status.is_stale
+            and last_pt.timestamp + timedelta(minutes=5) <= now_ist < last_pt.timestamp + timedelta(minutes=10)
         )
         reason = last_pt.reason
         if not is_live_and_fresh:
             reason = (
                 f"[Feed state: {inst_status.feed_state.value}] {last_pt.reason} "
-                "(Do not treat as a current live trigger while feed is not live.)"
+                "(Do not treat as a current live trigger unless feed and confirmed candle are fresh.)"
             )
 
         return LiveDecisionSummary(
@@ -319,3 +324,30 @@ class LiveMarketDataRuntime:
             reason=reason,
             confirmed_candle_count=len(candles),
         )
+
+    def evaluate_research_for_instrument(
+        self, instrument: InstrumentId, *, as_of: datetime | None = None,
+        decision_summary: LiveDecisionSummary | None = None,
+    ) -> ResearchDecisionSummary:
+        """Reuse validated closed data; experimental strategies never become live decisions."""
+        now_ist = to_ist(as_of) if as_of is not None else datetime.now(IST)
+        legacy = decision_summary or self.evaluate_decision_for_instrument(instrument, as_of=now_ist)
+        if legacy.decision == TradeDecision.DATA_UNAVAILABLE:
+            return research_summary(None, evaluated_at=now_ist, unavailable_reason=legacy.reason)
+        candles = self.merged_complete_confirmed_candles(instrument, as_of=now_ist)
+        fingerprint = tuple((c.timestamp, c.open, c.high, c.low, c.close, c.timeframe) for c in candles)
+        cached = self._research_cache.get(instrument)
+        if cached is not None and cached[0] == fingerprint:
+            last = cached[1]
+        else:
+            try:
+                points = calculate_strategy_points(candles)
+            except ValueError:
+                return research_summary(None, evaluated_at=now_ist, unavailable_reason="Research requires validated regular-session closed five-minute candles.")
+            if not points:
+                return research_summary(None, evaluated_at=now_ist, unavailable_reason="Waiting for closed candles.")
+            last = points[-1]
+            self._research_cache[instrument] = (fingerprint, last)
+        fresh = (legacy.feed_state == FeedState.LIVE and not legacy.is_stale
+                 and last.timestamp + timedelta(minutes=5) <= now_ist < last.timestamp + timedelta(minutes=10))
+        return research_summary(last, evaluated_at=now_ist, fresh=fresh)

@@ -1,6 +1,7 @@
 """Response schemas for read-only live market-data endpoints."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -141,6 +142,29 @@ class IndicatorDecisionSchema(BaseModel):
     confirmed_candle_count: int
 
 
+class ResearchSignalSchema(BaseModel):
+    id: str
+    label: str
+    signal: Literal["BUY", "SELL", "WAIT"]
+
+
+class ResearchDecisionSchema(BaseModel):
+    version: Literal["strategy-research-v1"] = "strategy-research-v1"
+    status: Literal["research_only"] = "research_only"
+    decision: Literal["WAIT"] = "WAIT"
+    candidate_decision: Literal["BUY", "SELL", "WAIT", "DATA_UNAVAILABLE"]
+    is_current_signal: Literal[False] = False
+    candidate_is_current: bool
+    selected_strategy: None = None
+    regime: Literal["warming_up", "trending", "ranging", "transition"]
+    adx: float | None = None
+    reason: str
+    evidence_status: Literal["not_validated"] = "not_validated"
+    candle_timestamp: datetime | None = None
+    evaluated_at: datetime
+    strategies: list[ResearchSignalSchema]
+
+
 class LiveCandlesResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -160,6 +184,7 @@ class LiveCandlesResponse(BaseModel):
     missing_interval_count: int
     missing_intervals: list[MissingIntervalSchema]
     indicator_decision: IndicatorDecisionSchema
+    research: ResearchDecisionSchema | None = None
     message: str
     checked_at: datetime
 
