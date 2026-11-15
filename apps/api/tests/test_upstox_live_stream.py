@@ -1,11 +1,17 @@
+import json
 import ssl
 import threading
+from io import BytesIO
+from urllib.error import HTTPError
+
+import pytest
 
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_models import FeedState
 from app.providers.upstox_stream import (
     UPSTOX_INDEX_KEYS,
     UpstoxLiveStreamManager,
+    _request_authorized_uri,
     _validate_authorized_uri,
 )
 from tests.fixtures.sample_data import ist
@@ -152,3 +158,56 @@ def test_authorized_websocket_url_must_be_tls_and_upstox_owned():
         except ValueError:
             continue
         raise AssertionError(f"Unsafe Upstox redirect URL was accepted: {invalid}")
+
+
+def test_authorizer_normalizes_bearer_prefix_and_sends_expected_headers(monkeypatch):
+    authorized_url = "wss://feed.upstox.com/market-data?code=single-use"
+    captured = {}
+
+    class Response(BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.close()
+
+    def fake_urlopen(request, *, timeout):
+        captured["authorization"] = request.get_header("Authorization")
+        captured["accept"] = request.get_header("Accept")
+        captured["timeout"] = timeout
+        return Response(
+            json.dumps(
+                {
+                    "status": "success",
+                    "data": {"authorized_redirect_uri": authorized_url},
+                }
+            ).encode()
+        )
+
+    monkeypatch.setattr("app.providers.upstox_stream.urlopen", fake_urlopen)
+    assert _request_authorized_uri(" Bearer private-token ") == authorized_url
+    assert captured == {
+        "authorization": "Bearer private-token",
+        "accept": "application/json",
+        "timeout": 10,
+    }
+
+
+def test_authorizer_reports_only_safe_upstox_error_code(monkeypatch):
+    def fake_urlopen(_request, *, timeout):
+        raise HTTPError(
+            "https://api.upstox.com/v3/feed/market-data-feed/authorize",
+            403,
+            "Forbidden",
+            None,
+            BytesIO(
+                b'{"errors":[{"errorCode":"UDAPI100050",'
+                b'"message":"private-token must never be logged"}]}'
+            ),
+        )
+
+    monkeypatch.setattr("app.providers.upstox_stream.urlopen", fake_urlopen)
+    with pytest.raises(PermissionError, match="UDAPI100050") as error:
+        _request_authorized_uri("private-token")
+    assert "private-token" not in str(error.value)
+    assert "message" not in str(error.value)

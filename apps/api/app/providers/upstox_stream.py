@@ -9,6 +9,7 @@ is reused; its WebSocket connector disables TLS verification and is not used her
 import importlib
 import json
 import logging
+import re
 import ssl
 import threading
 import uuid
@@ -69,10 +70,17 @@ def _validate_authorized_uri(uri: str) -> str:
 
 
 def _request_authorized_uri(access_token: str) -> str:
+    # Render values are normally the raw token. Accept a pasted header value too,
+    # without accidentally sending `Bearer Bearer ...` to Upstox.
+    token = access_token.strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    if not token:
+        raise PermissionError("Upstox Analytics token is empty.")
     request = Request(
         AUTHORIZE_URL,
         headers={
-            "Authorization": f"Bearer {access_token}",
+            "Authorization": f"Bearer {token}",
             "Accept": "application/json",
         },
         method="GET",
@@ -81,9 +89,32 @@ def _request_authorized_uri(access_token: str) -> str:
         with urlopen(request, timeout=10) as response:
             body = json.load(response)
     except HTTPError as exc:
+        # Upstox's response may contain provider diagnostics. Read only a known
+        # error-code field and never log the raw response body or token.
+        error_code = None
+        try:
+            payload = json.loads(exc.read(4096).decode("utf-8"))
+            if isinstance(payload, dict):
+                error_code = payload.get("errorCode") or payload.get("error_code")
+                errors = payload.get("errors")
+                if not error_code and isinstance(errors, list) and errors:
+                    first_error = errors[0]
+                    if isinstance(first_error, dict):
+                        error_code = first_error.get("errorCode") or first_error.get(
+                            "error_code"
+                        )
+        except (UnicodeDecodeError, json.JSONDecodeError, OSError):
+            pass
+        safe_code = (
+            error_code
+            if isinstance(error_code, str)
+            and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", error_code)
+            else None
+        )
         if exc.code in (401, 403):
+            detail = f"; Upstox error code {safe_code}" if safe_code else ""
             raise PermissionError(
-                f"Upstox authorization was rejected (HTTP {exc.code})."
+                f"Upstox authorization was rejected (HTTP {exc.code}{detail})."
             ) from None
         raise RuntimeError(
             f"Upstox authorization endpoint returned HTTP {exc.code}."
