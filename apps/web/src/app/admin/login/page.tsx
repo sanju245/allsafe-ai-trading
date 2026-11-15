@@ -22,7 +22,7 @@ export default function AdminLoginPage() {
     if (loading || !session || handledSession.current === session.access_token) return;
     handledSession.current = session.access_token;
 
-    if (profile?.role === "admin") {
+    if (profile?.role === "admin" && profile.status === "active") {
       router.replace("/admin");
     }
   }, [loading, profile, router, session]);
@@ -59,6 +59,7 @@ export default function AdminLoginPage() {
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Admin sign in</h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-300">
           Sign in with an active administrator account to manage customer access.
+          Administrator access is available from any IP address.
         </p>
 
         {!SUPABASE_CONFIGURED ? (
@@ -78,6 +79,7 @@ export default function AdminLoginPage() {
                 type="email"
                 autoComplete="username"
                 required
+                disabled={loading}
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/60"
@@ -89,6 +91,7 @@ export default function AdminLoginPage() {
                 type="password"
                 autoComplete="current-password"
                 required
+                disabled={loading}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/60"

@@ -258,7 +258,13 @@ def test_active_admin_without_allowed_ip_is_returned_with_nullable_ip(monkeypatc
     assert account.client_ip == "198.51.100.24"
 
 
-def test_active_admin_is_not_blocked_when_production_proxy_ip_is_unavailable(monkeypatch):
+@pytest.mark.parametrize("headers", [
+    [],
+    [(b"cf-connecting-ip", b"not-an-ip")],
+    [(b"cf-connecting-ip", b"192.0.2.10, 198.51.100.24")],
+    [(b"cf-connecting-ip", b"192.0.2.10"), (b"cf-connecting-ip", b"198.51.100.24")],
+])
+def test_active_admin_is_not_blocked_when_production_proxy_ip_is_unavailable(monkeypatch, headers):
     monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
     user_id = str(uuid4())
@@ -275,7 +281,7 @@ def test_active_admin_is_not_blocked_when_production_proxy_ip_is_unavailable(mon
     )
 
     account = security.require_admin_account(
-        _request(), f"Bearer {_hs256_token(user_id=user_id)}"
+        _request(headers), f"Bearer {_hs256_token(user_id=user_id)}"
     )
 
     assert account.role == "admin"
@@ -283,7 +289,13 @@ def test_active_admin_is_not_blocked_when_production_proxy_ip_is_unavailable(mon
     assert account.client_ip is None
 
 
-def test_active_customer_is_blocked_when_production_proxy_ip_is_unavailable(monkeypatch):
+@pytest.mark.parametrize("headers", [
+    [],
+    [(b"cf-connecting-ip", b"not-an-ip")],
+    [(b"cf-connecting-ip", b"192.0.2.10, 198.51.100.24")],
+    [(b"cf-connecting-ip", b"192.0.2.10"), (b"cf-connecting-ip", b"198.51.100.24")],
+])
+def test_active_customer_is_blocked_when_production_proxy_ip_is_unavailable(monkeypatch, headers):
     monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
     user_id = str(uuid4())
@@ -301,7 +313,7 @@ def test_active_customer_is_blocked_when_production_proxy_ip_is_unavailable(monk
 
     with pytest.raises(HTTPException) as error:
         security.require_active_account(
-            _request(), f"Bearer {_hs256_token(user_id=user_id)}"
+            _request(headers), f"Bearer {_hs256_token(user_id=user_id)}"
         )
 
     assert error.value.status_code == 503

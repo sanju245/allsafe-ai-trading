@@ -64,7 +64,8 @@ def request_client_ip(request: Request) -> str:
     on_render = bool(os.getenv("RENDER_SERVICE_ID"))
     production = settings.app_env.strip().lower() == "production" or on_render
     if production:
-        candidate = request.headers.get("cf-connecting-ip")
+        candidates = request.headers.getlist("cf-connecting-ip")
+        candidate = candidates[0] if len(candidates) == 1 else None
     else:
         candidate = request.client.host if request.client is not None else None
 
@@ -125,7 +126,7 @@ def require_active_account(
     email = profile.get("email")
     raw_allowed_ip = profile.get("allowed_ip")
     allowed_ip = _normalize_stored_ip(raw_allowed_ip)
-    if role not in {"user", "admin"} or not isinstance(email, str):
+    if role not in {"user", "admin"} or not isinstance(email, str) or not email.strip():
         raise HTTPException(
             status_code=403,
             detail={"code": "account_unavailable", "message": "This account is not available."},

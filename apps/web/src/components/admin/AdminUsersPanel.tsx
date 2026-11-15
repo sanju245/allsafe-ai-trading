@@ -34,6 +34,10 @@ async function responseMessage(response: Response): Promise<string> {
       for (const key of ["detail", "message", "error"]) {
         const value = record[key];
         if (typeof value === "string") return value;
+        if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+          const message = (value as Record<string, unknown>).message;
+          if (typeof message === "string") return message;
+        }
         if (Array.isArray(value) && value.length > 0) {
           const first = value[0];
           if (typeof first === "object" && first !== null) {
@@ -55,17 +59,27 @@ async function adminRequest<T>(
   options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown } = {},
 ): Promise<T> {
   const hasBody = options.body !== undefined;
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method ?? "GET",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${accessToken}`,
-      ...(hasBody ? { "Content-Type": "application/json" } : {}),
-    },
-    ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
-    cache: "no-store",
-    credentials: "omit",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: options.method ?? "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        ...(hasBody ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
+      cache: "no-store",
+      credentials: "omit",
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch {
+    throw new Error(
+      options.method && options.method !== "GET"
+        ? "The account service did not confirm this change. Refresh the list to check its status before trying again."
+        : "The account service could not be reached. Try refreshing the list shortly.",
+    );
+  }
 
   if (!response.ok) throw new Error(await responseMessage(response));
   if (response.status === 204) return {} as T;
@@ -184,7 +198,7 @@ function UserActions({ user, busy, onStatusChange, onAllowedIpChange, onDelete }
 export default function AdminUsersPanel() {
   const { session, profile, loading: authLoading, signOut } = useAuth();
   const accessToken = session?.access_token;
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = profile?.role === "admin" && profile.status === "active";
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -317,7 +331,7 @@ export default function AdminUsersPanel() {
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!accessToken) return;
+    if (!accessToken || !isAdmin || creating) return;
     setCreating(true);
     clearNotices();
     try {
@@ -339,7 +353,7 @@ export default function AdminUsersPanel() {
   }
 
   async function changeStatus(user: AdminUser) {
-    if (!accessToken || !isCustomer(user)) return;
+    if (!accessToken || !isAdmin || !isCustomer(user) || busyUserIdRef.current) return;
     const status = user.status === "active" ? "paused" : "active";
     updateBusyUserId(user.id);
     clearNotices();
@@ -358,7 +372,7 @@ export default function AdminUsersPanel() {
   }
 
   async function changeAllowedIp(user: AdminUser, nextAllowedIp: string): Promise<boolean> {
-    if (!accessToken || !isCustomer(user) || !nextAllowedIp) return false;
+    if (!accessToken || !isAdmin || !isCustomer(user) || !nextAllowedIp || busyUserIdRef.current) return false;
     updateBusyUserId(user.id);
     clearNotices();
     try {
@@ -378,7 +392,7 @@ export default function AdminUsersPanel() {
   }
 
   async function deleteUser() {
-    if (!accessToken || !deleteTarget || !isCustomer(deleteTarget)) return;
+    if (!accessToken || !isAdmin || !deleteTarget || !isCustomer(deleteTarget) || busyUserIdRef.current) return;
     if (deleteConfirmation.trim().toLowerCase() !== deleteTarget.email.trim().toLowerCase()) return;
     updateBusyUserId(deleteTarget.id);
     clearNotices();
@@ -437,7 +451,7 @@ export default function AdminUsersPanel() {
     <UserActions
       key={user.id}
       user={user}
-      busy={busyUserId === user.id}
+      busy={busyUserId !== null}
       onStatusChange={changeStatus}
       onAllowedIpChange={changeAllowedIp}
       onDelete={(target) => {
