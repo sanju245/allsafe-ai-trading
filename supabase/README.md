@@ -7,8 +7,18 @@ key, but it must never receive the service-role credential.
 
 Apply all SQL files under `supabase/migrations` in timestamp order using the
 Supabase SQL Editor or the Supabase CLI. The account-controls migration adds an
-`active`/`paused` state and one exact IP address to each profile. Browser roles
-remain read-only on `public.profiles`.
+`active`/`paused` state and a legacy IP column to each profile. The IP column is
+retained for compatibility but no longer restricts customer or administrator
+sign-in. Browser roles remain read-only on `public.profiles`.
+
+The `20261116000000_login_ip_audit.sql` migration adds the private
+`public.login_events` table used for successful sign-in history. Apply it after
+the older profile migrations before expecting the admin portal to show IP history.
+Only the API's service-role credential can read or write these records, and the
+API exposes them only to an active administrator. History starts after both this
+migration and the API change are live; previous sign-ins cannot be reconstructed.
+If the trusted edge IP header is unavailable, sign-in still succeeds and that
+event's IP is shown as unavailable.
 
 ### Single-administrator guard (`20261102000000_single_admin_guard.sql`)
 
@@ -52,9 +62,9 @@ Add these server-side values to the Render API service's environment:
   RS256 tokens are verified against Supabase's public JWKS endpoint.
 - `SUPABASE_SERVICE_ROLE_KEY`: the legacy service-role key used only by the
   server-side Auth Admin and profile REST calls.
-- `APP_ENV=production`: makes the API require Render's `CF-Connecting-IP`
-  header. If running on Render, its service identifier also enables that
-  fail-closed behavior.
+- `APP_ENV=production`: makes sign-in history accept a source IP only from
+  Render's trusted `CF-Connecting-IP` edge header. IP capture is for audit only;
+  a missing or invalid header does not block any otherwise-active user.
 - `CORS_ORIGINS=https://allsafe-ai-trading.vercel.app,http://localhost:3000`:
   allowed browser origins. Keep localhost only if it is needed for development.
 
@@ -67,8 +77,8 @@ environment file, a response, or a browser request.
    intended administrator with a confirmed email and a temporary password.
    Public self-signup is disabled. The auth trigger creates the matching
    `public.profiles` row with role `user`.
-2. In Supabase SQL Editor, promote only that account. Administrators have no
-   customer IP restriction:
+2. In Supabase SQL Editor, promote only that account. Neither customers nor
+   administrators have an IP sign-in restriction:
 
    ```sql
    update public.profiles
@@ -82,12 +92,7 @@ environment file, a response, or a browser request.
 3. Sign in at `https://allsafe-ai-trading.vercel.app/admin/login`, then
    confirm `GET /api/v1/auth/me` returns the `admin` role. Admin actions are
    served by the API and checked against the current profile role and active status
-   on every request. The customer `allowed_ip` comparison does not apply to active
-   administrators, including when current IP metadata is unavailable.
-
-The public `GET /api/v1/auth/client-ip` endpoint reports the API's trusted
-client address and does not require a login. In production, the API accepts this
-address only from Render's `CF-Connecting-IP` header. A missing, invalid, comma-separated,
-or duplicated header fails closed for customers. Active administrators may continue
-with unavailable IP metadata after token, role, and active-status verification.
-Direct-origin header spoof resistance must still be verified against the live edge.
+   on every request. The admin portal's **Successful sign-in history** shows the
+   account, trusted source IP when available, time, and browser user-agent for
+   sign-ins recorded after the audit migration/API change is live. IP changes can
+   be a review clue, but may also result from mobile networks or VPNs.

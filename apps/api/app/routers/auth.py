@@ -2,12 +2,13 @@
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from app.security import AccountPrincipal, request_client_ip, require_active_account
 from app.supabase_admin import (
     SupabaseAdminAPIError,
+    record_login_event,
     sanitized_admin_error,
     update_auth_user_password,
 )
@@ -15,18 +16,11 @@ from app.supabase_admin import (
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
-class ClientIPResponse(BaseModel):
-    client_ip: str
-
-
 class CurrentAccountResponse(BaseModel):
     id: str
     email: str
     role: Literal["user", "admin"]
     status: Literal["active", "paused"]
-    allowed_ip: str | None
-    client_ip: str | None
-
 
 class ChangePasswordRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -41,28 +35,43 @@ class ChangePasswordRequest(BaseModel):
         return value
 
 
-@router.get("/client-ip", response_model=ClientIPResponse)
-def get_client_ip(request: Request, response: Response) -> ClientIPResponse:
-    """Return the trusted source IP for first-admin bootstrap and allowlisting."""
-    response.headers["Cache-Control"] = "no-store"
-    return ClientIPResponse(client_ip=request_client_ip(request))
-
-
 @router.get("/me", response_model=CurrentAccountResponse)
 def get_current_account(
     response: Response,
     account: AccountPrincipal = Depends(require_active_account),
 ) -> CurrentAccountResponse:
-    """Return a profile only when its current active status and IP allowlist pass."""
+    """Return the profile after verifying its role and active account status."""
     response.headers["Cache-Control"] = "no-store"
     return CurrentAccountResponse(
         id=account.id,
         email=account.email,
         role=account.role,  # type: ignore[arg-type]
         status=account.status,  # type: ignore[arg-type]
-        allowed_ip=account.allowed_ip,
-        client_ip=account.client_ip,
     )
+
+
+@router.post("/login-events", status_code=204)
+def record_current_login(
+    request: Request,
+    account: AccountPrincipal = Depends(require_active_account),
+) -> Response:
+    """Record one successfully authenticated sign-in without using IP as a gate."""
+    client_ip: str | None = None
+    try:
+        client_ip = request_client_ip(request)
+    except HTTPException as exc:
+        if exc.status_code != 503:
+            raise
+    try:
+        record_login_event(
+            account.id,
+            account.email,
+            client_ip,
+            request.headers.get("user-agent"),
+        )
+    except SupabaseAdminAPIError as exc:
+        raise sanitized_admin_error(exc) from None
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 
 @router.put("/password", status_code=204)
@@ -70,7 +79,7 @@ def change_password(
     body: ChangePasswordRequest,
     account: AccountPrincipal = Depends(require_active_account),
 ) -> Response:
-    """Change the signed-in user's password after rechecking active status and IP."""
+    """Change the signed-in user's password after rechecking active account status."""
     try:
         update_auth_user_password(account.id, body.password.get_secret_value())
     except SupabaseAdminAPIError as exc:

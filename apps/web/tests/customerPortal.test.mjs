@@ -82,14 +82,22 @@ function authHarness(fetchImpl) {
   };
 }
 
-test("sign-in establishes only the API-verified profile for the authenticated subject and bounds requests", async () => {
-  const harness = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json(activeProfile));
+test("customer sign-in is not restricted by IP and records a successful login event", async () => {
+  const harness = authHarness(async (url) => {
+    if (url.includes("/token?")) return json(authReply);
+    if (url.endsWith("/login-events")) return new Response(null, { status: 204 });
+    return json(activeProfile);
+  });
   await harness.context().signIn(" customer@example.com ", "password-123");
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(harness.context().session.user.id, userId);
   assert.equal(harness.context().profile.id, userId);
+  assert.equal(harness.context().profile.allowed_ip, undefined);
+  assert.equal(harness.context().loginAuditRecorded, true);
   assert.equal(harness.context().loading, false);
   assert.equal(JSON.parse(harness.calls[0].options.body).email, "customer@example.com");
-  assert.deepEqual(harness.timeouts, [12000, 65000]);
+  assert.ok(harness.calls.some(({ url, options }) => url.endsWith("/api/v1/auth/login-events") && options.method === "POST"));
+  assert.deepEqual(harness.timeouts, [12000, 65000, 12000]);
   for (const { options } of harness.calls) {
     assert.equal(options.credentials, "omit");
     assert.ok(options.signal instanceof AbortSignal);
@@ -108,15 +116,17 @@ test("a different profile subject cannot establish a signed-in customer session"
   assert.ok(harness.calls.some(({ url }) => url.endsWith("/logout")));
 });
 
-test("customer IP denial remains a sign-in failure and never opens the portal", async () => {
+test("login-history storage trouble never becomes a customer IP restriction", async () => {
   const harness = authHarness(async (url) => {
     if (url.includes("/token?")) return json(authReply);
     if (url.includes("/logout")) return new Response(null, { status: 204 });
-    return json({ detail: { code: "ip_not_allowed" } }, 403);
+    if (url.endsWith("/login-events")) return json({ detail: "unavailable" }, 503);
+    return json(activeProfile);
   });
-  await assert.rejects(harness.context().signIn("customer@example.com", "password-123"), /not allowed from the current IP/);
-  assert.equal(harness.context().session, null);
-  assert.equal(harness.context().profile, null);
+  await harness.context().signIn("customer@example.com", "password-123");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(harness.context().session.user.id, userId);
+  assert.equal(harness.context().loginAuditRecorded, false);
 });
 
 test("a profile startup timeout explains the wait and leaves the portal signed out", async () => {
@@ -192,13 +202,17 @@ test("temporary profile outage preserves a valid session, but expired authentica
   assert.equal(harness.context().loading, false);
 });
 
-test("active admin profiles may have no client IP without changing customer policy", async () => {
-  const harness = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json({
-    ...activeProfile, role: "admin", allowed_ip: null, client_ip: null,
-  }));
+test("active admin sign-in is audited without returning IP fields in the profile", async () => {
+  const harness = authHarness(async (url) => {
+    if (url.includes("/token?")) return json(authReply);
+    if (url.endsWith("/login-events")) return new Response(null, { status: 204 });
+    return json({ ...activeProfile, role: "admin" });
+  });
   await harness.context().signIn("admin@example.com", "password-123");
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(harness.context().profile.role, "admin");
-  assert.equal(harness.context().profile.client_ip, null);
+  assert.equal(harness.context().profile.client_ip, undefined);
+  assert.equal(harness.context().loginAuditRecorded, true);
 });
 
 test("customer return destinations accept only supported local routes", () => {

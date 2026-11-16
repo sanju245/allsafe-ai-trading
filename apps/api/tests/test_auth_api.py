@@ -11,14 +11,12 @@ from app.security import AccountPrincipal, require_active_account
 client = TestClient(app)
 
 
-def test_current_admin_profile_allows_null_customer_ip_allowlist():
+def test_current_admin_profile_does_not_expose_ip_fields():
     principal = AccountPrincipal(
         id="00000000-0000-4000-8000-000000000002",
         email="admin@example.com",
         role="admin",
         status="active",
-        allowed_ip=None,
-        client_ip=None,
     )
     missing = object()
     previous = app.dependency_overrides.get(require_active_account, missing)
@@ -35,8 +33,76 @@ def test_current_admin_profile_allows_null_customer_ip_allowlist():
 
     assert response.status_code == 200
     assert response.json()["role"] == "admin"
-    assert response.json()["allowed_ip"] is None
-    assert response.json()["client_ip"] is None
+    assert "allowed_ip" not in response.json()
+    assert "client_ip" not in response.json()
+
+
+@pytest.mark.usefixtures("active_account_override")
+def test_successful_login_can_be_recorded_with_trusted_client_ip(monkeypatch):
+    captured = []
+    monkeypatch.setattr(auth_router, "request_client_ip", lambda request: "203.0.113.24")
+    monkeypatch.setattr(
+        auth_router,
+        "record_login_event",
+        lambda user_id, email, client_ip, user_agent: captured.append(
+            (user_id, email, client_ip, user_agent)
+        ),
+    )
+
+    response = client.post(
+        "/api/v1/auth/login-events",
+        headers={"Authorization": "Bearer test-token", "User-Agent": "Test Browser"},
+    )
+
+    assert response.status_code == 204
+    assert captured == [(
+        "00000000-0000-4000-8000-000000000001",
+        "customer@example.com",
+        "203.0.113.24",
+        "Test Browser",
+    )]
+
+
+@pytest.mark.usefixtures("active_account_override")
+def test_missing_trusted_ip_is_recorded_as_unavailable_without_blocking(monkeypatch):
+    captured = []
+
+    def no_trusted_ip(_request):
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=503, detail="IP capture unavailable")
+
+    monkeypatch.setattr(auth_router, "request_client_ip", no_trusted_ip)
+    monkeypatch.setattr(
+        auth_router,
+        "record_login_event",
+        lambda user_id, email, client_ip, user_agent: captured.append(client_ip),
+    )
+
+    response = client.post(
+        "/api/v1/auth/login-events",
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 204
+    assert captured == [None]
+
+
+@pytest.mark.usefixtures("active_account_override")
+def test_login_audit_storage_failure_does_not_change_account_authorization(monkeypatch):
+    monkeypatch.setattr(auth_router, "request_client_ip", lambda request: "203.0.113.24")
+
+    def unavailable(*_args, **_kwargs):
+        raise auth_router.SupabaseAdminAPIError(503)
+
+    monkeypatch.setattr(auth_router, "record_login_event", unavailable)
+    response = client.post(
+        "/api/v1/auth/login-events",
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Supabase account administration is unavailable."
 
 
 def test_password_change_requires_a_verified_account(monkeypatch):

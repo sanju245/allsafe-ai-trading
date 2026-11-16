@@ -18,7 +18,9 @@ from fastapi import HTTPException
 
 from app.config import Settings, get_settings
 
-PROFILE_COLUMNS = "id,email,role,status,allowed_ip,created_at"
+PROFILE_COLUMNS = "id,email,role,status,created_at"
+CUSTOMER_DIRECTORY_COLUMNS = "id,email,role,status,created_at"
+LOGIN_EVENT_COLUMNS = "id,user_id,email,client_ip,user_agent,occurred_at"
 _REQUEST_TIMEOUT_SECONDS = 10
 
 
@@ -144,7 +146,7 @@ def list_customer_profiles(*, settings: Settings | None = None) -> list[dict[str
         "GET",
         "rest/v1/profiles",
         query={
-            "select": PROFILE_COLUMNS,
+            "select": CUSTOMER_DIRECTORY_COLUMNS,
             "role": "eq.user",
             "order": "created_at.desc",
             "limit": "1000",
@@ -152,6 +154,53 @@ def list_customer_profiles(*, settings: Settings | None = None) -> list[dict[str
         settings=settings,
     )
     if not isinstance(rows, list):
+        raise SupabaseAdminAPIError(502)
+    return rows
+
+
+def record_login_event(
+    user_id: str,
+    email: str,
+    client_ip: str | None,
+    user_agent: str | None,
+    *,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    """Persist one verified successful sign-in using the server-only credential."""
+    rows = _request_json(
+        "POST",
+        "rest/v1/login_events",
+        payload={
+            "user_id": user_id,
+            "email": email,
+            "client_ip": client_ip,
+            "user_agent": user_agent[:512] if user_agent else None,
+        },
+        settings=settings,
+    )
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        raise SupabaseAdminAPIError(502)
+    return rows[0]
+
+
+def list_login_events(
+    *,
+    limit: int,
+    offset: int,
+    settings: Settings | None = None,
+) -> list[dict[str, Any]]:
+    rows = _request_json(
+        "GET",
+        "rest/v1/login_events",
+        query={
+            "select": LOGIN_EVENT_COLUMNS,
+            "order": "occurred_at.desc,id.desc",
+            "limit": str(limit),
+            "offset": str(offset),
+        },
+        settings=settings,
+    )
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise SupabaseAdminAPIError(502)
     return rows
 

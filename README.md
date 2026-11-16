@@ -23,11 +23,7 @@ A read-only Indian index market-analysis and decision-support application for NI
 
 ## Authentication and IP policy
 
-The API verifies the Supabase token, profile, role, and active account status. Active administrators do not use the customer IP allowlist. Active customers require an exact match to their configured single-host public IP.
-
-Active administrators can continue when the production proxy does not provide a valid client IP; the returned current-IP field is null in that case. Customers still fail closed when the API cannot verify their IP.
-
-Production IP detection trusts one valid CF-Connecting-IP header. A live check through the public Render hostname rejected a forged CF-Connecting-IP and ignored forged X-Forwarded-For. These checks cover the tested public route; source tests also cover missing, malformed, comma-separated, and duplicate headers.
+The API verifies the Supabase token, profile, role, and active account status. Customer and administrator sign-in do not use IP allowlists. The admin portal records successful sign-ins with the source IP when Render's trusted `CF-Connecting-IP` header is available; missing or invalid IP metadata does not block sign-in. Apply `supabase/migrations/20261116000000_login_ip_audit.sql` before expecting the history view to populate. Only an active administrator can read the history, and it is not retroactive.
 
 The local review environment has no Supabase URL or anon key configured. Sign-in was not attempted.
 

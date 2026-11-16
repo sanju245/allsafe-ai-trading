@@ -80,3 +80,52 @@ def test_password_admin_call_targets_only_the_authenticated_user(monkeypatch):
         "auth/v1/admin/users/00000000-0000-4000-8000-000000000001",
         {"password": "test-only-password"},
     )]
+
+
+def test_login_event_insert_uses_service_role_path_and_bounds_user_agent(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        supabase_admin,
+        "_request_json",
+        lambda method, endpoint, **kwargs: calls.append((method, endpoint, kwargs["payload"])) or [{"id": "event-id"}],
+    )
+
+    event = supabase_admin.record_login_event(
+        "00000000-0000-4000-8000-000000000001",
+        "customer@example.com",
+        "198.51.100.44",
+        "A" * 600,
+    )
+
+    assert event == {"id": "event-id"}
+    assert calls == [(
+        "POST",
+        "rest/v1/login_events",
+        {
+            "user_id": "00000000-0000-4000-8000-000000000001",
+            "email": "customer@example.com",
+            "client_ip": "198.51.100.44",
+            "user_agent": "A" * 512,
+        },
+    )]
+
+
+def test_login_event_reader_uses_paginated_descending_service_request(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        supabase_admin,
+        "_request_json",
+        lambda method, endpoint, **kwargs: calls.append((method, endpoint, kwargs["query"])) or [],
+    )
+
+    assert supabase_admin.list_login_events(limit=25, offset=100) == []
+    assert calls == [(
+        "GET",
+        "rest/v1/login_events",
+        {
+            "select": "id,user_id,email,client_ip,user_agent,occurred_at",
+            "order": "occurred_at.desc,id.desc",
+            "limit": "25",
+            "offset": "100",
+        },
+    )]

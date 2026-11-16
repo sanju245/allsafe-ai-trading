@@ -17,13 +17,12 @@ export type AuthProfile = {
   email: string;
   role: "admin" | "user";
   status: "active" | "paused";
-  allowed_ip: string | null;
-  client_ip: string | null;
 };
 
 type AuthContextValue = {
   session: AuthSession | null;
   profile: AuthProfile | null;
+  loginAuditRecorded: boolean | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -99,32 +98,12 @@ function accessDeniedMessage(body: unknown, status: number): string {
     .filter((value): value is string => typeof value === "string")
     .join(" ")
     .toLowerCase();
-  const allowedIp =
-    (typeof record?.allowed_ip === "string" && record.allowed_ip) ||
-    (typeof detail?.allowed_ip === "string" && detail.allowed_ip);
-  const clientIp =
-    (typeof record?.client_ip === "string" && record.client_ip) ||
-    (typeof detail?.client_ip === "string" && detail.client_ip);
-
   if (/account_paused|disabled|account_suspended/.test(code)) {
     return "This login is paused. Contact the administrator to restore access.";
   }
-  if (/ip_not_allowed|ip_not_configured|ip_configuration_invalid/.test(code)) {
-    const allowed = allowedIp ? ` The approved IP is ${allowedIp}.` : "";
-    const current = clientIp ? ` The current IP is ${clientIp}.` : "";
-    return `This login is not allowed from the current IP.${allowed}${current}`;
-  }
   if (status >= 500) return "Account verification is temporarily unavailable. Try again soon.";
-  if (/paused.*ip|ip.*paused/.test(text)) {
-    return "Account access could not be verified. Ask the administrator to check the account status and approved IP.";
-  }
   if (/paused|disabled|account_suspended/.test(`${code} ${text}`)) {
     return "This login is paused. Contact the administrator to restore access.";
-  }
-  if (/ip|address|allow.?list|network/.test(`${code} ${text}`) || allowedIp) {
-    const allowed = allowedIp ? ` The approved IP is ${allowedIp}.` : "";
-    const current = clientIp ? ` The current IP is ${clientIp}.` : "";
-    return `This login is not allowed from the current IP.${allowed}${current}`;
   }
   if (/inactive|not active/.test(`${code} ${text}`)) {
     return "This account is not active. Contact the administrator for help.";
@@ -139,14 +118,12 @@ function parseProfile(body: unknown): AuthProfile | null {
   const nested = asRecord(outer?.profile) ?? outer;
   if (!nested) return null;
 
-  const { id, email, role, status, allowed_ip: allowedIp, client_ip: clientIp } = nested;
+  const { id, email, role, status } = nested;
   if (
     typeof id !== "string" ||
     typeof email !== "string" ||
     (role !== "admin" && role !== "user") ||
-    (status !== "active" && status !== "paused") ||
-    (allowedIp !== null && typeof allowedIp !== "string") ||
-    (clientIp !== null && typeof clientIp !== "string")
+    (status !== "active" && status !== "paused")
   ) {
     return null;
   }
@@ -156,9 +133,23 @@ function parseProfile(body: unknown): AuthProfile | null {
     email,
     role,
     status,
-    allowed_ip: allowedIp,
-    client_ip: clientIp,
   };
+}
+
+async function recordLoginEvent(accessToken: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/auth/login-events`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      cache: "no-store",
+      credentials: "omit",
+      signal: AbortSignal.timeout(12000),
+    });
+    return response.ok;
+  } catch {
+    // Auditing must never become another customer sign-in restriction.
+    return false;
+  }
 }
 
 function requireSupabaseConfig(): void {
@@ -240,6 +231,7 @@ function parseAuthUser(value: unknown): AuthUser | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
+  const [loginAuditRecorded, setLoginAuditRecorded] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const authGeneration = useRef(0);
 
@@ -247,6 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     requireSupabaseConfig();
     const generation = ++authGeneration.current;
     setLoading(true);
+    setLoginAuditRecorded(null);
     try {
       const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
         method: "POST",
@@ -279,6 +272,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setSession({ access_token: accessToken, user });
         setProfile(nextProfile);
+        setLoginAuditRecorded(null);
+        void recordLoginEvent(accessToken).then((auditRecorded) => {
+          if (generation === authGeneration.current) setLoginAuditRecorded(auditRecorded);
+        });
       } catch (cause) {
         void signOutFromSupabase(accessToken);
         throw cause;
@@ -292,6 +289,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ++authGeneration.current;
     setSession(null);
     setProfile(null);
+    setLoginAuditRecorded(null);
     setLoading(false);
     // Revoke upstream in the background; losing connectivity cannot delay
     // clearing the in-memory session or returning to the sign-in page.
@@ -359,8 +357,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ session, profile, loading, signIn, signOut, changePassword, refreshProfile }),
-    [session, profile, loading, signIn, signOut, changePassword, refreshProfile],
+    () => ({ session, profile, loginAuditRecorded, loading, signIn, signOut, changePassword, refreshProfile }),
+    [session, profile, loginAuditRecorded, loading, signIn, signOut, changePassword, refreshProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

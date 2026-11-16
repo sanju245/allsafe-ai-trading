@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, SecretStr, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from app.security import AccountPrincipal, require_admin_account
 from app.supabase_admin import (
@@ -15,6 +15,7 @@ from app.supabase_admin import (
     delete_auth_user,
     get_profile,
     list_customer_profiles,
+    list_login_events,
     sanitized_admin_error,
     set_auth_user_ban,
     update_profile,
@@ -30,7 +31,6 @@ class CreateUserRequest(BaseModel):
 
     email: str = Field(min_length=3, max_length=254)
     password: SecretStr
-    allowed_ip: IPvAnyAddress
 
     @field_validator("email")
     @classmethod
@@ -53,7 +53,6 @@ class UpdateUserRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: AccountStatus | None = None
-    allowed_ip: IPvAnyAddress | None = None
 
 
 class UserResponse(BaseModel):
@@ -61,12 +60,24 @@ class UserResponse(BaseModel):
     email: str
     role: Literal["user", "admin"]
     status: AccountStatus
-    allowed_ip: str | None
     created_at: datetime
 
 
 class UserListResponse(BaseModel):
     users: list[UserResponse]
+
+
+class LoginEventResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    email: str
+    client_ip: str | None
+    user_agent: str | None
+    occurred_at: datetime
+
+
+class LoginEventListResponse(BaseModel):
+    events: list[LoginEventResponse]
 
 
 def _user_response(profile: dict[str, object]) -> UserResponse:
@@ -106,6 +117,26 @@ def get_users(
     return UserListResponse(users=[_user_response(profile) for profile in profiles])
 
 
+@router.get("/login-events", response_model=LoginEventListResponse)
+def get_login_events(
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=100_000),
+    _: AccountPrincipal = Depends(require_admin_account),
+) -> LoginEventListResponse:
+    """Return a paginated sign-in history. Only an active admin can access IPs."""
+    try:
+        events = list_login_events(limit=limit, offset=offset)
+    except SupabaseAdminAPIError as exc:
+        raise sanitized_admin_error(exc) from None
+    try:
+        return LoginEventListResponse(events=[LoginEventResponse.model_validate(event) for event in events])
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="Supabase returned an incomplete login-history record.",
+        ) from None
+
+
 @router.post(
     "/users",
     response_model=UserResponse,
@@ -122,10 +153,7 @@ def create_user(
             body.password.get_secret_value(),
         )
         user_id = UUID(auth_user["id"])
-        profile = update_profile(
-            str(user_id),
-            {"allowed_ip": body.allowed_ip.compressed},
-        )
+        profile = get_profile(str(user_id))
         if profile is None:
             raise SupabaseAdminAPIError(502)
     except SupabaseAdminAPIError as exc:
@@ -156,14 +184,9 @@ def update_user(
 ) -> UserResponse:
     changes = body.model_dump(exclude_unset=True)
     if not changes:
-        raise HTTPException(status_code=422, detail="Set status and/or allowed_ip.")
+        raise HTTPException(status_code=422, detail="Set a status change.")
     if "status" in changes and changes["status"] is None:
         raise HTTPException(status_code=422, detail="status cannot be null.")
-    if "allowed_ip" in changes and changes["allowed_ip"] is None:
-        raise HTTPException(status_code=422, detail="allowed_ip must be one exact IP address.")
-    if "allowed_ip" in changes:
-        changes["allowed_ip"] = changes["allowed_ip"].compressed
-
     profile = _customer_profile(user_id)
     status_change = changes.get("status")
     try:

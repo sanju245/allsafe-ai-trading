@@ -14,18 +14,17 @@ pytestmark = pytest.mark.usefixtures("admin_account_override")
 client = TestClient(app)
 
 
-def _profile(*, user_id, email="customer@example.com", status="active", allowed_ip="203.0.113.5", role="user"):
+def _profile(*, user_id, email="customer@example.com", status="active", role="user"):
     return {
         "id": str(user_id),
         "email": email,
         "role": role,
         "status": status,
-        "allowed_ip": allowed_ip,
         "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat(),
     }
 
 
-def test_admin_creates_email_login_bound_to_one_exact_ip(monkeypatch):
+def test_admin_creates_email_login_without_an_ip_restriction(monkeypatch):
     user_id = uuid4()
     captured = {}
     monkeypatch.setattr(
@@ -33,22 +32,13 @@ def test_admin_creates_email_login_bound_to_one_exact_ip(monkeypatch):
         "create_auth_user",
         lambda email, password: captured.update(email=email, password=password) or {"id": str(user_id)},
     )
-    monkeypatch.setattr(
-        admin_router,
-        "update_profile",
-        lambda account_id, changes: _profile(
-            user_id=account_id,
-            email=captured["email"],
-            allowed_ip=changes["allowed_ip"],
-        ),
-    )
+    monkeypatch.setattr(admin_router, "get_profile", lambda account_id: _profile(user_id=account_id, email=captured["email"]))
 
     response = client.post(
         "/api/v1/admin/users",
         json={
             "email": "  CUSTOMER@Example.COM ",
             "password": "initial-password-123",
-            "allowed_ip": "2001:0db8:0:0:0:0:0:10",
         },
     )
 
@@ -56,10 +46,10 @@ def test_admin_creates_email_login_bound_to_one_exact_ip(monkeypatch):
     assert captured == {"email": "customer@example.com", "password": "initial-password-123"}
     assert response.json()["email"] == "customer@example.com"
     assert response.json()["role"] == "user"
-    assert response.json()["allowed_ip"] == "2001:db8::10"
+    assert "allowed_ip" not in response.json()
 
 
-def test_admin_cannot_create_cidr_allowlist_or_short_password(monkeypatch):
+def test_admin_creation_rejects_legacy_ip_fields_and_short_password(monkeypatch):
     called = False
 
     def unexpected_create(*args, **kwargs):
@@ -73,7 +63,7 @@ def test_admin_cannot_create_cidr_allowlist_or_short_password(monkeypatch):
     )
     bad_password = client.post(
         "/api/v1/admin/users",
-        json={"email": "customer@example.com", "password": "short", "allowed_ip": "203.0.113.5"},
+        json={"email": "customer@example.com", "password": "short"},
     )
 
     assert bad_ip.status_code == 422
@@ -82,10 +72,45 @@ def test_admin_cannot_create_cidr_allowlist_or_short_password(monkeypatch):
     assert called is False
 
 
+def test_admin_list_sign_in_history_returns_user_ip_and_paginates(monkeypatch):
+    event_id = uuid4()
+    user_id = uuid4()
+    calls = []
+    monkeypatch.setattr(
+        admin_router,
+        "list_login_events",
+        lambda *, limit, offset: calls.append((limit, offset)) or [{
+            "id": str(event_id),
+            "user_id": str(user_id),
+            "email": "customer@example.com",
+            "client_ip": "198.51.100.44",
+            "user_agent": "Test Browser",
+            "occurred_at": datetime(2026, 11, 16, tzinfo=timezone.utc).isoformat(),
+        }],
+    )
+
+    response = client.get("/api/v1/admin/login-events?limit=25&offset=100")
+
+    assert response.status_code == 200
+    assert calls == [(25, 100)]
+    assert response.json()["events"][0]["email"] == "customer@example.com"
+    assert response.json()["events"][0]["client_ip"] == "198.51.100.44"
+
+
+def test_customer_admin_operations_no_longer_accept_ip_allowlist_updates(monkeypatch):
+    user_id = uuid4()
+    monkeypatch.setattr(admin_router, "_customer_profile", lambda account_id: _profile(user_id=account_id))
+    response = client.patch(
+        f"/api/v1/admin/users/{user_id}",
+        json={"allowed_ip": "203.0.113.5"},
+    )
+    assert response.status_code == 422
+
+
 def test_account_validation_errors_do_not_echo_submitted_password():
     response = client.post(
         "/api/v1/admin/users",
-        json={"email": "customer@example.com", "password": "secret-only-in-request"},
+        json={"email": "customer@example.com", "password": "secret"},
     )
 
     assert response.status_code == 422

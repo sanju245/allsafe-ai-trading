@@ -43,10 +43,11 @@ def test_password_change_preflight_is_allowed():
 @pytest.mark.parametrize(
     ("path", "method"),
     [
-        ("/api/v1/auth/client-ip", "GET"),
         ("/api/v1/auth/me", "GET"),
+        ("/api/v1/auth/login-events", "POST"),
         ("/api/v1/auth/password", "PUT"),
         ("/api/v1/admin/users", "GET"),
+        ("/api/v1/admin/login-events", "GET"),
         ("/api/v1/admin/users", "POST"),
         ("/api/v1/admin/users/00000000-0000-4000-8000-000000000001", "PATCH"),
         ("/api/v1/admin/users/00000000-0000-4000-8000-000000000001", "DELETE"),

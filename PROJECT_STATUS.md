@@ -1,6 +1,6 @@
 # Project Status
 
-Updated 2026-11-15. This file describes the release implementation. Live deployment records are tracked separately in the release handover; a source build alone does not prove production health.
+Updated 2026-11-16. This file describes the release implementation and current local branch. Live deployment records are tracked separately in the release handover; a source build alone does not prove production health.
 
 ## Application
 
@@ -11,8 +11,9 @@ Updated 2026-11-15. This file describes the release implementation. Live deploym
 ## Access policy
 
 - A valid Supabase token, matching profile identity, supported role, and active account are required.
-- Active administrators can access from any IP, including when proxy client-IP metadata is unavailable.
-- Active customers require one valid client IP and exact configured IP match. Missing, invalid, comma-separated, and duplicate proxy-IP headers fail closed for customers.
+- Customer and administrator access are not gated by an IP allowlist. Existing `profiles.allowed_ip` values are ignored and kept only for database compatibility.
+- The current code branch `codex/customer-login-ip-audit-2026-11-16` adds an admin-only successful sign-in history. It records the source IP only when the trusted edge header is available; missing or invalid IP metadata does not block sign-in. History begins only after the new database migration and matching API/web changes are deployed, and prior logins are not reconstructed.
+- These IP policy and history changes are local to the named branch and have not been deployed to production. The live behavior described in prior deployment records remains until deployment is separately approved.
 - No email string in frontend code grants an admin role. Admin ownership is stored in Supabase and was verified through an authorized database session.
 - Live Supabase inspection verified the single-admin index and an RLS admin helper requiring both the admin role and active status.
 - Logout clears local session state immediately; stale authentication replies cannot restore it. Admin directory access denial clears customer rows and rechecks account access.

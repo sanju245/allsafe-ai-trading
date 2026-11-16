@@ -170,20 +170,14 @@ def test_production_ip_uses_only_the_trusted_cloudflare_header(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("status", "allowed_ip", "expected_status", "expected_code"),
+    ("status", "expected_status"),
     [
-        ("active", "192.0.2.10", None, None),
-        ("paused", "192.0.2.10", 403, "account_paused"),
-        ("active", "192.0.2.11", 403, "ip_not_allowed"),
-        ("active", None, 403, "ip_not_configured"),
-        ("active", "192.0.2.0/24", 403, "ip_configuration_invalid"),
+        ("active", None),
+        ("paused", 403),
     ],
 )
-def test_account_access_requires_active_status_and_exact_host_ip(
-    monkeypatch, status, allowed_ip, expected_status, expected_code
-):
+def test_customer_access_has_no_ip_check_but_still_requires_active_status(monkeypatch, status, expected_status):
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
-    monkeypatch.setattr(security, "request_client_ip", lambda request: "192.0.2.10")
     user_id = str(uuid4())
     monkeypatch.setattr(
         security,
@@ -193,25 +187,21 @@ def test_account_access_requires_active_status_and_exact_host_ip(
             "email": "customer@example.com",
             "role": "user",
             "status": status,
-            "allowed_ip": allowed_ip,
         },
     )
     authorization = f"Bearer {_hs256_token(user_id=user_id)}"
 
     if expected_status is not None:
         with pytest.raises(HTTPException) as error:
-            security.require_active_account(_request(), authorization)
+            security.require_active_account(authorization)
         assert error.value.status_code == expected_status
-        assert error.value.detail["code"] == expected_code
     else:
-        account = security.require_active_account(_request(), authorization)
+        account = security.require_active_account(authorization)
         assert account.id == user_id
-        assert account.allowed_ip == "192.0.2.10"
 
 
-def test_active_admin_access_does_not_require_customer_ip_allowlist(monkeypatch):
+def test_active_admin_access_has_no_ip_dependency(monkeypatch):
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
-    monkeypatch.setattr(security, "request_client_ip", lambda request: "198.51.100.24")
     user_id = str(uuid4())
     monkeypatch.setattr(
         security,
@@ -221,157 +211,16 @@ def test_active_admin_access_does_not_require_customer_ip_allowlist(monkeypatch)
             "email": "admin@example.com",
             "role": "admin",
             "status": "active",
-            "allowed_ip": "192.0.2.10",
         },
     )
 
-    account = security.require_admin_account(
-        _request(), f"Bearer {_hs256_token(user_id=user_id)}"
-    )
+    account = security.require_admin_account(f"Bearer {_hs256_token(user_id=user_id)}")
 
     assert account.role == "admin"
-    assert account.allowed_ip == "192.0.2.10"
-    assert account.client_ip == "198.51.100.24"
 
 
-def test_active_admin_without_allowed_ip_is_returned_with_nullable_ip(monkeypatch):
+def test_paused_admin_remains_blocked(monkeypatch):
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
-    monkeypatch.setattr(security, "request_client_ip", lambda request: "198.51.100.24")
-    user_id = str(uuid4())
-    monkeypatch.setattr(
-        security,
-        "get_profile",
-        lambda account_id, settings=None: {
-            "id": account_id,
-            "email": "admin@example.com",
-            "role": "admin",
-            "status": "active",
-            "allowed_ip": None,
-        },
-    )
-
-    account = security.require_admin_account(
-        _request(), f"Bearer {_hs256_token(user_id=user_id)}"
-    )
-
-    assert account.allowed_ip is None
-    assert account.client_ip == "198.51.100.24"
-
-
-@pytest.mark.parametrize("headers", [
-    [],
-    [(b"cf-connecting-ip", b"not-an-ip")],
-    [(b"cf-connecting-ip", b"192.0.2.10, 198.51.100.24")],
-    [(b"cf-connecting-ip", b"192.0.2.10"), (b"cf-connecting-ip", b"198.51.100.24")],
-])
-def test_active_admin_is_not_blocked_when_production_proxy_ip_is_unavailable(monkeypatch, headers):
-    monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
-    monkeypatch.setattr(security, "get_settings", lambda: _settings())
-    user_id = str(uuid4())
-    monkeypatch.setattr(
-        security,
-        "get_profile",
-        lambda account_id, settings=None: {
-            "id": account_id,
-            "email": "admin@example.com",
-            "role": "admin",
-            "status": "active",
-            "allowed_ip": None,
-        },
-    )
-
-    account = security.require_admin_account(
-        _request(headers), f"Bearer {_hs256_token(user_id=user_id)}"
-    )
-
-    assert account.role == "admin"
-    assert account.allowed_ip is None
-    assert account.client_ip is None
-
-
-@pytest.mark.parametrize("headers", [
-    [],
-    [(b"cf-connecting-ip", b"not-an-ip")],
-    [(b"cf-connecting-ip", b"192.0.2.10, 198.51.100.24")],
-    [(b"cf-connecting-ip", b"192.0.2.10"), (b"cf-connecting-ip", b"198.51.100.24")],
-])
-def test_active_customer_is_blocked_when_production_proxy_ip_is_unavailable(monkeypatch, headers):
-    monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
-    monkeypatch.setattr(security, "get_settings", lambda: _settings())
-    user_id = str(uuid4())
-    monkeypatch.setattr(
-        security,
-        "get_profile",
-        lambda account_id, settings=None: {
-            "id": account_id,
-            "email": "customer@example.com",
-            "role": "user",
-            "status": "active",
-            "allowed_ip": "192.0.2.10",
-        },
-    )
-
-    with pytest.raises(HTTPException) as error:
-        security.require_active_account(
-            _request(headers), f"Bearer {_hs256_token(user_id=user_id)}"
-        )
-
-    assert error.value.status_code == 503
-
-
-def test_active_customer_with_a_different_ip_remains_blocked(monkeypatch):
-    monkeypatch.setattr(security, "get_settings", lambda: _settings())
-    monkeypatch.setattr(security, "request_client_ip", lambda request: "198.51.100.24")
-    user_id = str(uuid4())
-    monkeypatch.setattr(
-        security,
-        "get_profile",
-        lambda account_id, settings=None: {
-            "id": account_id,
-            "email": "customer@example.com",
-            "role": "user",
-            "status": "active",
-            "allowed_ip": "192.0.2.10",
-        },
-    )
-
-    with pytest.raises(HTTPException) as error:
-        security.require_active_account(
-            _request(), f"Bearer {_hs256_token(user_id=user_id)}"
-        )
-
-    assert error.value.status_code == 403
-    assert error.value.detail["code"] == "ip_not_allowed"
-
-
-def test_active_customer_without_ip_remains_blocked(monkeypatch):
-    monkeypatch.setattr(security, "get_settings", lambda: _settings())
-    monkeypatch.setattr(security, "request_client_ip", lambda request: "198.51.100.24")
-    user_id = str(uuid4())
-    monkeypatch.setattr(
-        security,
-        "get_profile",
-        lambda account_id, settings=None: {
-            "id": account_id,
-            "email": "customer@example.com",
-            "role": "user",
-            "status": "active",
-            "allowed_ip": None,
-        },
-    )
-
-    with pytest.raises(HTTPException) as error:
-        security.require_active_account(
-            _request(), f"Bearer {_hs256_token(user_id=user_id)}"
-        )
-
-    assert error.value.status_code == 403
-    assert error.value.detail["code"] == "ip_not_configured"
-
-
-def test_paused_admin_remains_blocked_before_ip_exemption(monkeypatch):
-    monkeypatch.setattr(security, "get_settings", lambda: _settings())
-    monkeypatch.setattr(security, "request_client_ip", lambda request: "198.51.100.24")
     user_id = str(uuid4())
     monkeypatch.setattr(
         security,
@@ -381,62 +230,28 @@ def test_paused_admin_remains_blocked_before_ip_exemption(monkeypatch):
             "email": "admin@example.com",
             "role": "admin",
             "status": "paused",
-            "allowed_ip": None,
         },
     )
 
     with pytest.raises(HTTPException) as error:
-        security.require_admin_account(
-            _request(), f"Bearer {_hs256_token(user_id=user_id)}"
-        )
+        security.require_admin_account(f"Bearer {_hs256_token(user_id=user_id)}")
 
     assert error.value.status_code == 403
     assert error.value.detail["code"] == "account_paused"
 
 
-@pytest.mark.parametrize(
-    ("allowed_ip", "expected_status"),
-    [
-        ("2001:0db8:0:0:0:0:0:1/128", None),
-        ("2001:db8::2/128", 403),
-    ],
-)
-def test_ipv6_allowlist_matches_only_the_canonical_exact_host(
-    monkeypatch, allowed_ip, expected_status
-):
+def test_ipv6_client_ip_is_canonicalized_for_audit(monkeypatch):
     monkeypatch.setenv("RENDER_SERVICE_ID", "srv-test")
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
     user_id = str(uuid4())
-    monkeypatch.setattr(
-        security,
-        "get_profile",
-        lambda account_id, settings=None: {
-            "id": account_id,
-            "email": "customer@example.com",
-            "role": "user",
-            "status": "active",
-            "allowed_ip": allowed_ip,
-        },
-    )
     request = _request([
         (b"cf-connecting-ip", b"2001:0db8:0:0:0:0:0:1"),
     ])
-    authorization = f"Bearer {_hs256_token(user_id=user_id)}"
-
     assert security.request_client_ip(request) == "2001:db8::1"
-    if expected_status is None:
-        account = security.require_active_account(request, authorization)
-        assert account.allowed_ip == "2001:db8::1"
-    else:
-        with pytest.raises(HTTPException) as error:
-            security.require_active_account(request, authorization)
-        assert error.value.status_code == expected_status
-        assert error.value.detail["code"] == "ip_not_allowed"
 
 
 def test_non_admin_cannot_use_admin_dependency(monkeypatch):
     monkeypatch.setattr(security, "get_settings", lambda: _settings())
-    monkeypatch.setattr(security, "request_client_ip", lambda request: "192.0.2.10")
     user_id = str(uuid4())
     monkeypatch.setattr(
         security,
@@ -446,10 +261,9 @@ def test_non_admin_cannot_use_admin_dependency(monkeypatch):
             "email": "customer@example.com",
             "role": "user",
             "status": "active",
-            "allowed_ip": "192.0.2.10",
         },
     )
 
     with pytest.raises(HTTPException) as error:
-        security.require_admin_account(_request(), f"Bearer {_hs256_token(user_id=user_id)}")
+        security.require_admin_account(f"Bearer {_hs256_token(user_id=user_id)}")
     assert error.value.status_code == 403
