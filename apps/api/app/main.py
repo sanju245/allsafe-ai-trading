@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.config import get_settings
-from app.routers import admin, auth, live, market_data
+from app.routers import account_requests, admin, auth, live, market_data
 from app.routers.live import build_runtimes_from_settings, set_live_runtimes
 
 settings = get_settings()
@@ -103,6 +103,8 @@ app.include_router(market_data.router)
 app.include_router(live.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(account_requests.public_router)
+app.include_router(account_requests.admin_router)
 
 
 @app.get("/health", tags=["system"])

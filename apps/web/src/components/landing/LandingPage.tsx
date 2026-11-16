@@ -6,6 +6,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import BullBearHeroArena from "@/components/landing/BullBearHeroArena";
 import IndianMarketStatusBadge from "@/components/landing/IndianMarketStatusBadge";
 import LiveIstClock from "@/components/landing/LiveIstClock";
+import AccountRequestButton from "@/components/landing/AccountRequestButton";
 
 export interface LandingPageProps {
   serverTimeUtc?: string | null;
@@ -100,9 +101,10 @@ function LandingPage({
               <p className="mt-6 max-w-xl text-base leading-relaxed text-slate-300">Review index candles, feed freshness, and rule-based analysis in one terminal. Every output remains under your supervision. No broker orders are placed.</p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link href={session ? "/terminal" : "/login"} className="rounded-xl bg-emerald-400 px-6 py-3.5 text-sm font-bold text-slate-950 hover:bg-emerald-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-300">{session ? "Open Terminal" : "Customer Sign In"}</Link>
+                <AccountRequestButton />
                 <Link href="/what-we-done" className="rounded-xl border border-white/20 px-6 py-3.5 text-sm font-semibold text-white hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-emerald-400">Explore how the analysis works</Link>
               </div>
-              <p className="mt-5 text-xs leading-relaxed text-slate-500">Access is provided by the administrator. Market analysis is informational and can be wrong or delayed.</p>
+              <p className="mt-5 text-xs leading-relaxed text-slate-500">Account requests are reviewed by an administrator. Market analysis is informational and can be wrong or delayed.</p>
             </div>
             <BullBearHeroArena />
           </div>
@@ -198,6 +200,7 @@ function LandingPage({
             <Link href="/what-we-done" className="rounded py-2 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">How It Works</Link>
             <Link href="/login" className="rounded py-2 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">Customer Sign In</Link>
             <Link href="/admin/login" className="rounded py-2 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">Administrator Sign In</Link>
+            <Link href="/privacy" className="rounded py-2 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">Privacy</Link>
           </nav>
         </div>
       </footer>

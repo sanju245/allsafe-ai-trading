@@ -5,7 +5,7 @@ Secrets live only here on the server. Nothing in this module is sent to the brow
 
 from functools import lru_cache
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_jwt_secret: SecretStr | None = None
     supabase_service_role_key: SecretStr | None = None
+
+    # Customer request emails use the Gmail HTTPS API on Render Free.
+    gmail_client_id: str | None = None
+    gmail_client_secret: SecretStr | None = None
+    gmail_refresh_token: SecretStr | None = None
+    gmail_from_email: str = "sanjay200123@gmail.com"
+    public_site_url: str = "http://localhost:3000"
+    account_request_limit_per_hour: int = Field(default=5, gt=0, le=100)
 
     # Live Groww market-data streaming (disabled by default for safety).
     live_stream_enabled: bool = False

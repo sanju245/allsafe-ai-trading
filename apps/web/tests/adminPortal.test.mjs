@@ -96,6 +96,7 @@ function harness() {
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx, Fragment: "fragment" };
       if (name === "next/link") return { default: "a" };
       if (name === "@/components/auth/AuthProvider") return { useAuth: () => auth };
+      if (name === "@/components/admin/AccountRequestsPanel") return { default: "AccountRequestsPanel" };
       throw new Error("Unexpected import: " + name);
     },
   };

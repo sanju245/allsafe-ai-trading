@@ -100,7 +100,7 @@ export default function LoginPage() {
         <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">Customer access</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Sign in</h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-300">
-          Sign in with the account created for you by the administrator. Public account creation is disabled.
+          Sign in after an administrator approves your account request and you set your password. Customer access is limited to the approved public IP address.
         </p>
 
         <div className="mt-5 rounded-lg border border-white/10 bg-slate-950/50 p-4 text-sm">
@@ -171,7 +171,7 @@ export default function LoginPage() {
           </p>
         )}
         <p className="mt-4 text-xs leading-relaxed text-slate-500">
-          Need access? Contact your administrator. Sign-in tokens stay in memory and are cleared when you sign out or reload.
+          Need access? <Link href="/" className="text-emerald-300 underline">Request an account</Link> from the home page. Sign-in tokens stay in memory and are cleared when you sign out or reload.
         </p>
       </section>
     </main>

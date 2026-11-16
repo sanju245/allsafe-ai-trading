@@ -13,6 +13,8 @@ A read-only Indian index market-analysis and decision-support application for NI
 | /admin/login | Administrator sign-in | Public sign-in route |
 | /admin | Customer-access administration | Active admin account |
 | /what-we-done | Explanation of the analysis workflow | Public |
+| /set-password | Password setup after approved invitation | One-time email link |
+| /privacy | Account request data handling | Public |
 
 ## Current behavior
 
@@ -22,6 +24,12 @@ A read-only Indian index market-analysis and decision-support application for NI
 - Treat every signal as informational. It is not investment advice and can be wrong or delayed.
 
 ## Authentication and IP policy
+
+The landing page offers **Create account with us**. Applicants provide their name, date of birth, email, phone number, WhatsApp number, and public IP. The API accepts the IP only when it matches the address observed at its trusted ingress. A successful request is stored privately and receives a thank-you email; no Auth account exists until an administrator approves it in `/admin`. Approval creates the IP-bound customer account and emails a one-time password setup link. Decline emails the decision without creating an account. The admin portal can retry a failed decision email.
+
+Apply `supabase/migrations/20261116000000_account_requests.sql` before releasing the API. Configure `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `GMAIL_FROM_EMAIL`, and `PUBLIC_SITE_URL` on the API service. The OAuth token must have the `gmail.send` scope for the sender account; Gmail API calls use HTTPS so they work on Render Free. Add `<PUBLIC_SITE_URL>/set-password` to the Supabase Auth redirect allowlist. Keep Supabase public self-signup disabled; the API creates an invitation only after approval. Request details are restricted to the API service role and authenticated admins. A process-local IP rate limit applies to submissions; use a shared edge limit for multiple API instances.
+
+For Gmail setup, enable the Gmail API in a Google Cloud project and create a Desktop OAuth client with only the `gmail.send` permission. Set the OAuth app's publishing status to **In production** before authorizing; a Testing refresh token expires after seven days. Run `python apps/api/scripts/authorize_gmail.py --credentials <downloaded-client.json> --output <private-file-outside-repo>` from the repository root, open its printed URL, and authorize the sender account. Move the four values from the generated file into the Render API service environment, then delete the local credentials and token files. Never commit or paste these secrets into chat.
 
 The API verifies the Supabase token, profile, role, and active account status. Active administrators do not use the customer IP allowlist. Active customers require an exact match to their configured single-host public IP.
 
