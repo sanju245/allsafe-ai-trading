@@ -67,9 +67,14 @@ def build_runtime_from_settings(
             max_future_skew_seconds=cfg.live_max_future_skew_seconds,
             max_confirmed_candles=cfg.live_candle_buffer_size,
         )
+        history_provider = (
+            UpstoxHistoricalProvider(settings=cfg)
+            if cfg.upstox_access_token.get_secret_value().strip()
+            else None
+        )
         return LiveMarketDataRuntime(
             stream_manager=mgr,
-            historical_provider=UpstoxHistoricalProvider(cfg),
+            historical_provider=history_provider,
             warmup_lookback_days=cfg.live_warmup_lookback_days,
         )
     if provider != "groww":

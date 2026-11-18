@@ -11,6 +11,7 @@ Coordinates:
   - Stale, disconnected, closed, or unavailable feeds prevent claiming a live/current signal.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Protocol
@@ -27,6 +28,8 @@ from app.market_data.timeframes import Timeframe
 from app.market_data.validation import ValidationReport, validate_candles
 from app.providers.base import CandleRequest, MarketDataProvider
 from app.providers.groww_historical import GrowwHistoricalProvider
+
+logger = logging.getLogger(__name__)
 
 
 class LiveStreamManager(Protocol):
@@ -127,6 +130,12 @@ class LiveMarketDataRuntime:
             closed_only = [c for c in fetched if c.is_closed(now_ist)]
             self.seed_historical_candles(inst, closed_only)
             counts[inst] = len(closed_only)
+            logger.info(
+                "%s historical warm-up loaded %s completed 15-minute candles for %s.",
+                provider.name,
+                counts[inst],
+                inst.value,
+            )
         return counts
 
     def start(self, *, as_of: datetime | None = None, run_warmup: bool = True) -> bool:

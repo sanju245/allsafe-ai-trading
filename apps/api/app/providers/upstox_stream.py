@@ -181,7 +181,9 @@ class UpstoxLiveStreamManager:
         self._last_connected_at: datetime | None = None
         self._reconnect_attempts = 0
         self._next_reconnect_delay: float | None = None
-        self._historical_candle_counts = dict.fromkeys(InstrumentId, 0)
+        self._historical_counts: dict[InstrumentId, int] = {
+            instrument: 0 for instrument in InstrumentId
+        }
 
     @property
     def groww_client(self) -> None:
@@ -194,7 +196,7 @@ class UpstoxLiveStreamManager:
     def set_historical_candle_count(
         self, instrument: InstrumentId, count: int
     ) -> None:
-        self._historical_candle_counts[instrument] = count
+        self._historical_counts[instrument] = max(0, int(count))
 
     def _record_error(self, message: Any, *, permanent: bool = False) -> None:
         safe_message = (
@@ -432,7 +434,7 @@ class UpstoxLiveStreamManager:
             last_tick_at=quote.timestamp if quote else None,
             age_seconds=round(age, 3) if age is not None else None,
             is_stale=state in {FeedState.STALE, FeedState.DISCONNECTED},
-            historical_candle_count=self._historical_candle_counts[instrument],
+            historical_candle_count=self._historical_counts.get(instrument, 0),
             confirmed_candle_count=len(candles),
             has_forming_candle=forming is not None,
             missing_interval_count=len(

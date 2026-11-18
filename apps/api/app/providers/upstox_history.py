@@ -16,7 +16,13 @@ from app.market_data.instruments import InstrumentId
 from app.market_data.models import Candle, DataSource, DataSourceKind
 from app.market_data.sessions import IST, SlotClass, classify_timestamp, session_slots, to_ist
 from app.market_data.timeframes import Timeframe
-from app.providers.base import CandleRequest, MarketDataProvider, ProviderError, UnsupportedRequestError
+from app.providers.base import (
+    CandleRequest,
+    MarketDataProvider,
+    ProviderError,
+    ProviderUnavailableError,
+    UnsupportedRequestError,
+)
 
 logger = logging.getLogger("uvicorn.error.upstox")
 
@@ -162,30 +168,58 @@ def _fetch_rows(url: str, token: str) -> list[Any]:
 
 
 class UpstoxHistoricalProvider(MarketDataProvider):
-    """Adapt Upstox's calendar ranges to the live runtime's candle request."""
+    """Provide recent Upstox history to the shared live/indicator runtime."""
 
-    name = "Upstox"
-    source_kind = DataSourceKind.HISTORICAL
-    supported_timeframes = frozenset({Timeframe.M15})
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings
 
-    def __init__(self, settings: Settings) -> None:
-        self._settings = settings
+    @property
+    def name(self) -> str:
+        return "Upstox Historical Candle V3"
+
+    @property
+    def source_kind(self) -> DataSourceKind:
+        return DataSourceKind.HISTORICAL
+
+    @property
+    def supported_timeframes(self) -> frozenset[Timeframe]:
+        return frozenset({Timeframe.M15})
 
     def fetch_candles(self, request: CandleRequest) -> list[Candle]:
-        if request.timeframe is not Timeframe.M15 or request.start is None or request.end is None:
-            raise UnsupportedRequestError("Upstox warm-up requires a bounded 15-minute candle request.")
-        start, end = to_ist(request.start), to_ist(request.end)
-        candles = fetch_15m_candles(
-            request.instrument,
-            start_date=max(start.date(), end.date() - timedelta(days=MAX_RANGE_DAYS - 1)),
-            end_date=end.date(),
-            settings=self._settings,
-            as_of=end,
-        )
-        candles = [candle for candle in candles if candle.timestamp >= start]
+        if request.timeframe is not Timeframe.M15:
+            raise UnsupportedRequestError("Upstox history supports only 15-minute candles.")
+
+        end = to_ist(request.end) if request.end else datetime.now(IST)
+        start = to_ist(request.start) if request.start else end - timedelta(days=4)
+        start_date = start.date()
+        end_date = end.date()
+        if start_date > end_date:
+            raise UnsupportedRequestError("Upstox history start must not follow its end.")
+        # The provider accepts at most 30 inclusive calendar dates. Keep the most
+        # recent supported part of a wider runtime warm-up window.
+        if (end_date - start_date).days + 1 > MAX_RANGE_DAYS:
+            start_date = end_date - timedelta(days=MAX_RANGE_DAYS - 1)
+
+        try:
+            candles = fetch_15m_candles(
+                request.instrument,
+                start_date=start_date,
+                end_date=end_date,
+                settings=self.settings,
+                as_of=end,
+            )
+        except UpstoxHistoryError as exc:
+            if exc.status_code == 422:
+                raise UnsupportedRequestError(exc.detail) from None
+            raise ProviderUnavailableError(exc.detail) from None
+
         if request.limit is not None:
             candles = candles[-request.limit:]
-        logger.info("Upstox loaded %d completed 15-minute candles for %s.", len(candles), request.instrument.value)
+        logger.info(
+            "Upstox loaded %d completed 15-minute candles for %s.",
+            len(candles),
+            request.instrument.value,
+        )
         return candles
 
 
