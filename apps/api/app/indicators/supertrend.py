@@ -13,11 +13,12 @@ class SupertrendPoint:
     value: float | None
     direction: int | None
     bullish: bool | None
+    bearish: bool | None = None
 
 def calculate_supertrend(candles: list[Candle], period: int = 10, multiplier: float = 3.0) -> list[SupertrendPoint]:
     if isinstance(period, bool) or not isinstance(period, int) or period < 1:
         raise ValueError("period must be a positive integer")
-    if not math.isfinite(multiplier) or multiplier <= 0:
+    if isinstance(multiplier, bool) or not isinstance(multiplier, (int, float)) or not math.isfinite(multiplier) or multiplier <= 0:
         raise ValueError("multiplier must be finite and greater than zero")
     n = len(candles)
     tr = []
@@ -67,5 +68,6 @@ def calculate_supertrend(candles: list[Candle], period: int = 10, multiplier: fl
             direction[i] = -1 if c.close < current_lower else 1
         value[i] = current_lower if direction[i] == 1 else current_upper
     return [SupertrendPoint(c.timestamp, atr[i], value[i], direction[i],
-                            None if direction[i] is None else direction[i] == 1)
+                            None if direction[i] is None else direction[i] == 1,
+                            None if direction[i] is None else direction[i] == -1)
             for i, c in enumerate(candles)]
