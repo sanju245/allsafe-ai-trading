@@ -105,7 +105,7 @@ export default function LoginPage() {
           </p>
         )}
         <p className="mt-4 text-xs leading-relaxed text-slate-500">
-          Need access? <Link href="/" className="text-emerald-300 underline">Request an account</Link> from the home page. Sign-in tokens stay in memory and are cleared when you sign out or reload.
+          Need access? <Link href="/" className="text-emerald-300 underline">Request an account</Link> from the home page. Charts opened from the terminal use your active browser session.
         </p>
       </section>
     </main>

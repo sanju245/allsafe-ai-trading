@@ -3,20 +3,23 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 from datetime import date, datetime, timedelta
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
-from zoneinfo import ZoneInfo
 
 from app.config import Settings, get_settings
 from app.market_data.instruments import InstrumentId
 from app.market_data.models import Candle, DataSource, DataSourceKind
+from app.market_data.sessions import IST, SlotClass, classify_timestamp, session_slots, to_ist
 from app.market_data.timeframes import Timeframe
+from app.providers.base import CandleRequest, MarketDataProvider, ProviderError, UnsupportedRequestError
 
-_IST = ZoneInfo("Asia/Kolkata")
+logger = logging.getLogger("uvicorn.error.upstox")
+
 _UPSTOX_BASE_URL = "https://api.upstox.com/v3/historical-candle"
 # Match the identified client used for Upstox's authorized feed endpoint; the
 # provider has returned Cloudflare 1010 blocks for urllib's default User-Agent.
@@ -29,7 +32,7 @@ _INSTRUMENT_KEYS: dict[InstrumentId, str] = {
 }
 
 
-class UpstoxHistoryError(Exception):
+class UpstoxHistoryError(ProviderError):
     """A safe error for the browser; never stores provider response bodies or tokens."""
 
     def __init__(self, status_code: int, detail: str) -> None:
@@ -64,11 +67,41 @@ def fetch_15m_candles(
             "Upstox historical charts are not configured on the API. Add UPSTOX_ACCESS_TOKEN to the server environment.",
         )
 
+    retrieved_at = to_ist(as_of) if as_of is not None else datetime.now(IST)
+    today = retrieved_at.date()
     instrument_key = quote(_INSTRUMENT_KEYS[instrument], safe="")
-    url = (
-        f"{_UPSTOX_BASE_URL}/{instrument_key}/minutes/15/"
-        f"{end_date.isoformat()}/{start_date.isoformat()}"
+    historic_end = min(end_date, today - timedelta(days=1))
+    rows = []
+    if start_date <= historic_end:
+        url = (
+            f"{_UPSTOX_BASE_URL}/{instrument_key}/minutes/15/"
+            f"{historic_end.isoformat()}/{start_date.isoformat()}"
+        )
+        rows.extend(_fetch_rows(url, token))
+    today_slots = session_slots(today, Timeframe.M15)
+    if (
+        start_date <= today <= end_date
+        and today_slots
+        and today_slots[0] + Timeframe.M15.interval <= retrieved_at
+    ):
+        url = f"{_UPSTOX_BASE_URL}/intraday/{instrument_key}/minutes/15"
+        rows.extend(_fetch_rows(url, token))
+
+    source = DataSource(
+        name="Upstox Historical Candle V3",
+        kind=DataSourceKind.HISTORICAL,
+        retrieved_at=retrieved_at,
     )
+    candles_by_timestamp: dict[datetime, Candle] = {}
+    for row in rows:
+        candle = _parse_candle_row(row, instrument=instrument, source=source)
+        slot_class, slot = classify_timestamp(candle.timestamp, Timeframe.M15)
+        if slot_class is SlotClass.ON_GRID and start_date <= slot.date() <= end_date and candle.is_closed(retrieved_at):
+            candles_by_timestamp[slot] = candle
+    return [candles_by_timestamp[key] for key in sorted(candles_by_timestamp)]
+
+
+def _fetch_rows(url: str, token: str) -> list[Any]:
     request = Request(
         url,
         headers={
@@ -125,22 +158,35 @@ def fetch_15m_candles(
     if not isinstance(rows, list):
         raise UpstoxHistoryError(502, "Upstox returned an invalid historical candle response.")
 
-    retrieved_at = (as_of or datetime.now(_IST)).astimezone(_IST)
-    source = DataSource(
-        name="Upstox Historical Candle V3",
-        kind=DataSourceKind.HISTORICAL,
-        retrieved_at=retrieved_at,
-    )
-    candles_by_timestamp: dict[datetime, Candle] = {}
-    for row in rows:
-        candle = _parse_candle_row(row, instrument=instrument, source=source)
-        local_date = candle.timestamp.astimezone(_IST).date()
-        if not start_date <= local_date <= end_date:
-            continue
-        if candle.timestamp + Timeframe.M15.interval > retrieved_at:
-            continue
-        candles_by_timestamp[candle.timestamp] = candle
-    return [candles_by_timestamp[key] for key in sorted(candles_by_timestamp)]
+    return rows
+
+
+class UpstoxHistoricalProvider(MarketDataProvider):
+    """Adapt Upstox's calendar ranges to the live runtime's candle request."""
+
+    name = "Upstox"
+    source_kind = DataSourceKind.HISTORICAL
+    supported_timeframes = frozenset({Timeframe.M15})
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    def fetch_candles(self, request: CandleRequest) -> list[Candle]:
+        if request.timeframe is not Timeframe.M15 or request.start is None or request.end is None:
+            raise UnsupportedRequestError("Upstox warm-up requires a bounded 15-minute candle request.")
+        start, end = to_ist(request.start), to_ist(request.end)
+        candles = fetch_15m_candles(
+            request.instrument,
+            start_date=max(start.date(), end.date() - timedelta(days=MAX_RANGE_DAYS - 1)),
+            end_date=end.date(),
+            settings=self._settings,
+            as_of=end,
+        )
+        candles = [candle for candle in candles if candle.timestamp >= start]
+        if request.limit is not None:
+            candles = candles[-request.limit:]
+        logger.info("Upstox loaded %d completed 15-minute candles for %s.", len(candles), request.instrument.value)
+        return candles
 
 
 def _parse_candle_row(
@@ -160,7 +206,7 @@ def _parse_candle_row(
         raise UpstoxHistoryError(502, "Upstox returned a malformed candle timestamp.") from None
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         raise UpstoxHistoryError(502, "Upstox returned a candle timestamp without a timezone.")
-    timestamp = timestamp.astimezone(_IST)
+    timestamp = to_ist(timestamp)
 
     try:
         open_price, high, low, close = (float(value) for value in row[1:5])

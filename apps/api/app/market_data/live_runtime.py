@@ -22,10 +22,10 @@ from app.market_data.live_models import (
     FeedState,
 )
 from app.market_data.models import Candle, DataSource
-from app.market_data.sessions import IST, to_ist
+from app.market_data.sessions import IST, session_slots, slot_close_time, to_ist
 from app.market_data.timeframes import Timeframe
 from app.market_data.validation import ValidationReport, validate_candles
-from app.providers.base import CandleRequest
+from app.providers.base import CandleRequest, MarketDataProvider
 from app.providers.groww_historical import GrowwHistoricalProvider
 
 
@@ -75,7 +75,7 @@ class LiveMarketDataRuntime:
         self,
         *,
         stream_manager: LiveStreamManager,
-        historical_provider: GrowwHistoricalProvider | None = None,
+        historical_provider: MarketDataProvider | None = None,
         warmup_lookback_days: int = 5,
     ) -> None:
         self.stream_manager = stream_manager
@@ -87,19 +87,19 @@ class LiveMarketDataRuntime:
 
     def seed_historical_candles(self, instrument: InstrumentId, candles: list[Candle]) -> None:
         """Seed validated historical closed 15m candles for indicator warm-up."""
-        five_min_closed = [
+        closed = [
             c for c in candles if c.instrument == instrument and c.timeframe == Timeframe.M15
         ]
-        five_min_closed.sort(key=lambda c: c.timestamp)
-        self._historical_candles[instrument] = five_min_closed
-        self.stream_manager.set_historical_candle_count(instrument, len(five_min_closed))
+        closed.sort(key=lambda c: c.timestamp)
+        self._historical_candles[instrument] = closed
+        self.stream_manager.set_historical_candle_count(instrument, len(closed))
 
     def warmup_from_historical_provider(
         self,
         *,
         as_of: datetime | None = None,
     ) -> dict[InstrumentId, int]:
-        """Fetch historical 15m candles from Groww to warm up the 5-indicator engine."""
+        """Fetch closed 15m candles to warm up the 5-indicator engine."""
         now_ist = to_ist(as_of) if as_of is not None else datetime.now(IST)
         provider = self.historical_provider
         if provider is None and self.stream_manager.groww_client is not None and self.stream_manager.instrument_resolver is not None:
@@ -294,18 +294,31 @@ class LiveMarketDataRuntime:
         is_live_and_fresh = (
             inst_status.feed_state == FeedState.LIVE and not inst_status.is_stale
         )
+        latest_closed_slot = next(
+            (
+                slot for slot in reversed(session_slots(now_ist.date(), Timeframe.M15))
+                if slot_close_time(slot, Timeframe.M15) <= now_ist
+            ),
+            None,
+        )
+        is_latest_close = last_pt.timestamp == latest_closed_slot
         reason = last_pt.reason
         if not is_live_and_fresh:
             reason = (
                 f"[Feed state: {inst_status.feed_state.value}] {last_pt.reason} "
                 "(Do not treat as a current live trigger while feed is not live.)"
             )
+        elif not is_latest_close:
+            reason = f"{last_pt.reason} The latest session candle is not available."
 
         return LiveDecisionSummary(
             instrument=instrument,
             timeframe=Timeframe.M15,
             decision=last_pt.decision,
-            is_current_signal=is_live_and_fresh and last_pt.decision in (TradeDecision.BUY, TradeDecision.SELL),
+            is_current_signal=(
+                is_live_and_fresh and is_latest_close
+                and last_pt.decision in (TradeDecision.BUY, TradeDecision.SELL)
+            ),
             feed_state=inst_status.feed_state,
             is_stale=inst_status.is_stale,
             candle_timestamp=last_pt.timestamp,

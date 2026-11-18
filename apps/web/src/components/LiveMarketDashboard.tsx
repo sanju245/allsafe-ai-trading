@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useAuth } from "@/components/auth/AuthProvider";
+import { chartSessionFragment, useAuth } from "@/components/auth/AuthProvider";
 
 type MarketSymbol = "NIFTY50" | "BANKNIFTY";
 type Candle = {
@@ -196,12 +196,12 @@ function CandlestickChart({ candles, label }: { candles: Candle[]; label: string
 }
 
 function MarketCard({
-  symbol,
+  chartHref,
   title,
   snapshot,
   feedState,
 }: {
-  symbol: MarketSymbol;
+  chartHref: string;
   title: string;
   snapshot: MarketSnapshot;
   feedState: string;
@@ -216,13 +216,18 @@ function MarketCard({
     : decision?.decision === "SELL"
       ? "border-rose-400/30 bg-rose-400/10 text-rose-300"
       : "border-white/10 bg-slate-900 text-slate-300";
+  const signalLabel = snapshot.current && decision?.is_current_signal
+    ? "Current confirmed signal"
+    : decision?.decision === "BUY" || decision?.decision === "SELL"
+      ? "Previous confirmed signal"
+      : "Signal from confirmed candles";
 
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">
-            <Link href={`/chart/${symbol}`} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+            <Link href={chartHref} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
               {title}<span className="ml-2 text-xs text-emerald-300" aria-label="opens chart in a new tab">↗</span>
             </Link>
           </h2>
@@ -254,11 +259,11 @@ function MarketCard({
             {decision?.decision ?? "SIGNAL PENDING"}
           </span>
           <span className="text-xs text-slate-400">
-            {decision?.is_current_signal ? "Current confirmed signal" : "Signal from confirmed candles"}
+            {signalLabel}
           </span>
         </div>
         <Link
-          href={`/chart/${symbol}`}
+          href={chartHref}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex min-h-10 items-center rounded-md border border-emerald-400/30 px-3 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
@@ -282,7 +287,7 @@ function MarketCard({
 }
 
 export default function LiveMarketDashboard() {
-  const { session, signOut } = useAuth();
+  const { session, signOut, chartSessionId } = useAuth();
   const accessToken = session?.access_token;
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [providers, setProviders] = useState<ProviderOption[]>([]);
@@ -293,17 +298,29 @@ export default function LiveMarketDashboard() {
   });
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const activeRefresh = useRef<AbortSignal | null>(null);
+  const refreshController = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("allsafe-market-provider");
-    if (saved === "groww" || saved === "upstox") setSelectedProvider(saved);
+    try {
+      const saved = window.localStorage.getItem("allsafe-market-provider");
+      if (saved === "groww" || saved === "upstox") setSelectedProvider(saved);
+    } catch {
+      // Customers can still select a provider when browser storage is unavailable.
+    }
   }, []);
 
   const selectProvider = (provider: "groww" | "upstox") => {
+    if (provider === selectedProvider) return;
+    refreshController.current?.abort();
     setSelectedProvider(provider);
-    window.localStorage.setItem("allsafe-market-provider", provider);
+    try {
+      window.localStorage.setItem("allsafe-market-provider", provider);
+    } catch {
+      // Chart links preserve the selection independently of browser storage.
+    }
     setStatus(null);
     setMarketsState({ NIFTY50: emptyMarket, BANKNIFTY: emptyMarket });
+    setCheckedAt(null);
   };
 
   const refresh = useCallback(async (signal: AbortSignal) => {
@@ -387,10 +404,12 @@ export default function LiveMarketDashboard() {
   useEffect(() => {
     if (!accessToken) return;
     const controller = new AbortController();
+    refreshController.current = controller;
     void refresh(controller.signal);
     const timer = window.setInterval(() => void refresh(controller.signal), 15000);
     return () => {
       controller.abort();
+      if (refreshController.current === controller) refreshController.current = null;
       window.clearInterval(timer);
     };
   }, [accessToken, refresh]);
@@ -435,7 +454,7 @@ export default function LiveMarketDashboard() {
         {markets.map(({ symbol, title }) => (
           <MarketCard
             key={symbol}
-            symbol={symbol}
+            chartHref={`/chart/${symbol}?provider=${selectedProvider}${chartSessionFragment(chartSessionId)}`}
             title={title}
             snapshot={marketsState[symbol]}
             feedState={status?.instruments?.[symbol]?.feed_state ?? status?.feed_state ?? "checking"}

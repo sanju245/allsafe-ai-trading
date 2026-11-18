@@ -43,6 +43,7 @@ from app.market_data.sessions import IST
 from app.market_data.timeframes import Timeframe
 from app.providers.groww_auth import GrowwCredentials
 from app.providers.groww_stream import GrowwLiveStreamManager
+from app.providers.upstox_history import UpstoxHistoricalProvider
 from app.providers.upstox_stream import UpstoxLiveStreamManager
 from app.security import AccountPrincipal, require_active_account
 
@@ -66,7 +67,11 @@ def build_runtime_from_settings(
             max_future_skew_seconds=cfg.live_max_future_skew_seconds,
             max_confirmed_candles=cfg.live_candle_buffer_size,
         )
-        return LiveMarketDataRuntime(stream_manager=mgr)
+        return LiveMarketDataRuntime(
+            stream_manager=mgr,
+            historical_provider=UpstoxHistoricalProvider(cfg),
+            warmup_lookback_days=cfg.live_warmup_lookback_days,
+        )
     if provider != "groww":
         raise ValueError("Unsupported market-data provider.")
     creds = GrowwCredentials(
