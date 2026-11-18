@@ -231,8 +231,11 @@ function CandlestickPanel({
   const decisionByTimestamp = new Map(signalHistory.map((point) => [Date.parse(point.timestamp), point.decision]));
   const minimum = visible.length ? Math.min(...visible.map((candle) => candle.low)) : 0;
   const maximum = visible.length ? Math.max(...visible.map((candle) => candle.high)) : 1;
-  const range = Math.max(maximum - minimum, Math.abs(maximum) * 0.0001, 1);
-  const y = (value: number) => top + ((maximum - value) / range) * plotHeight;
+  const dataRange = Math.max(maximum - minimum, Math.abs(maximum) * 0.0001, 1);
+  const chartMinimum = minimum - dataRange * 0.1;
+  const chartMaximum = maximum + dataRange * 0.1;
+  const range = chartMaximum - chartMinimum;
+  const y = (value: number) => top + ((chartMaximum - value) / range) * plotHeight;
   const plotWidth = width - left - right;
   const slot = visible.length ? plotWidth / visible.length : plotWidth;
   const visibleSignals = visible.flatMap((candle, index) => {
@@ -281,7 +284,7 @@ function CandlestickPanel({
           >
             {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
               const gridY = top + fraction * plotHeight;
-              const value = maximum - fraction * range;
+              const value = chartMaximum - fraction * range;
               return (
                 <g key={fraction}>
                   <line x1={left} x2={width - right} y1={gridY} y2={gridY} stroke="#233142" strokeDasharray="3 6" />
@@ -309,15 +312,22 @@ function CandlestickPanel({
             })}
             {visibleSignals.map(({ candle, index, signal }) => {
               const x = left + index * slot + slot / 2;
-              const markerY = Math.max(top + 7, y(candle.high) - 26);
-              const markerWidth = 52;
+              const isBuy = signal === "BUY";
+              const markerHeight = 20;
+              const markerWidth = 40;
+              const markerY = isBuy ? y(candle.low) + 8 : y(candle.high) - 30;
+              const label = isBuy ? "Buy" : "Sell";
+              const fill = isBuy ? "#22c55e" : "#ef4444";
+              const pointerPath = isBuy
+                ? `M ${x - 6} ${markerY} L ${x} ${markerY - 6} L ${x + 6} ${markerY} Z`
+                : `M ${x - 6} ${markerY + markerHeight} L ${x} ${markerY + markerHeight + 6} L ${x + 6} ${markerY + markerHeight} Z`;
               return (
-                <g key={`signal-${candle.timestamp}`} aria-label={`${signal} signal on ${timeLabel(candle.timestamp)}`}>
-                  <title>{`${signal} signal · ${timeLabel(candle.timestamp)} IST`}</title>
-                  <rect x={x - markerWidth / 2} y={markerY} width={markerWidth} height="22" rx="11"
-                    fill={signal === "BUY" ? "#064e3b" : "#881337"}
-                    stroke={signal === "BUY" ? "#34d399" : "#fb7185"} />
-                  <text x={x} y={markerY + 15} textAnchor="middle" fill="white" fontSize="11" fontWeight="700">{signal}</text>
+                <g key={`signal-${candle.timestamp}`} aria-label={`${label} signal on ${timeLabel(candle.timestamp)}`}>
+                  <title>{`${label} signal · ${timeLabel(candle.timestamp)} IST`}</title>
+                  <path d={pointerPath} fill={fill} />
+                  <rect x={x - markerWidth / 2} y={markerY} width={markerWidth} height={markerHeight} rx="4"
+                    fill={fill} stroke={isBuy ? "#15803d" : "#b91c1c"} />
+                  <text x={x} y={markerY + 14} textAnchor="middle" fill="white" fontSize="11" fontWeight="700">{label}</text>
                 </g>
               );
             })}
