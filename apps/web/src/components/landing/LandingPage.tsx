@@ -15,6 +15,17 @@ export interface LandingPageProps {
 }
 
 type ExampleMode = "BUY" | "SELL" | "WAIT";
+const CREATOR_NAME = "Sanjesh Singh";
+const CONTRIBUTION_AMOUNT = 250;
+const CONTRIBUTION_UPI_ID = "8240770247@upi";
+const CONTRIBUTION_QUERY = new URLSearchParams({
+  pa: CONTRIBUTION_UPI_ID,
+  pn: CREATOR_NAME,
+  am: CONTRIBUTION_AMOUNT.toFixed(2),
+  cu: "INR",
+  tn: "AllSafe AI Trading contribution",
+}).toString().replaceAll("+", "%20");
+
 const CHECK_NAMES = [
   "Candidate direction",
   "Trend agreement",
@@ -84,6 +95,7 @@ function LandingPage({
           <div className="flex flex-wrap items-center gap-x-5 gap-y-3 text-sm">
             <Link href="/what-we-done" className="rounded py-2 text-slate-300 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">How It Works</Link>
             <a href="#dashboard-preview" className="rounded py-2 text-slate-300 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">Preview</a>
+            <a href="#contribute" className="rounded py-2 text-slate-300 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">Contribute</a>
             <Link href={session ? "/terminal" : "/login"} className="rounded-lg bg-emerald-400 px-4 py-2.5 font-semibold text-slate-950 hover:bg-emerald-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-300">
               {session ? "Open Terminal" : "Customer Sign In"}
             </Link>
@@ -191,11 +203,44 @@ function LandingPage({
             </div>
           </div>
         </section>
+
+        <section id="contribute" aria-labelledby="contribute-title" className="mx-auto max-w-7xl scroll-mt-6 px-4 pb-14 sm:px-6 sm:pb-20 lg:px-8">
+          <div className="flex flex-col gap-6 rounded-2xl border border-emerald-400/20 bg-[#0b1018] p-6 sm:p-8 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 id="contribute-title" className="text-2xl font-bold tracking-tight">Buy me a beer</h2>
+              <p id="contribution-amount" className="mt-2 max-w-lg text-sm leading-relaxed text-slate-300">
+                If you like this project, you can make a one-time contribution of ₹{CONTRIBUTION_AMOUNT} via UPI.
+              </p>
+              <p className="mt-3 text-sm text-slate-400">
+                Pay manually in your UPI app using <span className="select-all font-mono text-slate-200">{CONTRIBUTION_UPI_ID}</span>.
+              </p>
+            </div>
+            <div className="flex flex-col items-start gap-3">
+              <a
+                href={`upi://pay?${CONTRIBUTION_QUERY}`}
+                aria-describedby="contribution-amount"
+                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-400 px-6 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-300"
+              >
+                Pay now
+              </a>
+              <a
+                href={`gpay://upi/pay?${CONTRIBUTION_QUERY}`}
+                aria-describedby="contribution-amount"
+                className="rounded text-xs text-emerald-300 underline underline-offset-4 hover:text-emerald-200 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-300"
+              >
+                Google Pay on iPhone
+              </a>
+            </div>
+          </div>
+        </section>
       </main>
 
       <footer className="border-t border-white/10 bg-[#05080d]">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-5 px-4 py-8 text-xs text-slate-500 sm:px-6 lg:px-8">
-          <p>AllSafe AI Trading · Supervised, read-only market analysis</p>
+          <div>
+            <p>AllSafe AI Trading · Supervised, read-only market analysis</p>
+            <p className="mt-2 font-medium text-slate-300">Made by {CREATOR_NAME}</p>
+          </div>
           <nav aria-label="Footer navigation" className="flex flex-wrap gap-5">
             <Link href="/what-we-done" className="rounded py-2 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">How It Works</Link>
             <Link href="/login" className="rounded py-2 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">Customer Sign In</Link>
