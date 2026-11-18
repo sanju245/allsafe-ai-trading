@@ -33,7 +33,7 @@ const SIGNAL_CHECKS: SignalCheckSpec[] = [
     name: "Primary Signal Trigger",
     marketCheckDimension: "Candidate direction",
     whatItChecks:
-      "Looks for a candidate BUY or SELL trigger using validated, closed 5-minute candles. A trigger alone does not produce a final signal.",
+      "Looks for a candidate BUY or SELL trigger using validated, closed 15-minute candles. A trigger alone does not produce a final signal.",
     buyCondition:
       "BUY CANDIDATE — A buy trigger is present on the confirmed candle.",
     sellCondition:
@@ -47,7 +47,7 @@ const SIGNAL_CHECKS: SignalCheckSpec[] = [
     name: "Trend Direction Confirmation",
     marketCheckDimension: "Direction agreement",
     whatItChecks:
-      "Checks whether the candle trend agrees with the candidate direction. The current endpoint evaluates 5-minute candles, not a separate 15-minute or hourly model.",
+      "Checks whether the candle trend agrees with the candidate direction. The live terminal evaluates 15-minute candles; higher-timeframe models are not shown here.",
     buyCondition:
       "BUY CONFIRMATION — The trend check agrees with the buy candidate.",
     sellCondition:
@@ -279,7 +279,7 @@ function WhatWeDonePage({
           </h1>
 
           <p className="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300 sm:text-base lg:text-lg">
-            AllSafe evaluates confirmed 5-minute candles for{" "}
+            AllSafe evaluates confirmed 15-minute candles for{" "}
             <strong className="text-white">NIFTY 50</strong> and{" "}
             <strong className="text-white">BANK NIFTY</strong> through one
             deterministic signal engine. A candidate direction needs agreement from
@@ -442,7 +442,7 @@ function WhatWeDonePage({
                     DECISION RULE
                   </span>
                   <span className="font-mono text-[11px] text-emerald-300">
-                    Five checks on 5-minute candles
+                    Five checks on 15-minute candles
                   </span>
                 </div>
 

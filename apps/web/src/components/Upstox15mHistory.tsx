@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 type SymbolId = "NIFTY50" | "BANKNIFTY";
@@ -257,7 +258,11 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
           return (
             <article key={symbol} aria-labelledby={`upstox-${symbol}-title`} className="rounded-xl border border-white/10 bg-slate-950/30 p-3 sm:p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h3 id={`upstox-${symbol}-title`} className="font-semibold text-white">{label}</h3>
+                <h3 id={`upstox-${symbol}-title`} className="font-semibold text-white">
+                  <Link href={`/chart/${symbol}?provider=upstox`} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+                    {label}<span className="ml-2 text-xs text-emerald-300" aria-label="opens chart in a new tab">↗</span>
+                  </Link>
+                </h3>
                 {snapshot.retrievedAt && (
                   <p className="text-xs text-slate-500">Loaded {formatIst(snapshot.retrievedAt)} IST</p>
                 )}

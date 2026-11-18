@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.indicators.decision import TradeDecision
 from app.market_data.instruments import InstrumentId
@@ -98,9 +98,9 @@ class ConfirmedCandleSchema(BaseModel):
     low: float
     close: float
     volume: float | None = None
-    tick_count: int
-    first_tick_at: datetime
-    last_tick_at: datetime
+    tick_count: int | None = None
+    first_tick_at: datetime | None = None
+    last_tick_at: datetime | None = None
     is_forming: bool = False
     is_confirmed: bool = True
     is_incomplete: bool = False
@@ -141,6 +141,21 @@ class IndicatorDecisionSchema(BaseModel):
     confirmed_candle_count: int
 
 
+class IndicatorHistoryPointSchema(BaseModel):
+    """Rule-based indicator result for one closed candle; historical only."""
+
+    model_config = ConfigDict(frozen=True)
+
+    timestamp: datetime
+    decision: TradeDecision
+    ut_bot_signal: str | None = None
+    ema_bullish: bool | None = None
+    rsi_bullish: bool | None = None
+    macd_bullish: bool | None = None
+    supertrend_bullish: bool | None = None
+    reason: str
+
+
 class LiveCandlesResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -160,6 +175,7 @@ class LiveCandlesResponse(BaseModel):
     missing_interval_count: int
     missing_intervals: list[MissingIntervalSchema]
     indicator_decision: IndicatorDecisionSchema
+    indicator_history: list[IndicatorHistoryPointSchema] = Field(default_factory=list)
     message: str
     checked_at: datetime
 

@@ -107,7 +107,7 @@ def application(**changes):
     return {
         "full_name": "Asha Kumar", "date_of_birth": "1995-04-20",
         "email": "asha@example.com", "phone_number": "+91 9876543210",
-        "whatsapp_number": "+91 9876543210", "ip_address": "203.0.113.5",
+        "whatsapp_number": "+91 9876543210",
         **changes,
     }
 
@@ -122,14 +122,13 @@ def test_public_request_sends_receipt_without_creating_account(store, monkeypatc
     assert calls == [("received", "asha@example.com")]
 
 
-def test_request_rejects_unverified_ip_and_duplicate_is_generic(store):
+def test_request_needs_no_customer_ip_and_duplicate_is_generic(store):
     rows, calls = store
-    mismatch = client.post("/api/v1/account-requests", json=application(ip_address="198.51.100.1"))
     first = client.post("/api/v1/account-requests", json=application())
     duplicate = client.post("/api/v1/account-requests", json=application())
-    assert mismatch.status_code == 422
     assert first.status_code == duplicate.status_code == 202
     assert len(rows) == 1
+    assert next(iter(rows.values()))["request_ip"] == "203.0.113.5"
     assert calls == [("received", "asha@example.com")]
 
 
@@ -142,7 +141,7 @@ def test_failed_receipt_does_not_leave_a_pending_request(store, monkeypatch):
 
 
 @pytest.mark.usefixtures("admin_account_override")
-def test_approval_creates_ip_bound_user_and_sends_setup_link(store, monkeypatch):
+def test_approval_creates_user_without_ip_binding_and_sends_setup_link(store, monkeypatch):
     rows, calls = store
     client.post("/api/v1/account-requests", json=application())
     request_id = next(iter(rows))
@@ -150,12 +149,12 @@ def test_approval_creates_ip_bound_user_and_sends_setup_link(store, monkeypatch)
     monkeypatch.setattr(routes, "generate_account_link", lambda email, **kwargs: {
         "user": {"id": user_id}, "action_link": "https://auth.example/verify?token=secret"
     })
-    monkeypatch.setattr(routes, "update_profile", lambda account_id, changes: calls.append(("profile", account_id, changes)) or {"id": account_id})
+    monkeypatch.setattr(routes, "get_profile", lambda account_id: {"id": account_id})
     response = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
     assert response.json()["auth_user_id"] == user_id
-    assert ("profile", user_id, {"allowed_ip": "203.0.113.5"}) in calls
+    assert not any(call[0] == "profile" for call in calls)
     assert ("approved", "asha@example.com", "https://auth.example/verify?token=secret") in calls
     assert rows[request_id]["notification_status"] == "sent"
     assert client.post(f"/api/v1/admin/account-requests/{request_id}/approve").status_code == 409
@@ -201,7 +200,7 @@ def test_failed_approval_email_keeps_approved_account_and_can_retry(store, monke
         link_types.append(link_type)
         return {"user": {"id": user_id}, "action_link": "https://auth.example/verify?token=secret"}
     monkeypatch.setattr(routes, "generate_account_link", link)
-    monkeypatch.setattr(routes, "update_profile", lambda account_id, changes: {"id": account_id})
+    monkeypatch.setattr(routes, "get_profile", lambda account_id: {"id": account_id})
     monkeypatch.setattr(routes, "send_approved", lambda *args: (_ for _ in ()).throw(EmailDeliveryError()))
     approved = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
     assert approved.status_code == 200

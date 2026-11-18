@@ -11,7 +11,6 @@ const userId = "00000000-0000-4000-8000-000000000001";
 const authReply = { access_token: "test-token", user: { id: userId, email: "customer@example.com" } };
 const activeProfile = {
   id: userId, email: "customer@example.com", role: "user", status: "active",
-  allowed_ip: "192.0.2.1", client_ip: "192.0.2.1",
 };
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "Content-Type": "application/json" },
@@ -108,15 +107,13 @@ test("a different profile subject cannot establish a signed-in customer session"
   assert.ok(harness.calls.some(({ url }) => url.endsWith("/logout")));
 });
 
-test("customer IP denial remains a sign-in failure and never opens the portal", async () => {
-  const harness = authHarness(async (url) => {
-    if (url.includes("/token?")) return json(authReply);
-    if (url.includes("/logout")) return new Response(null, { status: 204 });
-    return json({ detail: { code: "ip_not_allowed" } }, 403);
-  });
-  await assert.rejects(harness.context().signIn("customer@example.com", "password-123"), /not allowed from the current IP/);
-  assert.equal(harness.context().session, null);
-  assert.equal(harness.context().profile, null);
+test("customer profile establishes a session without IP fields", async () => {
+  const harness = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json(activeProfile));
+  await harness.context().signIn("customer@example.com", "password-123");
+  assert.equal(harness.context().session.user.id, userId);
+  assert.equal(harness.context().profile.id, userId);
+  assert.equal("allowed_ip" in harness.context().profile, false);
+  assert.equal("client_ip" in harness.context().profile, false);
 });
 
 test("a profile startup timeout explains the wait and leaves the portal signed out", async () => {
@@ -192,13 +189,13 @@ test("temporary profile outage preserves a valid session, but expired authentica
   assert.equal(harness.context().loading, false);
 });
 
-test("active admin profiles may have no client IP without changing customer policy", async () => {
+test("active admin profiles are verified without IP metadata", async () => {
   const harness = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json({
-    ...activeProfile, role: "admin", allowed_ip: null, client_ip: null,
+    ...activeProfile, role: "admin",
   }));
   await harness.context().signIn("admin@example.com", "password-123");
   assert.equal(harness.context().profile.role, "admin");
-  assert.equal(harness.context().profile.client_ip, null);
+  assert.equal("allowed_ip" in harness.context().profile, false);
 });
 
 test("terminal includes the separate Upstox 15-minute historical chart", () => {
@@ -253,8 +250,10 @@ function dashboardHarness() {
     require: (name) => {
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return {
-        jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }),
+        jsx: (type, props) => typeof type === "function" ? type(props) : ({ type, props }),
+        jsxs: (type, props) => typeof type === "function" ? type(props) : ({ type, props }),
       };
+      if (name === "next/link") return { default: "a" };
       if (name === "@/components/auth/AuthProvider") return {
         useAuth: () => ({
           session: { access_token: "test-token" },
@@ -292,8 +291,12 @@ function dashboardHarness() {
       if (url.includes("/forming-candle")) return json({ available: false, forming_candle: null });
       return json({
         feed_state: "live", message: "Feed current", candles: [
-          { timestamp: "2026-11-15T08:55:00Z", open: 90, high: 105, low: 89, close: 100, is_forming: false },
-        ],
+          { timestamp: "2026-11-15T08:45:00Z", open: 90, high: 105, low: 89, close: 100, is_forming: false, timeframe: "15m" },
+        ], indicator_decision: {
+          decision: "BUY", is_current_signal: true, candle_timestamp: "2026-11-15T08:45:00Z",
+          reason: "BUY signal confirmed", ut_bot_signal: "BUY", ema_bullish: true,
+          rsi_bullish: true, macd_bullish: true, supertrend_bullish: true,
+        },
       });
     },
   });
@@ -321,6 +324,7 @@ function dashboardHarness() {
     fail: (status) => { failureStatus = status; },
     stale: () => { stale = true; },
     snapshots: () => slots[3],
+    view: () => render(),
     requests: () => requests,
     signedOut: () => signedOut,
   };
@@ -379,5 +383,27 @@ test("customers can select Upstox and the dashboard requests data from that prov
   await settleUntil(() => dashboard.requests().some((url) => url.includes("/api/v1/live/quote?") && url.includes("provider=upstox")));
   assert.ok(dashboard.requests().some((url) => url.includes("/api/v1/live/status?provider=upstox")));
   assert.ok(dashboard.requests().some((url) => url.includes("/api/v1/live/candles?") && url.includes("provider=upstox")));
+  assert.ok(dashboard.requests().some((url) => url.includes("timeframe=15m")));
+  cleanup();
+});
+
+test("each index title opens a separate chart tab and shows the latest decision", async () => {
+  const dashboard = dashboardHarness();
+  dashboard.render();
+  const cleanup = dashboard.start();
+  await settleUntil(() => dashboard.snapshots().NIFTY50.decision?.decision === "BUY");
+  const visit = (node, found = []) => {
+    if (!node || typeof node !== "object") return found;
+    if (node.type === "a") found.push(node);
+    const children = node.props?.children;
+    for (const child of Array.isArray(children) ? children : [children]) visit(child, found);
+    return found;
+  };
+  const links = visit(dashboard.view());
+  for (const symbol of ["NIFTY50", "BANKNIFTY"]) {
+    assert.ok(links.some((link) => link.props?.href === `/chart/${symbol}` && link.props?.target === "_blank"));
+  }
+  assert.equal(dashboard.snapshots().NIFTY50.decision.decision, "BUY");
+  assert.ok(dashboard.requests().some((url) => url.includes("timeframe=15m")));
   cleanup();
 });

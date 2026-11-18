@@ -18,7 +18,7 @@ from fastapi import HTTPException
 
 from app.config import Settings, get_settings
 
-PROFILE_COLUMNS = "id,email,role,status,allowed_ip,created_at"
+PROFILE_COLUMNS = "id,email,role,status,created_at"
 ACCOUNT_REQUEST_COLUMNS = (
     "id,full_name,date_of_birth,email,phone_number,whatsapp_number,"
     "request_ip,status,notification_status,auth_user_id,decided_by,"

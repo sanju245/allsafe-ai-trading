@@ -110,7 +110,7 @@ def send_approved(email: str, name: str, setup_link: str) -> None:
         f"Hello {name},\n\nYour AllSafe AI Trading account request was approved. "
         "Set your password using this one-time link:\n\n"
         f"{setup_link}\n\nIf the link expires, contact the administrator for a new one. "
-        "After setting your password, sign in from the public IP address used for your request.\n\n"
+        "After setting your password, sign in from any network.\n\n"
         "AllSafe AI Trading",
     )
 

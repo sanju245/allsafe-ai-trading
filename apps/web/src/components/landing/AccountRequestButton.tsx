@@ -26,7 +26,6 @@ export default function AccountRequestButton() {
   const [email, setEmail] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [whatsappNumber, setWhatsappNumber] = useState("");
-  const [ipAddress, setIpAddress] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -40,24 +39,6 @@ export default function AccountRequestButton() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [busy, open]);
-
-  useEffect(() => {
-    if (!open || ipAddress) return;
-    const controller = new AbortController();
-    void fetch(`${API_BASE_URL}/api/v1/auth/client-ip`, {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok) return;
-      const data: unknown = await response.json();
-      if (typeof data === "object" && data !== null && "client_ip" in data) {
-        const address = (data as { client_ip: unknown }).client_ip;
-        if (typeof address === "string") setIpAddress((current) => current || address);
-      }
-    }).catch(() => { /* The customer can enter the IP manually. */ });
-    return () => controller.abort();
-  }, [ipAddress, open]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,7 +54,6 @@ export default function AccountRequestButton() {
           email: email.trim(),
           phone_number: phoneNumber.trim(),
           whatsapp_number: whatsappNumber.trim(),
-          ip_address: ipAddress.trim(),
         }),
         cache: "no-store",
         credentials: "omit",
@@ -129,10 +109,6 @@ export default function AccountRequestButton() {
                   </label>
                   <label className="text-sm text-slate-300">WhatsApp number
                     <input className={inputClass} type="tel" required maxLength={20} value={whatsappNumber} onChange={(event) => setWhatsappNumber(event.target.value)} />
-                  </label>
-                  <label className="text-sm text-slate-300 sm:col-span-2">Your public IP address
-                    <input className={inputClass} type="text" required autoComplete="off" value={ipAddress} onChange={(event) => setIpAddress(event.target.value)} placeholder="For example, 203.0.113.10" />
-                    <span className="mt-1 block text-xs leading-5 text-slate-500">We prefill this from the account service when available. It must match your current public IP and will be used for sign-in access.</span>
                   </label>
                   {error && <p role="alert" className="rounded-lg border border-rose-400/25 bg-rose-400/10 p-3 text-sm text-rose-100 sm:col-span-2">{error}</p>}
                   <p className="text-xs leading-5 text-slate-500 sm:col-span-2">We use these details to review your request and email a decision. See our <Link href="/privacy" className="text-emerald-300 underline">Privacy Policy</Link>.</p>

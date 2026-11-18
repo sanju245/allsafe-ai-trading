@@ -200,7 +200,7 @@ class StreamStatusSnapshot:
 
 class GrowwLiveStreamManager:
     """Manages Groww authentication, authoritative index resolution, `GrowwFeed` subscription,
-    reconnect backoff, and 5-minute IST session candle aggregation.
+    reconnect backoff, and 15-minute IST session candle aggregation.
     """
 
     def __init__(
@@ -413,7 +413,7 @@ class GrowwLiveStreamManager:
         filter_exchange_token: str | None = None,
         as_of: datetime | None = None,
     ) -> list[TickProcessResult]:
-        """Process a `get_index_value()` payload into validated 5-minute IST session candles."""
+        """Process a `get_index_value()` payload into validated 15-minute IST session candles."""
         now_ist = to_ist(as_of) if as_of is not None else datetime.now(IST)
         self._last_message_at = now_ist
 

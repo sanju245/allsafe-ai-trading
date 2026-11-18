@@ -7,8 +7,9 @@ key, but it must never receive the service-role credential.
 
 Apply all SQL files under `supabase/migrations` in timestamp order using the
 Supabase SQL Editor or the Supabase CLI. The account-controls migration adds an
-`active`/`paused` state and one exact IP address to each profile. Browser roles
-remain read-only on `public.profiles`.
+`active`/`paused` state and a legacy exact-IP field to each profile. Current sign-in
+authorization uses token, role, and account status; it does not restrict customers by IP.
+Browser roles remain read-only on `public.profiles`.
 
 ### Single-administrator guard (`20261102000000_single_admin_guard.sql`)
 
@@ -67,8 +68,7 @@ environment file, a response, or a browser request.
    intended administrator with a confirmed email and a temporary password.
    Public self-signup is disabled. The auth trigger creates the matching
    `public.profiles` row with role `user`.
-2. In Supabase SQL Editor, promote only that account. Administrators have no
-   customer IP restriction:
+2. In Supabase SQL Editor, promote only that account:
 
    ```sql
    update public.profiles
@@ -82,12 +82,11 @@ environment file, a response, or a browser request.
 3. Sign in at `https://allsafe-ai-trading.vercel.app/admin/login`, then
    confirm `GET /api/v1/auth/me` returns the `admin` role. Admin actions are
    served by the API and checked against the current profile role and active status
-   on every request. The customer `allowed_ip` comparison does not apply to active
-   administrators, including when current IP metadata is unavailable.
+   on every request. Authentication checks token, role, and active account status;
+   legacy `allowed_ip` values are not used for authorization.
 
-The public `GET /api/v1/auth/client-ip` endpoint reports the API's trusted
-client address and does not require a login. In production, the API accepts this
-address only from Render's `CF-Connecting-IP` header. A missing, invalid, comma-separated,
-or duplicated header fails closed for customers. Active administrators may continue
-with unavailable IP metadata after token, role, and active-status verification.
-Direct-origin header spoof resistance must still be verified against the live edge.
+New account applications no longer ask customers for an IP. The API records the
+source address from Render's `CF-Connecting-IP` header for abuse limiting and audit
+metadata in the legacy `request_ip` column. Existing `profiles.allowed_ip` and
+`account_requests.request_ip` values are retained but do not affect login or access.
+No schema change is required to release this behavior.

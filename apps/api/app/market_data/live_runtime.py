@@ -1,8 +1,8 @@
 """Provider-agnostic Live Market-Data & 5-Indicator Decision Runtime.
 
 Coordinates:
-* Historical 5-minute candle warm-up when the selected provider supports it.
-* Live 5-minute session-aligned candle aggregation from the selected feed manager.
+* Historical 15-minute candle warm-up when the selected provider supports it.
+* Live 15-minute session-aligned candle aggregation from the selected feed manager.
 * Strict separation between forming (in-progress) and confirmed (closed) candles.
 * Connection of validated, complete, confirmed candles to the existing 5-indicator
   decision engine (`calculate_decisions`), ensuring:
@@ -86,9 +86,9 @@ class LiveMarketDataRuntime:
         }
 
     def seed_historical_candles(self, instrument: InstrumentId, candles: list[Candle]) -> None:
-        """Seed validated historical closed 5m candles for indicator warm-up."""
+        """Seed validated historical closed 15m candles for indicator warm-up."""
         five_min_closed = [
-            c for c in candles if c.instrument == instrument and c.timeframe == Timeframe.M5
+            c for c in candles if c.instrument == instrument and c.timeframe == Timeframe.M15
         ]
         five_min_closed.sort(key=lambda c: c.timestamp)
         self._historical_candles[instrument] = five_min_closed
@@ -99,7 +99,7 @@ class LiveMarketDataRuntime:
         *,
         as_of: datetime | None = None,
     ) -> dict[InstrumentId, int]:
-        """Fetch historical 5m candles from Groww to warm up the 5-indicator engine."""
+        """Fetch historical 15m candles from Groww to warm up the 5-indicator engine."""
         now_ist = to_ist(as_of) if as_of is not None else datetime.now(IST)
         provider = self.historical_provider
         if provider is None and self.stream_manager.groww_client is not None and self.stream_manager.instrument_resolver is not None:
@@ -118,7 +118,7 @@ class LiveMarketDataRuntime:
         for inst in InstrumentId:
             req = CandleRequest(
                 instrument=inst,
-                timeframe=Timeframe.M5,
+                timeframe=Timeframe.M15,
                 start=start_dt,
                 end=now_ist,
                 limit=300,
@@ -149,7 +149,7 @@ class LiveMarketDataRuntime:
         *,
         as_of: datetime | None = None,
     ) -> list[Candle]:
-        """Return chronological, complete, confirmed 5m candles (historical + live) for indicators.
+        """Return chronological, complete, confirmed 15m candles (historical + live) for indicators.
 
         Incomplete live candles (`is_incomplete=True`) and forming candles (`is_forming=True`)
         are NEVER included in confirmed indicator series.
@@ -188,7 +188,7 @@ class LiveMarketDataRuntime:
         if live_confirmed and live_confirmed[-1].is_incomplete:
             return LiveDecisionSummary(
                 instrument=instrument,
-                timeframe=Timeframe.M5,
+                timeframe=Timeframe.M15,
                 decision=TradeDecision.DATA_UNAVAILABLE,
                 is_current_signal=False,
                 feed_state=inst_status.feed_state,
@@ -202,7 +202,7 @@ class LiveMarketDataRuntime:
                 macd_bullish=None,
                 supertrend_bullish=None,
                 reason=(
-                    "Latest confirmed 5m candle is marked incomplete ("
+                    "Latest confirmed 15m candle is marked incomplete ("
                     + ", ".join(r.value for r in live_confirmed[-1].incomplete_reasons)
                     + "); refusing to treat incomplete interval as a confirmed signal."
                 ),
@@ -212,7 +212,7 @@ class LiveMarketDataRuntime:
         if missing_intervals:
             return LiveDecisionSummary(
                 instrument=instrument,
-                timeframe=Timeframe.M5,
+                timeframe=Timeframe.M15,
                 decision=TradeDecision.DATA_UNAVAILABLE,
                 is_current_signal=False,
                 feed_state=inst_status.feed_state,
@@ -226,7 +226,7 @@ class LiveMarketDataRuntime:
                 macd_bullish=None,
                 supertrend_bullish=None,
                 reason=(
-                    f"Live 5m series contains {len(missing_intervals)} missing interval gap(s); "
+                    f"Live 15m series contains {len(missing_intervals)} missing interval gap(s); "
                     "indicators require a contiguous validated candle series."
                 ),
                 confirmed_candle_count=len(live_confirmed),
@@ -236,7 +236,7 @@ class LiveMarketDataRuntime:
         if not candles:
             return LiveDecisionSummary(
                 instrument=instrument,
-                timeframe=Timeframe.M5,
+                timeframe=Timeframe.M15,
                 decision=TradeDecision.DATA_UNAVAILABLE,
                 is_current_signal=False,
                 feed_state=inst_status.feed_state,
@@ -249,7 +249,7 @@ class LiveMarketDataRuntime:
                 rsi_bullish=None,
                 macd_bullish=None,
                 supertrend_bullish=None,
-                reason="No confirmed 5m candles available yet.",
+                reason="No confirmed 15m candles available yet.",
                 confirmed_candle_count=0,
             )
 
@@ -257,7 +257,7 @@ class LiveMarketDataRuntime:
         report: ValidationReport = validate_candles(
             candles,
             instrument=instrument,
-            timeframe=Timeframe.M5,
+            timeframe=Timeframe.M15,
             source=candles[-1].source,
             as_of=now_ist,
             check_staleness=False,
@@ -272,7 +272,7 @@ class LiveMarketDataRuntime:
             codes_str = ", ".join(sorted({i.code.value for i in blocking_errors}))
             return LiveDecisionSummary(
                 instrument=instrument,
-                timeframe=Timeframe.M5,
+                timeframe=Timeframe.M15,
                 decision=TradeDecision.DATA_UNAVAILABLE,
                 is_current_signal=False,
                 feed_state=inst_status.feed_state,
@@ -303,7 +303,7 @@ class LiveMarketDataRuntime:
 
         return LiveDecisionSummary(
             instrument=instrument,
-            timeframe=Timeframe.M5,
+            timeframe=Timeframe.M15,
             decision=last_pt.decision,
             is_current_signal=is_live_and_fresh and last_pt.decision in (TradeDecision.BUY, TradeDecision.SELL),
             feed_state=inst_status.feed_state,
@@ -319,3 +319,43 @@ class LiveMarketDataRuntime:
             reason=reason,
             confirmed_candle_count=len(candles),
         )
+
+    def decision_history_for_instrument(
+        self,
+        instrument: InstrumentId,
+        *,
+        as_of: datetime | None = None,
+    ) -> list[DecisionPoint]:
+        """Return indicator decisions aligned to valid, closed 15m candle timestamps.
+
+        A series with incomplete live bars, known gaps, or validation errors has no
+        trustworthy marker history and returns an empty list.
+        """
+        now_ist = to_ist(as_of) if as_of is not None else datetime.now(IST)
+        live_confirmed = self.stream_manager.aggregator.get_confirmed_candles(
+            instrument, as_of=now_ist
+        )
+        if any(candle.is_incomplete for candle in live_confirmed):
+            return []
+        if self.stream_manager.aggregator.get_missing_intervals(instrument):
+            return []
+
+        candles = self.merged_complete_confirmed_candles(instrument, as_of=now_ist)
+        if not candles:
+            return []
+        report = validate_candles(
+            candles,
+            instrument=instrument,
+            timeframe=Timeframe.M15,
+            source=candles[-1].source,
+            as_of=now_ist,
+            check_staleness=False,
+        )
+        blocking_errors = [
+            issue
+            for issue in report.issues
+            if issue.severity.value == "error" and issue.code.value != "SOURCE_MISMATCH"
+        ]
+        if blocking_errors:
+            return []
+        return calculate_decisions(candles)

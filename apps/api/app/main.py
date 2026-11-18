@@ -4,8 +4,8 @@ Endpoints:
 * /health (Phase 1)
 * /api/v1/market-data/* (instrument/timeframe descriptions, supplied-series
   validation, and authenticated Upstox historical 15-minute candles)
-* /api/v1/live/* (Groww read-only live market-data status, quote, confirmed 5m
-  candles + 5-indicator decision summary, and forming 5m candle; disabled by default).
+* /api/v1/live/* (read-only live market-data status, quote, confirmed 15m
+  candles + 5-indicator decision summary, and forming 15m candle; disabled by default).
 """
 
 import asyncio

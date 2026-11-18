@@ -9,7 +9,7 @@ type AccountRequest = {
   email: string;
   phone_number: string;
   whatsapp_number: string;
-  request_ip: string;
+  request_ip: string | null;
   status: "pending" | "processing" | "approved" | "declined";
   notification_status: "pending" | "sent" | "failed";
   created_at: string;
@@ -125,7 +125,6 @@ export default function AccountRequestsPanel({ accessToken, onApproved }: { acce
               <div><dt className="text-slate-500">Date of birth</dt><dd className="mt-1 text-slate-200">{request.date_of_birth}</dd></div>
               <div><dt className="text-slate-500">Phone</dt><dd className="mt-1 text-slate-200">{request.phone_number}</dd></div>
               <div><dt className="text-slate-500">WhatsApp</dt><dd className="mt-1 text-slate-200">{request.whatsapp_number}</dd></div>
-              <div><dt className="text-slate-500">Requested public IP</dt><dd className="mt-1 break-all font-mono text-slate-200">{request.request_ip}</dd></div>
               <div><dt className="text-slate-500">Received</dt><dd className="mt-1 text-slate-200">{formatDate(request.created_at)}</dd></div>
               <div><dt className="text-slate-500">Decision email</dt><dd className="mt-1 text-slate-200">{request.status === "pending" ? "Waiting for decision" : request.notification_status}</dd></div>
             </dl>

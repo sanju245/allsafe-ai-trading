@@ -98,16 +98,6 @@ export default function AccountPage() {
             <dt className="text-xs text-slate-500">Login status</dt>
             <dd className="mt-1 capitalize text-emerald-200">{profile.status}</dd>
           </div>
-          <div>
-            <dt className="text-xs text-slate-500">Allowed IP</dt>
-            <dd className="mt-1 break-all font-mono text-slate-200">{profile.role === "admin" ? "Not restricted for administrators" : profile.allowed_ip ?? "Not configured"}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Current IP</dt>
-            <dd className="mt-1 break-all font-mono text-slate-200">
-              {profile.client_ip ?? (profile.role === "admin" ? "Unavailable; admin access is not IP-restricted" : "Unavailable")}
-            </dd>
-          </div>
         </dl>
 
         {profile.status === "paused" ? (

@@ -8,7 +8,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config import get_settings
 from app.email_notifications import (
@@ -26,6 +26,7 @@ from app.supabase_admin import (
     delete_auth_user,
     generate_account_link,
     get_account_request,
+    get_profile,
     insert_account_request,
     list_account_requests,
     update_account_request,
@@ -49,7 +50,6 @@ class AccountApplication(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     phone_number: str = Field(min_length=7, max_length=20)
     whatsapp_number: str = Field(min_length=7, max_length=20)
-    ip_address: IPvAnyAddress
 
     @field_validator("full_name")
     @classmethod
@@ -90,7 +90,7 @@ class AccountRequestResponse(BaseModel):
     email: str
     phone_number: str
     whatsapp_number: str
-    request_ip: str
+    request_ip: str | None
     status: RequestStatus
     notification_status: NotificationStatus
     auth_user_id: UUID | None
@@ -154,12 +154,9 @@ def _notify_decision(row: dict[str, object], *, link: str | None = None) -> dict
 @public_router.post("", status_code=status.HTTP_202_ACCEPTED)
 def submit_account_request(body: AccountApplication, request: Request) -> dict[str, str]:
     ensure_email_ready()
+    # This server-observed address is retained for form abuse limiting and the
+    # existing audit column only. It is never used to authorize an account.
     client_ip = request_client_ip(request)
-    if body.ip_address.compressed != client_ip:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Enter the public IP shown by the account service ({client_ip}).",
-        )
     _request_rate_limiter.check(
         client_ip, limit=get_settings().account_request_limit_per_hour, resource="Account application"
     )
@@ -221,7 +218,7 @@ def approve_request(
     try:
         invitation = generate_account_link(str(row["email"]), link_type="invite", redirect_to=redirect_url)
         user_id = str(UUID(invitation["user"]["id"]))
-        profile = update_profile(user_id, {"allowed_ip": row["request_ip"]})
+        profile = get_profile(user_id)
         if profile is None:
             raise SupabaseAdminAPIError(502)
         completed = update_account_request(

@@ -2,10 +2,10 @@
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from app.security import AccountPrincipal, request_client_ip, require_active_account
+from app.security import AccountPrincipal, require_active_account
 from app.supabase_admin import (
     SupabaseAdminAPIError,
     sanitized_admin_error,
@@ -15,17 +15,11 @@ from app.supabase_admin import (
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
-class ClientIPResponse(BaseModel):
-    client_ip: str
-
-
 class CurrentAccountResponse(BaseModel):
     id: str
     email: str
     role: Literal["user", "admin"]
     status: Literal["active", "paused"]
-    allowed_ip: str | None
-    client_ip: str | None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -41,27 +35,18 @@ class ChangePasswordRequest(BaseModel):
         return value
 
 
-@router.get("/client-ip", response_model=ClientIPResponse)
-def get_client_ip(request: Request, response: Response) -> ClientIPResponse:
-    """Return the trusted source IP for first-admin bootstrap and allowlisting."""
-    response.headers["Cache-Control"] = "no-store"
-    return ClientIPResponse(client_ip=request_client_ip(request))
-
-
 @router.get("/me", response_model=CurrentAccountResponse)
 def get_current_account(
     response: Response,
     account: AccountPrincipal = Depends(require_active_account),
 ) -> CurrentAccountResponse:
-    """Return a profile only when its current active status and IP allowlist pass."""
+    """Return a profile only when its current active status passes."""
     response.headers["Cache-Control"] = "no-store"
     return CurrentAccountResponse(
         id=account.id,
         email=account.email,
         role=account.role,  # type: ignore[arg-type]
         status=account.status,  # type: ignore[arg-type]
-        allowed_ip=account.allowed_ip,
-        client_ip=account.client_ip,
     )
 
 
@@ -70,7 +55,7 @@ def change_password(
     body: ChangePasswordRequest,
     account: AccountPrincipal = Depends(require_active_account),
 ) -> Response:
-    """Change the signed-in user's password after rechecking active status and IP."""
+    """Change the signed-in user's password after rechecking active status."""
     try:
         update_auth_user_password(account.id, body.password.get_secret_value())
     except SupabaseAdminAPIError as exc:

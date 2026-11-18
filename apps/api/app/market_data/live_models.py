@@ -41,7 +41,7 @@ class TickRejectionReason(StrEnum):
 
 
 class IncompleteReason(StrEnum):
-    """Reason a 5-minute candle interval did not observe the full continuous slot."""
+    """Reason a 15-minute candle interval did not observe the full continuous slot."""
 
     STREAM_STARTED_MID_SLOT = "stream_started_mid_slot"
     FEED_INTERRUPTED_DURING_SLOT = "feed_interrupted_during_slot"
@@ -92,12 +92,12 @@ class LiveQuote(BaseModel):
 
 
 class FormingCandle(BaseModel):
-    """An in-progress (unconfirmed) 5-minute candle bucket."""
+    """An in-progress (unconfirmed) 15-minute candle bucket."""
 
     model_config = ConfigDict(frozen=True)
 
     instrument: InstrumentId
-    timeframe: Timeframe = Timeframe.M5
+    timeframe: Timeframe = Timeframe.M15
     timestamp: datetime
     close_time: datetime
     open: float
@@ -116,12 +116,12 @@ class FormingCandle(BaseModel):
 
 
 class ConfirmedCandle(BaseModel):
-    """A completed (confirmed) 5-minute candle bucket."""
+    """A completed (confirmed) 15-minute candle bucket."""
 
     model_config = ConfigDict(frozen=True)
 
     instrument: InstrumentId
-    timeframe: Timeframe = Timeframe.M5
+    timeframe: Timeframe = Timeframe.M15
     timestamp: datetime
     close_time: datetime
     open: float
@@ -154,12 +154,12 @@ class ConfirmedCandle(BaseModel):
 
 
 class MissingInterval(BaseModel):
-    """Explicit record of one or more skipped 5-minute session slots between candles."""
+    """Explicit record of one or more skipped 15-minute session slots between candles."""
 
     model_config = ConfigDict(frozen=True)
 
     instrument: InstrumentId
-    timeframe: Timeframe = Timeframe.M5
+    timeframe: Timeframe = Timeframe.M15
     previous_slot: datetime
     next_slot: datetime
     first_missing_slot: datetime

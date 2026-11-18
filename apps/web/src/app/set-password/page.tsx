@@ -73,7 +73,7 @@ export default function SetPasswordPage() {
         <h1 className="mt-2 text-3xl font-semibold text-white">Set your password</h1>
         {done ? (
           <div role="status" className="mt-5 text-sm leading-6 text-slate-300">
-            Your password is ready. <Link href="/login" className="font-semibold text-emerald-300 underline">Sign in</Link> from your approved public IP address.
+            Your password is ready. <Link href="/login" className="font-semibold text-emerald-300 underline">Sign in</Link> from any network.
           </div>
         ) : accessToken ? (
           <form onSubmit={submit} className="mt-5 grid gap-4">

@@ -13,7 +13,6 @@ type AdminUser = {
   email: string;
   role: UserRole;
   status: UserStatus;
-  allowed_ip: string | null;
   created_at: string;
 };
 
@@ -106,80 +105,18 @@ type UserActionsProps = {
   user: AdminUser;
   busy: boolean;
   onStatusChange: (user: AdminUser) => void;
-  onAllowedIpChange: (user: AdminUser, allowedIp: string) => Promise<boolean>;
   onDelete: (user: AdminUser) => void;
 };
 
-function UserActions({ user, busy, onStatusChange, onAllowedIpChange, onDelete }: UserActionsProps) {
-  const [editingIp, setEditingIp] = useState(false);
-  const [allowedIp, setAllowedIp] = useState(user.allowed_ip ?? "");
+function UserActions({ user, busy, onStatusChange, onDelete }: UserActionsProps) {
   const customer = isCustomer(user);
 
   if (!customer) {
     return <span className="text-xs text-slate-500">Admin account protected</span>;
   }
 
-  if (editingIp) {
-    return (
-      <form
-        className="flex min-w-56 flex-wrap items-center gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void onAllowedIpChange(user, allowedIp.trim()).then((saved) => {
-            if (saved) {
-              setAllowedIp(allowedIp.trim());
-              setEditingIp(false);
-            }
-          });
-        }}
-      >
-        <label className="sr-only" htmlFor={`allowed-ip-${user.id}`}>Allowed public IP for {user.email}</label>
-        <input
-          id={`allowed-ip-${user.id}`}
-          type="text"
-          inputMode="text"
-          autoComplete="off"
-          required
-          value={allowedIp}
-          onChange={(event) => setAllowedIp(event.target.value)}
-          placeholder="Customer public IPv4 or IPv6"
-          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:border-emerald-400 focus:outline-none"
-        />
-        <button
-          type="submit"
-          disabled={busy || !allowedIp.trim()}
-          className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Save IP
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setAllowedIp(user.allowed_ip ?? "");
-            setEditingIp(false);
-          }}
-          className="rounded-lg border border-white/15 px-3 py-2 text-xs text-slate-300 hover:bg-white/5 disabled:opacity-50"
-        >
-          Cancel
-        </button>
-      </form>
-    );
-  }
-
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => {
-          setAllowedIp(user.allowed_ip ?? "");
-          setEditingIp(true);
-        }}
-        className="rounded-lg border border-white/15 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50"
-      >
-        Edit IP
-      </button>
       {user.status === "active" || user.status === "paused" ? (
         <button
           type="button"
@@ -219,7 +156,6 @@ export default function AdminUsersPanel() {
   const [creating, setCreating] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [allowedIp, setAllowedIp] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deniedToken, setDeniedToken] = useState<string | null>(null);
@@ -373,7 +309,7 @@ export default function AdminUsersPanel() {
     const query = search.trim().toLowerCase();
     return users.filter((user) => {
       const matchesStatus = statusFilter === "all" || user.status === statusFilter;
-      const matchesSearch = !query || [user.email, user.allowed_ip ?? "", user.role]
+      const matchesSearch = !query || [user.email, user.role]
         .some((value) => value.toLowerCase().includes(query));
       return matchesStatus && matchesSearch;
     });
@@ -399,13 +335,12 @@ export default function AdminUsersPanel() {
     try {
       await adminRequest<unknown>(accessToken, "/api/v1/admin/users", {
         method: "POST",
-        body: { email: email.trim(), password, allowed_ip: allowedIp.trim() },
+        body: { email: email.trim(), password },
       });
       if (!isCurrentRequest(generation)) return;
       setSuccess(`Created the account for ${email.trim()}.`);
       setEmail("");
       setPassword("");
-      setAllowedIp("");
       setCreateOpen(false);
       await refreshUsers();
     } catch (cause) {
@@ -431,28 +366,6 @@ export default function AdminUsersPanel() {
       await refreshUsers();
     } catch (cause) {
       await handleAdminFailure(cause, "Could not update the account status.", generation);
-    } finally {
-      if (isCurrentRequest(generation)) updateBusyUserId(null);
-    }
-  }
-
-  async function changeAllowedIp(user: AdminUser, nextAllowedIp: string): Promise<boolean> {
-    const generation = requestGenerationRef.current;
-    if (!accessToken || !isAdmin || !isCustomer(user) || !nextAllowedIp || busyUserIdRef.current || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return false;
-    updateBusyUserId(user.id);
-    clearNotices();
-    try {
-      await adminRequest<unknown>(accessToken, `/api/v1/admin/users/${encodeURIComponent(user.id)}`, {
-        method: "PATCH",
-        body: { allowed_ip: nextAllowedIp },
-      });
-      if (!isCurrentRequest(generation)) return false;
-      setSuccess(`Allowed IP updated for ${user.email}.`);
-      await refreshUsers();
-      return true;
-    } catch (cause) {
-      await handleAdminFailure(cause, "Could not update the allowed IP.", generation);
-      return false;
     } finally {
       if (isCurrentRequest(generation)) updateBusyUserId(null);
     }
@@ -524,7 +437,6 @@ export default function AdminUsersPanel() {
       user={user}
       busy={busyUserId !== null}
       onStatusChange={changeStatus}
-      onAllowedIpChange={changeAllowedIp}
       onDelete={(target) => {
         clearNotices();
         deleteTriggerRef.current = document.activeElement instanceof HTMLElement
@@ -542,7 +454,7 @@ export default function AdminUsersPanel() {
         <div>
           <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">User management</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">Customers</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">Create customer logins, control access, and manage each account’s allowed public IP.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">Create customer logins and manage account access.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => void refreshUsers()} disabled={loadingUsers} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50">
@@ -572,11 +484,6 @@ export default function AdminUsersPanel() {
               Initial password
               <input type="password" required minLength={8} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-400 focus:outline-none" placeholder="At least 8 characters" />
             </label>
-            <label className="text-sm text-slate-300">
-              Allowed public IP
-              <input type="text" required autoComplete="off" value={allowedIp} onChange={(event) => setAllowedIp(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-400 focus:outline-none" placeholder="Customer’s public IPv4 or IPv6" />
-              <span className="mt-1 block text-xs text-slate-500">Enter one public address; the API validates that it is allowed.</span>
-            </label>
             <div className="flex flex-wrap items-center gap-3 md:col-span-3">
               <button type="submit" disabled={creating} className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-50">
                 {creating ? "Creating account…" : "Create customer"}
@@ -601,7 +508,7 @@ export default function AdminUsersPanel() {
           <div className="grid gap-3 sm:grid-cols-[minmax(14rem,1fr)_10rem]">
             <label className="text-xs font-medium text-slate-400">
               Search accounts
-              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Email or allowed IP" className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-400 focus:outline-none" />
+              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Email" className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-400 focus:outline-none" />
             </label>
             <label className="text-xs font-medium text-slate-400">
               Status
@@ -615,13 +522,12 @@ export default function AdminUsersPanel() {
         </div>
 
         <div className="mt-5 hidden overflow-x-auto rounded-xl border border-white/10 md:block">
-          <table className="w-full min-w-[900px] text-left text-sm">
+          <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-white/5 text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 <th scope="col" className="px-4 py-3">Customer</th>
                 <th scope="col" className="px-4 py-3">Role</th>
                 <th scope="col" className="px-4 py-3">Status</th>
-                <th scope="col" className="px-4 py-3">Allowed public IP</th>
                 <th scope="col" className="px-4 py-3">Created</th>
                 <th scope="col" className="px-4 py-3">Actions</th>
               </tr>
@@ -639,13 +545,12 @@ export default function AdminUsersPanel() {
                       {user.status}
                     </span>
                   </td>
-                  <td className="px-4 py-4 font-mono text-xs text-slate-300">{user.allowed_ip ?? "Not set"}</td>
                   <td className="whitespace-nowrap px-4 py-4 text-slate-400">{formatDate(user.created_at)}</td>
                   <td className="px-4 py-4">{renderActions(user)}</td>
                 </tr>
               ))}
               {!loadingUsers && visibleUsers.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">No accounts match these filters.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No accounts match these filters.</td></tr>
               )}
             </tbody>
           </table>
@@ -666,7 +571,6 @@ export default function AdminUsersPanel() {
               <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
                 <div><dt className="text-slate-500">Role</dt><dd className="mt-1 capitalize text-slate-200">{user.role}</dd></div>
                 <div><dt className="text-slate-500">Created</dt><dd className="mt-1 text-slate-200">{formatDate(user.created_at)}</dd></div>
-                <div className="col-span-2"><dt className="text-slate-500">Allowed public IP</dt><dd className="mt-1 break-all font-mono text-slate-200">{user.allowed_ip ?? "Not set"}</dd></div>
               </dl>
               <div className="mt-4 border-t border-white/10 pt-3">{renderActions(user)}</div>
             </article>

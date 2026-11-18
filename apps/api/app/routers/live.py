@@ -3,7 +3,7 @@
 Endpoints:
 * GET /api/v1/live/status
 * GET /api/v1/live/quote?symbol=...
-* GET /api/v1/live/candles?symbol=...&timeframe=5m&limit=...
+* GET /api/v1/live/candles?symbol=...&timeframe=15m&limit=...
 * GET /api/v1/live/forming-candle?symbol=...&provider=groww|upstox
 * GET /api/v1/live/providers
 
@@ -30,6 +30,7 @@ from app.market_data.live_schemas import (
     ConfirmedCandleSchema,
     FormingCandleSchema,
     IndicatorDecisionSchema,
+    IndicatorHistoryPointSchema,
     InstrumentStatusSchema,
     LiveCandlesResponse,
     LiveFormingCandleResponse,
@@ -151,12 +152,12 @@ def _resolve_symbol_or_422(symbol: str) -> InstrumentId:
 
 def _resolve_live_timeframe_or_422(timeframe: str) -> Timeframe:
     normalized = timeframe.strip().lower()
-    if normalized != Timeframe.M5.value:
+    if normalized != Timeframe.M15.value:
         raise HTTPException(
             status_code=422,
-            detail=f"Unsupported live candle timeframe {timeframe!r}. Only '5m' is supported for live streaming aggregation.",
+            detail=f"Unsupported live candle timeframe {timeframe!r}. Only '15m' is supported for live streaming aggregation.",
         )
-    return Timeframe.M5
+    return Timeframe.M15
 
 
 def _status_message(feed_state: FeedState, streaming_enabled: bool, has_data: bool, provider: str = "groww") -> str:
@@ -322,12 +323,13 @@ def get_live_candles(
     request: Request,
     response: Response,
     symbol: str = Query(..., min_length=1, description="Instrument symbol, e.g. NIFTY50 or BANKNIFTY"),
-    timeframe: str = Query(default="5m", description="Candle timeframe (must be 5m)"),
+    timeframe: str = Query(default="15m", description="Candle timeframe (must be 15m)"),
     limit: int = Query(default=100, ge=1, le=500, description="Maximum number of confirmed candles to return"),
     provider: str | None = Query(default=None),
+    include_indicator_history: bool = Query(default=False),
     _: AccountPrincipal = Depends(require_active_account),  # noqa: B008
 ) -> LiveCandlesResponse:
-    """Return confirmed 5-minute candles only (never mixed with the forming candle) plus indicator decision."""
+    """Return confirmed 15-minute candles only (never mixed with the forming candle) plus indicator decision."""
     response.headers["Cache-Control"] = "no-store"
     instrument = _resolve_symbol_or_422(symbol)
     tf = _resolve_live_timeframe_or_422(timeframe)
@@ -336,33 +338,46 @@ def get_live_candles(
     mgr = rt.stream_manager
     now_ist = datetime.now(IST)
     inst_status = mgr.evaluate_instrument_state(instrument, as_of=now_ist)
-    confirmed = mgr.aggregator.get_confirmed_candles(instrument, limit=limit, as_of=now_ist)
+    confirmed = mgr.aggregator.get_confirmed_candles(instrument, as_of=now_ist)
     forming = mgr.aggregator.get_forming_candle(instrument, as_of=now_ist)
     missing = mgr.aggregator.get_missing_intervals(instrument)
     decision_summary = rt.evaluate_decision_for_instrument(instrument, as_of=now_ist)
 
-    candle_schemas = [
-        ConfirmedCandleSchema(
-            instrument=c.instrument,
-            timeframe=c.timeframe,
-            timestamp=c.timestamp,
-            close_time=c.close_time,
-            open=c.open,
-            high=c.high,
-            low=c.low,
-            close=c.close,
-            volume=c.volume,
-            tick_count=c.tick_count,
-            first_tick_at=c.first_tick_at,
-            last_tick_at=c.last_tick_at,
-            is_forming=False,
-            is_confirmed=True,
-            is_incomplete=c.is_incomplete,
-            incomplete_reasons=list(c.incomplete_reasons),
-            source=c.source,
+    candle_by_timestamp = {
+        candle.timestamp: candle
+        for candle in rt.merged_complete_confirmed_candles(instrument, as_of=now_ist)
+    }
+    live_by_timestamp = {candle.timestamp: candle for candle in confirmed}
+    for candle in confirmed:
+        # Retain even an incomplete live close in the chart, but its incomplete flag
+        # remains visible and it is excluded from the indicator history.
+        candle_by_timestamp[candle.timestamp] = candle.to_candle()
+
+    ordered_chart_candles = sorted(candle_by_timestamp.values(), key=lambda candle: candle.timestamp)[-limit:]
+    candle_schemas = []
+    for candle in ordered_chart_candles:
+        live_candle = live_by_timestamp.get(candle.timestamp)
+        candle_schemas.append(
+            ConfirmedCandleSchema(
+                instrument=candle.instrument,
+                timeframe=candle.timeframe,
+                timestamp=candle.timestamp,
+                close_time=candle.close_time,
+                open=candle.open,
+                high=candle.high,
+                low=candle.low,
+                close=candle.close,
+                volume=candle.volume,
+                tick_count=live_candle.tick_count if live_candle is not None else None,
+                first_tick_at=live_candle.first_tick_at if live_candle is not None else None,
+                last_tick_at=live_candle.last_tick_at if live_candle is not None else None,
+                is_forming=False,
+                is_confirmed=True,
+                is_incomplete=live_candle.is_incomplete if live_candle is not None else False,
+                incomplete_reasons=list(live_candle.incomplete_reasons) if live_candle is not None else [],
+                source=candle.source,
+            )
         )
-        for c in confirmed
-    ]
 
     missing_schemas = [
         MissingIntervalSchema(
@@ -398,6 +413,22 @@ def get_live_candles(
         confirmed_candle_count=decision_summary.confirmed_candle_count,
     )
 
+    decision_history = []
+    if include_indicator_history:
+        decision_history = [
+            IndicatorHistoryPointSchema(
+                timestamp=point.timestamp,
+                decision=point.decision,
+                ut_bot_signal=point.ut_bot_signal.value if point.ut_bot_signal is not None else None,
+                ema_bullish=point.ema_bullish,
+                rsi_bullish=point.rsi_bullish,
+                macd_bullish=point.macd_bullish,
+                supertrend_bullish=point.supertrend_bullish,
+                reason=point.reason,
+            )
+            for point in rt.decision_history_for_instrument(instrument, as_of=now_ist)
+        ]
+
     return LiveCandlesResponse(
         instrument=instrument,
         symbol=instrument.value,
@@ -415,6 +446,7 @@ def get_live_candles(
         missing_interval_count=len(missing_schemas),
         missing_intervals=missing_schemas,
         indicator_decision=decision_schema,
+        indicator_history=decision_history,
         message=_status_message(
             inst_status.feed_state,
             mgr.streaming_enabled,
@@ -433,7 +465,7 @@ def get_live_forming_candle(
     provider: str | None = Query(default=None),
     _: AccountPrincipal = Depends(require_active_account),  # noqa: B008
 ) -> LiveFormingCandleResponse:
-    """Return the currently forming (unconfirmed) 5-minute candle, separated from confirmed history."""
+    """Return the currently forming (unconfirmed) 15-minute candle, separated from confirmed history."""
     response.headers["Cache-Control"] = "no-store"
     instrument = _resolve_symbol_or_422(symbol)
     rt = get_live_runtime(request, provider)
@@ -476,7 +508,7 @@ def get_live_forming_candle(
         groww_symbol=inst_status.groww_symbol,
         provider_symbol=inst_status.groww_symbol,
         trading_symbol=inst_status.trading_symbol,
-        timeframe=Timeframe.M5,
+        timeframe=Timeframe.M15,
         available=forming_schema is not None,
         feed_state=inst_status.feed_state,
         is_stale=inst_status.is_stale,

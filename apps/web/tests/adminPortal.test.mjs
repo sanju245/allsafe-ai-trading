@@ -86,7 +86,7 @@ function harness() {
         status,
         async json() {
           return status === 200 ? {
-            users: [{ id: "customer-id", email, role: "user", status: "active", allowed_ip: "192.0.2.10", created_at: "2026-01-01T00:00:00Z" }],
+            users: [{ id: "customer-id", email, role: "user", status: "active", created_at: "2026-01-01T00:00:00Z" }],
           } : { detail: { message: "Administrator access was denied." } };
         },
       };
@@ -113,7 +113,7 @@ function harness() {
         status,
         async json() {
           return status === 200 ? {
-            users: [{ id: "old-customer", email: "stale-customer@example.com", role: "user", status: "active", allowed_ip: "192.0.2.11", created_at: "2026-01-01T00:00:00Z" }],
+            users: [{ id: "old-customer", email: "stale-customer@example.com", role: "user", status: "active", created_at: "2026-01-01T00:00:00Z" }],
           } : { detail: { message: "Old administrator request denied." } };
         },
       });
