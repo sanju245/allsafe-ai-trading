@@ -9,6 +9,7 @@
 - Live candles now use the 15-minute NSE session grid. The API defaults to `15m` and rejects other live candle intervals.
 - The candle response combines validated historical bars with closed live bars, keeps a forming candle separate, and respects the requested history limit.
 - Clicking either index name or its full-chart button opens `/chart/NIFTY50` or `/chart/BANKNIFTY` in a new tab. The larger page includes zoom and history navigation, the 15-minute chart, current signal, and UT Bot, EMA, RSI, MACD, and Supertrend readings.
+- Upstox historical NIFTY 50 and BANK NIFTY chart headings also open the larger chart in a new tab and select Upstox for the live chart and indicator readings.
 - BUY/SELL history uses the existing five-indicator decision engine and only complete, confirmed candles. Invalid, incomplete, or gapped series do not create historical markers. A signal may be `WAIT` or unavailable when its rules or feed do not support a confirmed signal.
 - Customer sign-in and protected API access no longer compare the request IP with `profiles.allowed_ip`. Login, account requests, admin customer management, and account pages no longer ask for or manage a customer IP. Existing database IP fields are retained for compatibility; the source IP collected at account-request submission is used for abuse limiting and request auditing and is described in the privacy policy.
 - The terminal now labels the interval and feed state, explains that the separate tab contains the larger chart, and states that signals are educational and do not place orders.
@@ -17,8 +18,8 @@
 
 | Check | Result |
 | --- | --- |
-| API test suite | 283 passed |
-| Web test suite | 27 passed |
+| API test suite | 294 passed |
+| Web test suite | 28 passed |
 | ESLint | Passed |
 | TypeScript typecheck | Passed |
 | Production web build | Passed on Next.js 16.4.6; `/chart/[symbol]` emitted as a dynamic route |
@@ -26,7 +27,7 @@
 | Diff whitespace check | Passed; only a Windows line-ending notice for `apps/web/tsconfig.json` |
 | Indicator strategy diff | None; the committed five-indicator decision engine is unchanged |
 
-API fixture coverage checks the 15-minute default, rejection of `5m`, historical/live candle merge, separate forming candle, and aligned indicator history. Web tests check that both index names open separate chart tabs and that the dashboard shows the latest decision.
+API fixture coverage checks the 15-minute default, rejection of `5m`, historical/live candle merge, separate forming candle, Upstox historical data, and aligned indicator history. Web tests check that both index names open separate chart tabs and that the dashboard shows the latest decision.
 
 ## Live-data limits
 
