@@ -1,5 +1,6 @@
 import ApiStatus from "@/components/ApiStatus";
 import LiveMarketDashboard from "@/components/LiveMarketDashboard";
+import Upstox15mHistory from "@/components/Upstox15mHistory";
 import DashboardAccessGate from "@/components/auth/DashboardAccessGate";
 
 // Backend status must be checked per request, never cached at build time.
@@ -19,18 +20,23 @@ export default function Home() {
         <main className="flex-1 py-10">
           <section>
             <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">
-              Groww live market data
+              Market charts
             </p>
             <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">
               Rule-based analysis for NIFTY 50 and BANK NIFTY
             </h1>
             <p className="mt-4 max-w-2xl text-base text-slate-300 sm:text-lg">
-              Live 5-minute charts for NIFTY 50 and BANK NIFTY, with confirmed
-              candles kept separate from the candle still forming.
+              Browse Upstox historical 15-minute candles alongside Groww’s live
+              5-minute charts for NIFTY 50 and BANK NIFTY.
             </p>
           </section>
 
           <section className="mt-10">
+            <Upstox15mHistory />
+          </section>
+
+          <section className="mt-10">
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-emerald-400">Groww live market data</p>
             <LiveMarketDashboard />
           </section>
         </main>

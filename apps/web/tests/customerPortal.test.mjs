@@ -201,6 +201,17 @@ test("active admin profiles may have no client IP without changing customer poli
   assert.equal(harness.context().profile.client_ip, null);
 });
 
+test("terminal includes the separate Upstox 15-minute historical chart", () => {
+  compile("src/components/Upstox15mHistory.tsx");
+  const component = fs.readFileSync(path.join(webRoot, "src/components/Upstox15mHistory.tsx"), "utf8");
+  const terminal = fs.readFileSync(path.join(webRoot, "src/app/terminal/page.tsx"), "utf8");
+  assert.match(component, /market-data\/upstox\/candles\?symbol=/);
+  assert.match(component, /Last 7 days/);
+  assert.match(component, /Last 30 days/);
+  assert.doesNotMatch(component, /slice\(-60\)/);
+  assert.match(terminal, /<Upstox15mHistory\s*\/>/);
+});
+
 test("customer return destinations accept only supported local routes", () => {
   const moduleObj = { exports: {} };
   vm.runInNewContext(compile("src/lib/customerNavigation.ts"), { module: moduleObj, exports: moduleObj.exports, URLSearchParams });
