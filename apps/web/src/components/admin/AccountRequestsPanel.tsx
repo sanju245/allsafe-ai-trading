@@ -12,6 +12,7 @@ type AccountRequest = {
   request_ip: string | null;
   status: "pending" | "processing" | "approved" | "declined";
   notification_status: "pending" | "sent" | "failed";
+  notification_status_saved?: boolean | null;
   created_at: string;
   decided_at: string | null;
 };
@@ -85,10 +86,19 @@ export default function AccountRequestsPanel({ accessToken, onApproved }: { acce
       );
       setRequests((current) => current.map((item) => item.id === updated.id ? updated : item));
       const actionText = action === "approve" ? "approved" : action === "decline" ? "declined" : "email retried for";
-      setNotice(`${request.email} ${actionText}. ${updated.notification_status === "failed" ? "The decision email failed; use Retry email." : "The decision email was sent."}`);
+      const deliveryText = updated.notification_status_saved === false
+        ? "The account decision is saved, but the email status could not be recorded. Refresh and check the customer’s inbox before retrying."
+        : updated.notification_status === "failed"
+          ? "The decision email failed; use Retry email."
+          : updated.notification_status === "pending"
+            ? "The decision is saved; email delivery status is still pending."
+            : "The decision email was sent.";
+      setNotice(`${request.email} ${actionText}. ${deliveryText}`);
       if (action === "approve") await onApproved();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not update the request.");
+      const message = cause instanceof Error ? cause.message : "Could not update the request.";
+      if (action === "approve") await refresh();
+      setError(message);
     } finally {
       setBusyId(null);
     }
@@ -128,13 +138,13 @@ export default function AccountRequestsPanel({ accessToken, onApproved }: { acce
               <div><dt className="text-slate-500">Received</dt><dd className="mt-1 text-slate-200">{formatDate(request.created_at)}</dd></div>
               <div><dt className="text-slate-500">Decision email</dt><dd className="mt-1 text-slate-200">{request.status === "pending" ? "Waiting for decision" : request.notification_status}</dd></div>
             </dl>
-            {request.status === "pending" && (
+            {(request.status === "pending" || request.status === "processing") && (
               <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
-                <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "approve")} className="rounded-lg bg-emerald-400 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 disabled:opacity-50">{busyId === request.id ? "Working…" : "Approve and create account"}</button>
-                <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "decline")} className="rounded-lg border border-rose-400/25 px-4 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-400/10 disabled:opacity-50">Decline</button>
+                <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "approve")} className="rounded-lg bg-emerald-400 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 disabled:opacity-50">{busyId === request.id ? "Working…" : request.status === "processing" ? "Resume approval" : "Approve and create account"}</button>
+                {request.status === "pending" && <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "decline")} className="rounded-lg border border-rose-400/25 px-4 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-400/10 disabled:opacity-50">Decline</button>}
               </div>
             )}
-            {request.notification_status === "failed" && (
+            {(request.notification_status === "failed" || ((request.status === "approved" || request.status === "declined") && request.notification_status === "pending")) && (
               <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "retry-email")} className="mt-4 rounded-lg border border-amber-300/25 px-4 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-50">{busyId === request.id ? "Retrying…" : "Retry email"}</button>
             )}
           </article>

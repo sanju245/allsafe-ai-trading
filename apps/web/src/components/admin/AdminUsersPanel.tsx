@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AccountRequestsPanel from "@/components/admin/AccountRequestsPanel";
+import LoginIPAuditPanel from "@/components/admin/LoginIPAuditPanel";
 
 type UserStatus = "active" | "paused" | string;
 type UserRole = "admin" | "customer" | "user" | string;
@@ -470,6 +471,7 @@ export default function AdminUsersPanel() {
       </div>
 
       {accessToken && <AccountRequestsPanel accessToken={accessToken} onApproved={refreshUsers} />}
+      {accessToken && <LoginIPAuditPanel accessToken={accessToken} />}
 
       {createOpen && (
         <section aria-labelledby="create-customer-title" className="mt-7 rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.035] p-5 sm:p-6">

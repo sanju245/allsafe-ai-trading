@@ -11,6 +11,15 @@ Supabase SQL Editor or the Supabase CLI. The account-controls migration adds an
 authorization uses token, role, and account status; it does not restrict customers by IP.
 Browser roles remain read-only on `public.profiles`.
 
+### Customer sign-in IP audit (`20261119000000_customer_login_ip_audit.sql`)
+
+Apply this migration after earlier migrations. It creates a private audit table for
+successful customer sign-ins and an aggregate view for days with multiple IPs.
+Only the API's `service_role` can read or write the table; the API gets the client
+address from the trusted request edge and ignores browser-supplied IP values. Admin
+history is for security review and does not restrict login. Records remain until
+the related Auth user is deleted, when the foreign-key cascade removes them.
+
 ### Single-administrator guard (`20261102000000_single_admin_guard.sql`)
 
 This migration makes the database refuse a second `role = 'admin'` profile (a
@@ -89,4 +98,9 @@ New account applications no longer ask customers for an IP. The API records the
 source address from Render's `CF-Connecting-IP` header for abuse limiting and audit
 metadata in the legacy `request_ip` column. Existing `profiles.allowed_ip` and
 `account_requests.request_ip` values are retained but do not affect login or access.
-No schema change is required to release this behavior.
+No schema change was required for the earlier IP-agnostic login behavior. The
+separate successful-login audit requires the migration documented above.
+
+Approved customers receive a one-time setup link and choose their password on the
+website. Passwords are never collected on account-request forms or displayed to
+administrators.

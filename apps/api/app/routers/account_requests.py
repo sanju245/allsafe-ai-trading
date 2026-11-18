@@ -25,15 +25,14 @@ from app.security import AccountPrincipal, SlidingWindowRateLimiter, request_cli
 from app.supabase_admin import (
     SupabaseAdminAPIError,
     delete_account_request,
-    delete_auth_user,
     generate_account_link,
+    get_auth_user,
     get_account_request,
     get_profile,
     get_profile_by_email,
     insert_account_request,
     list_account_requests,
     update_account_request,
-    update_profile,
 )
 
 public_router = APIRouter(prefix="/api/v1/account-requests", tags=["accounts"])
@@ -102,6 +101,7 @@ class AccountRequestResponse(BaseModel):
     decided_at: datetime | None
     receipt_sent_at: datetime | None
     notification_sent_at: datetime | None
+    notification_status_saved: bool | None = None
 
 
 class RequestListResponse(BaseModel):
@@ -140,19 +140,104 @@ def _notify_decision(row: dict[str, object], *, link: str | None = None) -> dict
         notification_status = "sent"
     except EmailDeliveryError:
         notification_status = "failed"
+    sent_at = datetime.now(timezone.utc).isoformat() if notification_status == "sent" else None
     try:
         updated = update_account_request(
             str(row["id"]),
             {
                 "notification_status": notification_status,
-                "notification_sent_at": datetime.now(timezone.utc).isoformat() if notification_status == "sent" else None,
+                "notification_sent_at": sent_at,
             },
         )
     except SupabaseAdminAPIError:
-        raise _admin_request_error() from None
+        updated = None
     if updated is None:
-        raise _admin_request_error()
+        # The account decision is already durable. Do not report that approval
+        # failed just because the separate email-status write was unavailable.
+        _LOGGER.error("Account decision was saved, but its email status could not be recorded.")
+        updated = dict(row)
+        updated.update({
+            "notification_status": notification_status,
+            "notification_sent_at": sent_at,
+            "notification_status_saved": False,
+        })
+        return updated
+    updated["notification_status_saved"] = True
     return updated
+
+
+def _normalized_email(value: object) -> str:
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _matches_recoverable_request(
+    request_row: dict[str, object],
+    profile: dict[str, object],
+    auth_user: dict[str, object],
+) -> bool:
+    """Accept only a matching customer identity created by this request attempt."""
+    request_id = str(request_row.get("id", ""))
+    email = _normalized_email(request_row.get("email"))
+    if (
+        not request_id
+        or not email
+        or str(profile.get("id", "")) != str(auth_user.get("id", ""))
+        or _normalized_email(profile.get("email")) != email
+        or _normalized_email(auth_user.get("email")) != email
+        or profile.get("role") != "user"
+        or profile.get("status") != "active"
+    ):
+        return False
+
+    metadata = auth_user.get("user_metadata")
+    if isinstance(metadata, dict) and metadata.get("allsafe_account_request_id") == request_id:
+        return True
+
+    # Compatibility for users left behind by the earlier approval handler,
+    # which did not attach request metadata. Only adopt an unconfirmed account
+    # with no sign-in whose profile/Auth creation both followed this request.
+    request_created = _parse_datetime(request_row.get("created_at"))
+    profile_created = _parse_datetime(profile.get("created_at"))
+    auth_created = _parse_datetime(auth_user.get("created_at"))
+    if not request_created or not profile_created or not auth_created:
+        return False
+    return (
+        profile_created >= request_created
+        and auth_created >= request_created
+        and not auth_user.get("email_confirmed_at")
+        and not auth_user.get("last_sign_in_at")
+    )
+
+
+def _validate_approval_identity(
+    request_row: dict[str, object],
+    profile: dict[str, object] | None,
+    auth_user: dict[str, object],
+) -> None:
+    if (
+        profile is None
+        or str(profile.get("id", "")) != str(auth_user.get("id", ""))
+        or _normalized_email(profile.get("email")) != _normalized_email(request_row.get("email"))
+        or _normalized_email(auth_user.get("email")) != _normalized_email(request_row.get("email"))
+        or profile.get("role") != "user"
+        or profile.get("status") != "active"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="The matching customer account could not be verified. No approval changes were made.",
+        )
 
 
 @public_router.post("", status_code=status.HTTP_202_ACCEPTED)
@@ -223,37 +308,104 @@ def approve_request(
     ensure_email_ready()
     redirect_url = setup_redirect_url()
     request_row = _load_request(request_id)
-    if request_row.get("status") != "pending":
-        raise HTTPException(status_code=409, detail="This request has already been handled.")
-    try:
-        existing_profile = get_profile_by_email(str(request_row["email"]))
-    except SupabaseAdminAPIError:
-        raise _admin_request_error() from None
-    if existing_profile is not None:
+    request_status = request_row.get("status")
+    if request_status not in {"pending", "processing"}:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "This email already belongs to an AllSafe account. Use the existing account, "
-                "or decline this duplicate request."
-            ),
+            detail="This request is already decided. Refresh the request list to see its current status.",
         )
-    try:
-        row = update_account_request(str(request_id), {"status": "processing"}, expected_status="pending")
-    except SupabaseAdminAPIError:
-        raise _admin_request_error() from None
-    if row is None:
-        _load_request(request_id)
-        raise HTTPException(status_code=409, detail="This request has already been handled.")
 
-    user_id: str | None = None
-    approval_stage = "creating the Supabase invitation"
+    # A prior attempt may have created an Auth user but failed before saving the
+    # approval. Preserve and resume that identity instead of deleting it or
+    # trying to create a duplicate.
     try:
-        invitation = generate_account_link(str(row["email"]), link_type="invite", redirect_to=redirect_url)
-        user_id = str(UUID(invitation["user"]["id"]))
-        approval_stage = "checking the new account profile"
-        profile = get_profile(user_id)
-        if profile is None:
-            raise SupabaseAdminAPIError(502)
+        row = request_row
+        user_id = str(row["auth_user_id"]) if row.get("auth_user_id") else None
+        if request_status == "pending":
+            existing_profile = get_profile_by_email(str(row["email"]))
+            if existing_profile is not None:
+                existing_id = str(existing_profile.get("id", ""))
+                try:
+                    existing_user = get_auth_user(existing_id)
+                except SupabaseAdminAPIError:
+                    raise
+                if not existing_user or not _matches_recoverable_request(row, existing_profile, existing_user):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "This email already belongs to an AllSafe account that cannot be safely matched to this request. "
+                            "No account was changed."
+                        ),
+                    )
+                user_id = str(UUID(existing_id))
+                row = update_account_request(
+                    str(request_id), {"status": "processing", "auth_user_id": user_id},
+                    expected_status="pending",
+                )
+            else:
+                row = update_account_request(
+                    str(request_id), {"status": "processing"}, expected_status="pending"
+                )
+            if row is None:
+                raise HTTPException(status_code=409, detail="This request changed while approval was starting. Refresh and retry.")
+        elif not user_id:
+            # This covers older processing rows whose previous attempt did not
+            # persist the Auth id. A matching metadata marker or the narrow
+            # unconfirmed/no-sign-in legacy check above is required to adopt it.
+            existing_profile = get_profile_by_email(str(row["email"]))
+            if existing_profile is not None:
+                existing_id = str(existing_profile.get("id", ""))
+                existing_user = get_auth_user(existing_id)
+                if not _matches_recoverable_request(row, existing_profile, existing_user):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="An existing account could not be safely matched to this request. No account was changed.",
+                    )
+                user_id = str(UUID(existing_id))
+                row = update_account_request(
+                    str(request_id), {"auth_user_id": user_id}, expected_status="processing"
+                )
+                if row is None:
+                    raise SupabaseAdminAPIError(502)
+
+        approval_stage = "creating or resuming the account invitation"
+        if user_id:
+            auth_user = get_auth_user(user_id)
+            existing_profile = get_profile(user_id)
+            _validate_approval_identity(row, existing_profile, auth_user)
+            link_type = "recovery" if auth_user.get("email_confirmed_at") else "invite"
+            try:
+                invitation = generate_account_link(
+                    str(row["email"]), link_type=link_type, redirect_to=redirect_url
+                )
+            except SupabaseAdminAPIError as exc:
+                # Some Supabase projects reject a second invite for an existing
+                # unconfirmed user. A recovery link is still bound to that same
+                # verified identity and lets the applicant finish password setup.
+                if link_type != "invite" or exc.status_code not in {409, 422}:
+                    raise
+                invitation = generate_account_link(
+                    str(row["email"]), link_type="recovery", redirect_to=redirect_url
+                )
+        else:
+            invitation = generate_account_link(
+                str(row["email"]),
+                link_type="invite",
+                redirect_to=redirect_url,
+                data={"allsafe_account_request_id": str(request_id)},
+            )
+            user_id = str(UUID(invitation["user"]["id"]))
+            # Save the identity immediately. Any later failure leaves a visible,
+            # recoverable processing row for the admin's Resume approval action.
+            row = update_account_request(
+                str(request_id), {"auth_user_id": user_id}, expected_status="processing"
+            )
+            if row is None:
+                raise SupabaseAdminAPIError(502)
+            auth_user = get_auth_user(user_id)
+            existing_profile = get_profile(user_id)
+            _validate_approval_identity(row, existing_profile, auth_user)
+
         approval_stage = "saving the approval"
         completed = update_account_request(
             str(request_id),
@@ -265,42 +417,21 @@ def approve_request(
         )
         if completed is None:
             raise SupabaseAdminAPIError(502)
+    except HTTPException:
+        raise
     except SupabaseAdminAPIError as exc:
         _LOGGER.warning(
             "Account request approval failed while %s (Supabase HTTP %s).",
-            approval_stage,
+            locals().get("approval_stage", "checking the existing account"),
             exc.status_code,
         )
-        if user_id:
-            try:
-                delete_auth_user(user_id)
-            except SupabaseAdminAPIError:
-                pass
-        try:
-            update_account_request(str(request_id), {"status": "pending"}, expected_status="processing")
-        except SupabaseAdminAPIError:
-            pass
-        if approval_stage == "creating the Supabase invitation" and exc.status_code in {409, 422}:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Supabase could not create an invitation for this email. It may already have an account; "
-                    "check the customer list or decline this duplicate request."
-                ),
-            ) from None
-        raise HTTPException(status_code=502, detail="Account approval failed. Please retry.") from None
+        raise HTTPException(status_code=502, detail="Account approval could not be completed. The request is saved for retry.") from None
     except (ValueError, KeyError, TypeError):
-        _LOGGER.warning("Account request approval received an invalid response while %s.", approval_stage)
-        if user_id:
-            try:
-                delete_auth_user(user_id)
-            except SupabaseAdminAPIError:
-                pass
-        try:
-            update_account_request(str(request_id), {"status": "pending"}, expected_status="processing")
-        except SupabaseAdminAPIError:
-            pass
-        raise HTTPException(status_code=502, detail="Account approval failed. Please retry.") from None
+        _LOGGER.warning(
+            "Account request approval received an invalid response while %s.",
+            locals().get("approval_stage", "checking the existing account"),
+        )
+        raise HTTPException(status_code=502, detail="Account approval could not be completed. The request is saved for retry.") from None
     return _serialize(_notify_decision(completed, link=invitation["action_link"]))
 
 
@@ -331,8 +462,8 @@ def retry_decision_email(
 ) -> AccountRequestResponse:
     ensure_email_ready()
     row = _load_request(request_id)
-    if row.get("notification_status") != "failed" or row.get("status") not in {"approved", "declined"}:
-        raise HTTPException(status_code=409, detail="There is no failed decision email to retry.")
+    if row.get("notification_status") not in {"failed", "pending"} or row.get("status") not in {"approved", "declined"}:
+        raise HTTPException(status_code=409, detail="There is no unsent or unconfirmed decision email to retry.")
     link = None
     if row["status"] == "approved":
         try:

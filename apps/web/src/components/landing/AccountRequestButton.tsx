@@ -93,7 +93,7 @@ export default function AccountRequestButton() {
               </div>
             ) : (
               <>
-                <p className="mt-3 text-sm leading-6 text-slate-400">Your account will be created only if an administrator approves your request. We will email you when a decision is made.</p>
+                <p className="mt-3 text-sm leading-6 text-slate-400">Your account will be created only if an administrator approves your request. If approved, we’ll email you a private setup link where you choose your password. Your password is never shared with or shown to the administrator.</p>
                 <form onSubmit={submit} className="mt-6 grid gap-4 sm:grid-cols-2">
                   <label className="text-sm text-slate-300">Full name
                     <input className={inputClass} type="text" autoComplete="name" required maxLength={120} value={fullName} onChange={(event) => setFullName(event.target.value)} />

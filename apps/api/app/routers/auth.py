@@ -2,12 +2,13 @@
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from app.security import AccountPrincipal, require_active_account
+from app.security import AccountPrincipal, request_client_ip, require_active_account
 from app.supabase_admin import (
     SupabaseAdminAPIError,
+    insert_customer_login_ip_event,
     sanitized_admin_error,
     update_auth_user_password,
 )
@@ -48,6 +49,22 @@ def get_current_account(
         role=account.role,  # type: ignore[arg-type]
         status=account.status,  # type: ignore[arg-type]
     )
+
+
+@router.post("/login-events", status_code=204)
+def record_login_event(
+    request: Request,
+    account: AccountPrincipal = Depends(require_active_account),
+) -> Response:
+    """Record one successful customer sign-in using only the API-observed IP."""
+    if account.role != "user":
+        return Response(status_code=204)
+    client_ip = request_client_ip(request)
+    try:
+        insert_customer_login_ip_event(account.id, client_ip)
+    except SupabaseAdminAPIError:
+        raise HTTPException(status_code=503, detail="Sign-in audit storage is temporarily unavailable.") from None
+    return Response(status_code=204)
 
 
 @router.put("/password", status_code=204)

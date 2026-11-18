@@ -243,6 +243,18 @@ async function fetchProfile(accessToken: string, expectedUserId: string): Promis
   return profile;
 }
 
+function recordCustomerLogin(accessToken: string): void {
+  // This is an audit side effect, not part of sign-in authorization. A logging
+  // outage must not prevent a verified customer from using the account.
+  void fetch(`${API_BASE_URL}/api/v1/auth/login-events`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    cache: "no-store",
+    credentials: "omit",
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => {});
+}
+
 function parseAuthUser(value: unknown): AuthUser | null {
   const record = asRecord(value);
   if (typeof record?.id !== "string" || typeof record.email !== "string") return null;
@@ -414,6 +426,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error("Sign-in was cancelled. Please sign in again.");
         }
         establishSession({ access_token: accessToken, user, chartSessionId: newTabId() }, nextProfile);
+        if (nextProfile.role === "user") recordCustomerLogin(accessToken);
       } catch (cause) {
         void signOutFromSupabase(accessToken);
         throw cause;

@@ -200,7 +200,12 @@ def test_approval_creates_user_without_ip_binding_and_sends_setup_link(store, mo
     monkeypatch.setattr(routes, "generate_account_link", lambda email, **kwargs: {
         "user": {"id": user_id}, "action_link": "https://auth.example/verify?token=secret"
     })
-    monkeypatch.setattr(routes, "get_profile", lambda account_id: {"id": account_id})
+    monkeypatch.setattr(routes, "get_auth_user", lambda account_id: {
+        "id": account_id, "email": "asha@example.com", "user_metadata": {},
+    })
+    monkeypatch.setattr(routes, "get_profile", lambda account_id: {
+        "id": account_id, "email": "asha@example.com", "role": "user", "status": "active",
+    })
     response = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
@@ -219,6 +224,11 @@ def test_approval_explains_existing_account_and_leaves_request_pending(store, mo
     existing_user_id = str(uuid4())
     monkeypatch.setattr(routes, "get_profile_by_email", lambda email: {
         "id": existing_user_id, "email": "asha@example.com", "role": "user", "status": "active",
+        "created_at": "2025-01-01T00:00:00+00:00",
+    })
+    monkeypatch.setattr(routes, "get_auth_user", lambda account_id: {
+        "id": account_id, "email": "asha@example.com", "created_at": "2025-01-01T00:00:00+00:00",
+        "email_confirmed_at": "2025-01-01T00:00:00+00:00", "last_sign_in_at": "2025-01-02T00:00:00+00:00",
     })
     monkeypatch.setattr(routes, "generate_account_link", lambda *args, **kwargs: pytest.fail("Duplicate account invite was attempted"))
 
@@ -227,6 +237,116 @@ def test_approval_explains_existing_account_and_leaves_request_pending(store, mo
     assert response.status_code == 409
     assert "already belongs to an AllSafe account" in response.json()["detail"]
     assert rows[request_id]["status"] == "pending"
+
+
+@pytest.mark.usefixtures("admin_account_override")
+def test_partial_approval_keeps_auth_id_and_retry_finishes_without_duplicate_creation(store, monkeypatch):
+    rows, calls = store
+    client.post("/api/v1/account-requests", json=application())
+    request_id = next(iter(rows))
+    user_id = str(uuid4())
+    attempts = []
+
+    def create_invite(email, **kwargs):
+        attempts.append(kwargs)
+        return {"user": {"id": user_id}, "action_link": "https://auth.example/verify?token=first"}
+
+    monkeypatch.setattr(routes, "generate_account_link", create_invite)
+    monkeypatch.setattr(routes, "get_auth_user", lambda account_id: (_ for _ in ()).throw(SupabaseAdminAPIError(503)))
+
+    failed = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
+
+    assert failed.status_code == 502
+    assert rows[request_id]["status"] == "processing"
+    assert rows[request_id]["auth_user_id"] == user_id
+    assert attempts[0]["data"]["allsafe_account_request_id"] == request_id
+
+    monkeypatch.setattr(routes, "get_auth_user", lambda account_id: {
+        "id": account_id, "email": "asha@example.com", "user_metadata": {},
+        "email_confirmed_at": "2026-11-19T00:00:00+00:00",
+    })
+    monkeypatch.setattr(routes, "get_profile", lambda account_id: {
+        "id": account_id, "email": "asha@example.com", "role": "user", "status": "active",
+    })
+    monkeypatch.setattr(routes, "generate_account_link", lambda email, **kwargs: {
+        "action_link": "https://auth.example/recovery?token=second",
+    })
+
+    resumed = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
+
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "approved"
+    assert resumed.json()["auth_user_id"] == user_id
+    assert rows[request_id]["status"] == "approved"
+    assert len(attempts) == 1, "Resume must not create a second Auth account."
+    assert ("approved", "asha@example.com", "https://auth.example/recovery?token=second") in calls
+
+
+@pytest.mark.usefixtures("admin_account_override")
+def test_legacy_unconfirmed_orphan_matching_request_is_recovered(store, monkeypatch):
+    rows, calls = store
+    client.post("/api/v1/account-requests", json=application())
+    request_id, row = next(iter(rows.items()))
+    user_id = str(uuid4())
+    row["created_at"] = "2026-11-19T00:00:00+00:00"
+    profile = {
+        "id": user_id, "email": "asha@example.com", "role": "user", "status": "active",
+        "created_at": "2026-11-19T00:01:00+00:00",
+    }
+    monkeypatch.setattr(routes, "get_profile_by_email", lambda email: profile)
+    monkeypatch.setattr(routes, "get_auth_user", lambda account_id: {
+        "id": account_id, "email": "asha@example.com", "created_at": "2026-11-19T00:01:00+00:00",
+        "user_metadata": {}, "email_confirmed_at": None, "last_sign_in_at": None,
+    })
+    monkeypatch.setattr(routes, "get_profile", lambda account_id: profile)
+    link_types = []
+
+    def link(email, **kwargs):
+        link_types.append(kwargs["link_type"])
+        return {"user": {"id": user_id}, "action_link": "https://auth.example/new-invite"}
+
+    monkeypatch.setattr(routes, "generate_account_link", link)
+
+    response = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
+
+    assert response.status_code == 200
+    assert response.json()["auth_user_id"] == user_id
+    assert response.json()["status"] == "approved"
+    assert link_types == ["invite"]
+    assert ("approved", "asha@example.com", "https://auth.example/new-invite") in calls
+
+
+@pytest.mark.usefixtures("admin_account_override")
+def test_email_status_write_failure_does_not_report_approval_failure(store, monkeypatch):
+    rows, _ = store
+    client.post("/api/v1/account-requests", json=application())
+    request_id = next(iter(rows))
+    user_id = str(uuid4())
+    monkeypatch.setattr(routes, "generate_account_link", lambda email, **kwargs: {
+        "user": {"id": user_id}, "action_link": "https://auth.example/verify?token=secret"
+    })
+    monkeypatch.setattr(routes, "get_auth_user", lambda account_id: {
+        "id": account_id, "email": "asha@example.com", "user_metadata": {},
+    })
+    monkeypatch.setattr(routes, "get_profile", lambda account_id: {
+        "id": account_id, "email": "asha@example.com", "role": "user", "status": "active",
+    })
+    original_update = routes.update_account_request
+
+    def fail_email_status_write(id_, changes, *, expected_status=None):
+        if "notification_status" in changes:
+            raise SupabaseAdminAPIError(503)
+        return original_update(id_, changes, expected_status=expected_status)
+
+    monkeypatch.setattr(routes, "update_account_request", fail_email_status_write)
+
+    response = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "approved"
+    assert response.json()["notification_status"] == "sent"
+    assert response.json()["notification_status_saved"] is False
+    assert rows[request_id]["status"] == "approved"
 
 
 @pytest.mark.usefixtures("admin_account_override")
@@ -278,11 +398,16 @@ def test_failed_approval_email_keeps_approved_account_and_can_retry(store, monke
     request_id = next(iter(rows))
     user_id = str(uuid4())
     link_types = []
-    def link(email, *, link_type, redirect_to):
+    def link(email, *, link_type, redirect_to, **kwargs):
         link_types.append(link_type)
         return {"user": {"id": user_id}, "action_link": "https://auth.example/verify?token=secret"}
     monkeypatch.setattr(routes, "generate_account_link", link)
-    monkeypatch.setattr(routes, "get_profile", lambda account_id: {"id": account_id})
+    monkeypatch.setattr(routes, "get_auth_user", lambda account_id: {
+        "id": account_id, "email": "asha@example.com", "user_metadata": {},
+    })
+    monkeypatch.setattr(routes, "get_profile", lambda account_id: {
+        "id": account_id, "email": "asha@example.com", "role": "user", "status": "active",
+    })
     monkeypatch.setattr(routes, "send_approved", lambda *args: (_ for _ in ()).throw(EmailDeliveryError()))
     approved = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
     assert approved.status_code == 200

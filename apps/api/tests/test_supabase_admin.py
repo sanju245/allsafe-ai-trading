@@ -96,3 +96,49 @@ def test_profile_lookup_by_email_normalizes_email(monkeypatch):
         "rest/v1/profiles",
         {"select": supabase_admin.PROFILE_COLUMNS, "email": "eq.sanjay200123@gmail.com", "limit": "1"},
     )]
+
+
+def test_account_link_can_tag_the_request_for_safe_retry_reconciliation(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        supabase_admin,
+        "_request_json",
+        lambda method, endpoint, **kwargs: calls.append((method, endpoint, kwargs["payload"])) or {
+            "action_link": "https://auth.example/invite", "user": {"id": "user-id"},
+        },
+    )
+
+    supabase_admin.generate_account_link(
+        "customer@example.com",
+        link_type="invite",
+        redirect_to="https://site.example/set-password",
+        data={"allsafe_account_request_id": "request-id"},
+    )
+
+    assert calls == [(
+        "POST",
+        "auth/v1/admin/generate_link",
+        {
+            "type": "invite",
+            "email": "customer@example.com",
+            "redirect_to": "https://site.example/set-password",
+            "data": {"allsafe_account_request_id": "request-id"},
+        },
+    )]
+
+
+def test_login_ip_event_insert_uses_service_role_rest_table(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        supabase_admin,
+        "_request_json",
+        lambda method, endpoint, **kwargs: calls.append((method, endpoint, kwargs)) or [{
+            "user_id": "user-id", "client_ip": "203.0.113.4", "logged_at": "2026-11-19T10:00:00Z",
+        }],
+    )
+
+    result = supabase_admin.insert_customer_login_ip_event("user-id", "203.0.113.4")
+
+    assert result["client_ip"] == "203.0.113.4"
+    assert calls[0][0:2] == ("POST", "rest/v1/customer_login_ip_events")
+    assert calls[0][2]["payload"] == {"user_id": "user-id", "client_ip": "203.0.113.4"}

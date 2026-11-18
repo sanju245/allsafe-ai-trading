@@ -97,6 +97,7 @@ function harness() {
       if (name === "next/link") return { default: "a" };
       if (name === "@/components/auth/AuthProvider") return { useAuth: () => auth };
       if (name === "@/components/admin/AccountRequestsPanel") return { default: "AccountRequestsPanel" };
+      if (name === "@/components/admin/LoginIPAuditPanel") return { default: "LoginIPAuditPanel" };
       throw new Error("Unexpected import: " + name);
     },
   };

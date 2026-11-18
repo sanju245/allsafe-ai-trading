@@ -24,6 +24,7 @@ ACCOUNT_REQUEST_COLUMNS = (
     "request_ip,status,notification_status,auth_user_id,decided_by,"
     "created_at,receipt_sent_at,decided_at,notification_sent_at"
 )
+CUSTOMER_LOGIN_EVENT_COLUMNS = "user_id,client_ip,logged_at"
 _REQUEST_TIMEOUT_SECONDS = 10
 
 
@@ -157,6 +158,17 @@ def get_profile_by_email(email: str, *, settings: Settings | None = None) -> dic
     return rows[0] if rows else None
 
 
+def get_auth_user(user_id: str, *, settings: Settings | None = None) -> dict[str, Any] | None:
+    """Fetch one Auth user from the server-only Admin API."""
+    result = _request_json("GET", f"auth/v1/admin/users/{user_id}", settings=settings)
+    if not isinstance(result, dict):
+        raise SupabaseAdminAPIError(502)
+    user = result.get("user", result)
+    if not isinstance(user, dict) or not isinstance(user.get("id"), str):
+        raise SupabaseAdminAPIError(502)
+    return user
+
+
 def list_customer_profiles(*, settings: Settings | None = None) -> list[dict[str, Any]]:
     rows = _request_json(
         "GET",
@@ -255,12 +267,18 @@ def generate_account_link(
     *,
     link_type: str,
     redirect_to: str,
+    data: dict[str, Any] | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     """An invite creates the Auth user; recovery refreshes a setup link."""
     result = _request_json(
         "POST", "auth/v1/admin/generate_link",
-        payload={"type": link_type, "email": email, "redirect_to": redirect_to},
+        payload={
+            "type": link_type,
+            "email": email,
+            "redirect_to": redirect_to,
+            **({"data": data} if data is not None else {}),
+        },
         settings=settings,
     )
     if not isinstance(result, dict) or not isinstance(result.get("action_link"), str):
@@ -270,6 +288,66 @@ def generate_account_link(
         if not isinstance(user, dict) or not isinstance(user.get("id"), str):
             raise SupabaseAdminAPIError(502)
     return result
+
+
+def insert_customer_login_ip_event(
+    user_id: str,
+    client_ip: str,
+    *,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    rows = _request_json(
+        "POST",
+        "rest/v1/customer_login_ip_events",
+        query={"select": CUSTOMER_LOGIN_EVENT_COLUMNS},
+        payload={"user_id": user_id, "client_ip": client_ip},
+        settings=settings,
+    )
+    if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
+        raise SupabaseAdminAPIError(502)
+    return rows[0]
+
+
+def list_customer_login_ip_events(
+    *,
+    limit: int = 500,
+    offset: int = 0,
+    settings: Settings | None = None,
+) -> list[dict[str, Any]]:
+    rows = _request_json(
+        "GET",
+        "rest/v1/customer_login_ip_events",
+        query={
+            "select": CUSTOMER_LOGIN_EVENT_COLUMNS,
+            "order": "logged_at.desc",
+            "limit": str(limit),
+            "offset": str(offset),
+        },
+        settings=settings,
+    )
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise SupabaseAdminAPIError(502)
+    return rows
+
+
+def list_customer_login_ip_daily_summaries(
+    *,
+    settings: Settings | None = None,
+) -> list[dict[str, Any]]:
+    rows = _request_json(
+        "GET",
+        "rest/v1/customer_login_ip_daily_summary",
+        query={
+            "select": "user_id,login_date,login_count,distinct_ip_count,ip_addresses",
+            "distinct_ip_count": "gt.1",
+            "order": "login_date.desc",
+            "limit": "5000",
+        },
+        settings=settings,
+    )
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise SupabaseAdminAPIError(502)
+    return rows
 
 
 def insert_account_request(values: dict[str, Any], *, settings: Settings | None = None) -> dict[str, Any]:

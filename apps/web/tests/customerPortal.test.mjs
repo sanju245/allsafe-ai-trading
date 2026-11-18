@@ -121,11 +121,26 @@ test("sign-in establishes only the API-verified profile for the authenticated su
   assert.equal(harness.context().profile.id, userId);
   assert.equal(harness.context().loading, false);
   assert.equal(JSON.parse(harness.calls[0].options.body).email, "customer@example.com");
-  assert.deepEqual(harness.timeouts, [12000, 65000]);
+  assert.deepEqual(harness.timeouts, [12000, 65000, 5000]);
+  assert.ok(harness.calls.some(({ url }) => url.endsWith("/api/v1/auth/login-events")));
   for (const { options } of harness.calls) {
     assert.equal(options.credentials, "omit");
     assert.ok(options.signal instanceof AbortSignal);
   }
+});
+
+test("customer sign-in remains successful when login IP audit storage is unavailable", async () => {
+  const harness = authHarness(async (url) => {
+    if (url.includes("/token?")) return json(authReply);
+    if (url.endsWith("/api/v1/auth/login-events")) throw new Error("audit service unavailable");
+    return json(activeProfile);
+  });
+
+  await harness.context().signIn("customer@example.com", "password-123");
+  await delay(0);
+
+  assert.equal(harness.context().session.user.id, userId);
+  assert.ok(harness.calls.some(({ url }) => url.endsWith("/api/v1/auth/login-events")));
 });
 
 test("a different profile subject cannot establish a signed-in customer session", async () => {
@@ -229,6 +244,7 @@ test("active admin profiles are verified without IP metadata", async () => {
   await harness.context().signIn("admin@example.com", "password-123");
   assert.equal(harness.context().profile.role, "admin");
   assert.equal("allowed_ip" in harness.context().profile, false);
+  assert.ok(!harness.calls.some(({ url }) => url.endsWith("/api/v1/auth/login-events")));
 });
 
 test("a chart tab receives only its invited session and verifies the profile with the API", async (t) => {
