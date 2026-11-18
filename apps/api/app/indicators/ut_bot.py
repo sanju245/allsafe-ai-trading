@@ -9,6 +9,7 @@ closed candles from the caller's validated market-data pipeline.
 
 import math
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 from app.market_data.models import Candle
@@ -21,7 +22,7 @@ class UTBotSignal(StrEnum):
 
 @dataclass(frozen=True)
 class UTBotPoint:
-    timestamp: object
+    timestamp: datetime
     source_price: float
     atr: float | None
     trailing_stop: float | None
@@ -41,8 +42,15 @@ def calculate_ut_bot(
     ATR uses Wilder's RMA, seeded with the simple average of the first
     `atr_period` true-range values. Heikin Ashi mode uses OHLC4 as source.
     """
-    if not math.isfinite(sensitivity) or sensitivity <= 0:
+    if (
+        isinstance(sensitivity, bool)
+        or not isinstance(sensitivity, (int, float))
+        or not math.isfinite(sensitivity)
+        or sensitivity <= 0
+    ):
         raise ValueError("sensitivity must be finite and greater than zero")
+    if not isinstance(use_heikin_ashi, bool):
+        raise ValueError("use_heikin_ashi must be a boolean")
     if isinstance(atr_period, bool) or not isinstance(atr_period, int) or atr_period < 1:
         raise ValueError("atr_period must be a positive integer")
 

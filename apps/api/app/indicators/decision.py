@@ -1,6 +1,7 @@
-"""Five-indicator unanimous signal decision engine."""
+"""Five-indicator decision engine with a dedicated 15-minute index setup."""
+
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, time
 from enum import StrEnum
 
 from app.indicators.ema import calculate_ema_trend
@@ -9,6 +10,8 @@ from app.indicators.rsi import calculate_rsi
 from app.indicators.supertrend import calculate_supertrend
 from app.indicators.ut_bot import UTBotSignal, calculate_ut_bot
 from app.market_data.models import Candle
+from app.market_data.sessions import to_ist
+from app.market_data.timeframes import Timeframe
 
 
 class TradeDecision(StrEnum):
@@ -16,6 +19,7 @@ class TradeDecision(StrEnum):
     SELL = "SELL"
     WAIT = "WAIT"
     DATA_UNAVAILABLE = "DATA_UNAVAILABLE"
+
 
 @dataclass(frozen=True)
 class DecisionPoint:
@@ -28,28 +32,158 @@ class DecisionPoint:
     supertrend_bullish: bool | None
     reason: str
 
-def calculate_decisions(candles: list[Candle], *, sensitivity: float = 1.0,
-                        atr_period: int = 10, use_heikin_ashi: bool = False,
-                        rsi_period: int = 14, supertrend_period: int = 10,
-                        supertrend_multiplier: float = 3.0) -> list[DecisionPoint]:
-    """Caller must pass validated, chronological, closed candles. No orders are placed."""
+
+def _has_warmup(ut, ema, rsi, macd, supertrend) -> bool:
+    return (
+        ut.atr is None
+        or ut.trailing_stop is None
+        or ema.ema9 is None
+        or ema.ema21 is None
+        or ema.ema50 is None
+        or rsi.rsi is None
+        or macd.histogram is None
+        or supertrend.direction is None
+    )
+
+
+def _directional_confirmation(point, direction: int) -> bool:
+    return point.bullish is True if direction == 1 else point.bearish is True
+
+
+def calculate_decisions(
+    candles: list[Candle],
+    *,
+    sensitivity: float = 1.0,
+    atr_period: int = 10,
+    use_heikin_ashi: bool = False,
+    rsi_period: int = 14,
+    supertrend_period: int = 10,
+    supertrend_multiplier: float = 3.0,
+) -> list[DecisionPoint]:
+    """Evaluate confirmed candles; no orders are placed.
+
+    Fifteen-minute candles use one opening-range breakout attempt per NSE session.
+    Other timeframes retain the UT Bot crossover trigger and require all four
+    confirmations to point in the same direction.
+    """
     if not candles:
         return []
-    ut = calculate_ut_bot(candles, sensitivity=sensitivity, atr_period=atr_period,
-                          use_heikin_ashi=use_heikin_ashi)
-    ema, rsi, macd = calculate_ema_trend(candles), calculate_rsi(candles, rsi_period), calculate_macd(candles)
-    st = calculate_supertrend(candles, supertrend_period, supertrend_multiplier)
-    out = []
-    for i, candle in enumerate(candles):
-        filters = (ema[i].bullish, rsi[i].bullish, macd[i].bullish, st[i].bullish)
-        trigger = ut[i].signal
-        if any(v is None for v in filters) or ut[i].atr is None or ut[i].trailing_stop is None:
-            decision, reason = TradeDecision.DATA_UNAVAILABLE, "Indicator warm-up: insufficient candle history."
-        elif trigger == UTBotSignal.BUY and all(v is True for v in filters):
-            decision, reason = TradeDecision.BUY, "UT Bot BUY; all four confirmation indicators bullish."
-        elif trigger == UTBotSignal.SELL and all(v is False for v in filters):
-            decision, reason = TradeDecision.SELL, "UT Bot SELL; all four confirmation indicators bearish."
+
+    ut_points = calculate_ut_bot(
+        candles,
+        sensitivity=sensitivity,
+        atr_period=atr_period,
+        use_heikin_ashi=use_heikin_ashi,
+    )
+    ema_points = calculate_ema_trend(candles)
+    rsi_points = calculate_rsi(candles, rsi_period)
+    macd_points = calculate_macd(candles)
+    supertrend_points = calculate_supertrend(
+        candles, supertrend_period, supertrend_multiplier
+    )
+
+    is_15m = candles[0].timeframe is Timeframe.M15
+    opening_ranges: dict[date, tuple[int, float, float]] = {}
+    if is_15m:
+        for index, candle in enumerate(candles):
+            local = to_ist(candle.timestamp)
+            if local.time() == time(9, 15):
+                opening_ranges[local.date()] = (index, candle.high, candle.low)
+
+    attempted_sessions: set[date] = set()
+    decisions: list[DecisionPoint] = []
+
+    for index, candle in enumerate(candles):
+        ut = ut_points[index]
+        ema = ema_points[index]
+        rsi = rsi_points[index]
+        macd = macd_points[index]
+        supertrend = supertrend_points[index]
+        filters = (ema.bullish, rsi.bullish, macd.bullish, supertrend.bullish)
+        local = to_ist(candle.timestamp)
+
+        opening_reason = "Waiting for the first confirmed close outside the 09:15 opening range."
+        opening_direction = 0
+        if is_15m:
+            session = local.date()
+            opening = opening_ranges.get(session)
+            if opening is None:
+                opening_reason = "No 09:15 opening candle; opening-range signals are disabled for this session."
+            elif index <= opening[0]:
+                opening_reason = "Waiting for the first confirmed close outside the 09:15 opening range."
+            elif local.time() > time(14, 15):
+                opening_reason = "Late-session breakout ignored; 15-minute signals stop after 14:15."
+            elif session in attempted_sessions:
+                opening_reason = "The first opening-range breakout for this session was already evaluated."
+            else:
+                opening_high, opening_low = opening[1], opening[2]
+                opening_direction = (
+                    1 if candle.close > opening_high
+                    else -1 if candle.close < opening_low
+                    else 0
+                )
+                if opening_direction:
+                    # Consume the first range break even if a gate is neutral or
+                    # warming up; later breaks are not a second attempt.
+                    attempted_sessions.add(session)
+
+        if _has_warmup(ut, ema, rsi, macd, supertrend):
+            decision = TradeDecision.DATA_UNAVAILABLE
+            reason = "Indicator warm-up: insufficient candle history."
+        elif is_15m:
+            if not opening_direction:
+                decision = TradeDecision.WAIT
+                reason = opening_reason
+            else:
+                ut_aligned = ut.position == opening_direction
+                ema_aligned = _directional_confirmation(ema, opening_direction)
+                trend_aligned = _directional_confirmation(supertrend, opening_direction)
+                momentum_aligned = (
+                    _directional_confirmation(rsi, opening_direction)
+                    or _directional_confirmation(macd, opening_direction)
+                )
+                if ut_aligned and ema_aligned and trend_aligned and momentum_aligned:
+                    side = "BUY" if opening_direction == 1 else "SELL"
+                    decision = (
+                        TradeDecision.BUY if opening_direction == 1 else TradeDecision.SELL
+                    )
+                    momentum_name = (
+                        "RSI"
+                        if _directional_confirmation(rsi, opening_direction)
+                        else "MACD"
+                    )
+                    reason = (
+                        f"15m opening-range {side}; UT Bot position, EMA and Supertrend "
+                        f"align; {momentum_name} confirms."
+                    )
+                else:
+                    side = "BUY" if opening_direction == 1 else "SELL"
+                    decision = TradeDecision.WAIT
+                    reason = (
+                        f"Opening-range {side} breakout filtered; required indicator "
+                        "directions do not align."
+                    )
+        elif ut.signal == UTBotSignal.BUY and all(value is True for value in filters):
+            decision = TradeDecision.BUY
+            reason = "UT Bot BUY; all four confirmation indicators bullish."
+        elif ut.signal == UTBotSignal.SELL and all(value is False for value in filters):
+            decision = TradeDecision.SELL
+            reason = "UT Bot SELL; all four confirmation indicators bearish."
         else:
-            decision, reason = TradeDecision.WAIT, "No unanimous confirmed signal on this candle."
-        out.append(DecisionPoint(candle.timestamp, decision, trigger, *filters, reason))
-    return out
+            decision = TradeDecision.WAIT
+            reason = "No confirmed UT Bot crossover with four directional confirmations."
+
+        decisions.append(
+            DecisionPoint(
+                timestamp=candle.timestamp,
+                decision=decision,
+                ut_bot_signal=ut.signal,
+                ema_bullish=ema.bullish,
+                rsi_bullish=rsi.bullish,
+                macd_bullish=macd.bullish,
+                supertrend_bullish=supertrend.bullish,
+                reason=reason,
+            )
+        )
+
+    return decisions
