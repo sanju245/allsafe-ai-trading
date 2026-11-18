@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { webcrypto } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import vm from "node:vm";
+import { BroadcastChannel } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
@@ -16,6 +19,13 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "Content-Type": "application/json" },
 });
 
+class TestBroadcastChannel extends BroadcastChannel {
+  constructor(name) {
+    super(name);
+    this.unref();
+  }
+}
+
 function compile(relativePath) {
   const fullPath = path.join(webRoot, relativePath);
   const output = ts.transpileModule(fs.readFileSync(fullPath, "utf8"), {
@@ -26,11 +36,20 @@ function compile(relativePath) {
   return output.outputText;
 }
 
-function authHarness(fetchImpl) {
+function authHarness(fetchImpl, href = "https://site.example.test/") {
   const slots = [];
   let cursor = 0;
+  let effect;
   const calls = [];
   const timeouts = [];
+  const location = new URL(href);
+  const history = {
+    state: { existing: true },
+    replaceState(state, title, url) {
+      assert.strictEqual(state, this.state);
+      location.href = new URL(url, location).href;
+    },
+  };
   const hooks = {
     createContext: () => ({ Provider: "AuthContextProvider" }),
     useState: (initial) => {
@@ -45,6 +64,7 @@ function authHarness(fetchImpl) {
     },
     useMemo: (callback) => callback(),
     useCallback: (callback) => callback,
+    useEffect: (callback) => { effect = callback; },
   };
   const moduleObj = { exports: {} };
   vm.runInNewContext(compile("src/components/auth/AuthProvider.tsx"), {
@@ -65,20 +85,33 @@ function authHarness(fetchImpl) {
         return AbortSignal.timeout(milliseconds);
       },
     },
-    console,
+    console, crypto: webcrypto, BroadcastChannel: TestBroadcastChannel,
+    window: { location, history, setTimeout, clearTimeout },
     fetch: async (url, options) => {
       calls.push({ url, options });
       return fetchImpl(url, options);
     },
   });
-  return {
-    calls,
-    timeouts,
-    context: () => {
-      cursor = 0;
-      return moduleObj.exports.AuthProvider({ children: null }).props.value;
-    },
+  const context = () => {
+    cursor = 0;
+    return moduleObj.exports.AuthProvider({ children: null }).props.value;
   };
+  return {
+    calls, timeouts, context, location,
+    mount(t) {
+      context();
+      t.after(effect());
+    },
+    chartSessionFragment: moduleObj.exports.chartSessionFragment,
+  };
+}
+
+async function waitForAuth(condition) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (condition()) return;
+    await delay(10);
+  }
+  assert.fail("Timed out waiting for the auth state");
 }
 
 test("sign-in establishes only the API-verified profile for the authenticated subject and bounds requests", async () => {
@@ -198,6 +231,85 @@ test("active admin profiles are verified without IP metadata", async () => {
   assert.equal("allowed_ip" in harness.context().profile, false);
 });
 
+test("a chart tab receives only its invited session and verifies the profile with the API", async (t) => {
+  const source = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json(activeProfile));
+  const otherId = "00000000-0000-4000-8000-000000000002";
+  const otherUser = { id: otherId, email: "other@example.com" };
+  const other = authHarness(async (url) => url.includes("/token?")
+    ? json({ access_token: "other-token", user: otherUser })
+    : json({ ...activeProfile, ...otherUser }));
+  source.mount(t);
+  other.mount(t);
+  await source.context().signIn("customer@example.com", "password-123");
+  await other.context().signIn("other@example.com", "password-123");
+  const fragment = source.chartSessionFragment(source.context().chartSessionId);
+  assert.match(fragment, /^#session=[0-9a-f-]{36}$/);
+
+  const chart = authHarness(async (url) => url.includes("/logout")
+    ? new Response(null, { status: 204 })
+    : json(activeProfile), `https://site.example.test/chart/BANKNIFTY?provider=upstox&days=14${fragment}`);
+  chart.mount(t);
+  await waitForAuth(() => !chart.context().loading);
+  assert.equal(chart.context().session?.user.id, userId);
+  assert.equal(chart.context().chartSessionId, source.context().chartSessionId);
+  assert.equal(chart.calls.length, 1);
+  assert.equal(chart.calls[0].url, "https://api.example.test/api/v1/auth/me");
+  assert.equal(chart.calls[0].options.headers.Authorization, "Bearer test-token");
+  assert.equal(chart.location.href, "https://site.example.test/chart/BANKNIFTY?provider=upstox&days=14");
+
+  await chart.context().signOut();
+  await waitForAuth(() => source.context().session === null);
+  assert.equal(other.context().session.user.id, otherId);
+});
+
+test("a chart tab rejects a shared credential when the account service denies access", async (t) => {
+  const source = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json(activeProfile));
+  source.mount(t);
+  await source.context().signIn("customer@example.com", "password-123");
+  const fragment = source.chartSessionFragment(source.context().chartSessionId);
+  const chart = authHarness(() => json({ detail: "Account paused" }, 403), `https://site.example.test/chart/NIFTY50${fragment}`);
+  chart.mount(t);
+  await waitForAuth(() => !chart.context().loading);
+  assert.equal(chart.calls.length, 1);
+  assert.equal(chart.context().session, null);
+  assert.equal(chart.context().profile, null);
+});
+
+test("a chart tab cannot restore a shared session after its source signs out", async (t) => {
+  const source = authHarness(async (url) => {
+    if (url.includes("/logout")) return new Response(null, { status: 204 });
+    return url.includes("/token?") ? json(authReply) : json(activeProfile);
+  });
+  source.mount(t);
+  await source.context().signIn("customer@example.com", "password-123");
+  const fragment = source.chartSessionFragment(source.context().chartSessionId);
+
+  let finishProfile;
+  const chart = authHarness(() => new Promise((resolve) => { finishProfile = resolve; }), `https://site.example.test/chart/NIFTY50${fragment}`);
+  chart.mount(t);
+  await waitForAuth(() => Boolean(finishProfile));
+  await source.context().signOut();
+  await waitForAuth(() => !chart.context().loading);
+  finishProfile(json(activeProfile));
+  await delay(0);
+  assert.equal(chart.context().session, null);
+  assert.equal(chart.context().profile, null);
+});
+
+test("a chart tab with no open source resolves to signed out without an API call", async (t) => {
+  const fragment = `#session=${webcrypto.randomUUID()}`;
+  const chart = authHarness(
+    () => assert.fail("An invitation without an open source must not make an API request"),
+    `https://site.example.test/chart/BANKNIFTY?provider=upstox${fragment}`,
+  );
+  chart.mount(t);
+  assert.equal(chart.context().loading, true);
+  await waitForAuth(() => !chart.context().loading);
+  assert.equal(chart.context().session, null);
+  assert.equal(chart.location.href, "https://site.example.test/chart/BANKNIFTY?provider=upstox");
+  assert.equal(chart.calls.length, 0);
+});
+
 test("terminal includes the separate Upstox 15-minute historical chart", () => {
   compile("src/components/Upstox15mHistory.tsx");
   const component = fs.readFileSync(path.join(webRoot, "src/components/Upstox15mHistory.tsx"), "utf8");
@@ -215,6 +327,13 @@ test("customer return destinations accept only supported local routes", () => {
   const destination = moduleObj.exports.customerDestination;
   assert.equal(destination("?next=%2Faccount"), "/account");
   assert.equal(destination("?next=%2Fterminal"), "/terminal");
+  const selectChart = (next) => destination(new URLSearchParams({ next }).toString());
+  assert.equal(selectChart("/chart/NIFTY50"), "/chart/NIFTY50");
+  assert.equal(selectChart("/chart/BANKNIFTY?provider=upstox&days=14"), "/chart/BANKNIFTY?provider=upstox&days=14");
+  assert.equal(selectChart("/chart/BANKNIFTY?provider=upstox&days=31&redirect=https://evil.test"), "/chart/BANKNIFTY?provider=upstox");
+  assert.equal(selectChart("/chart/NIFTY50?provider=groww&days=7"), "/chart/NIFTY50?provider=groww");
+  assert.equal(selectChart("//evil.test/chart/NIFTY50"), "/terminal");
+  assert.equal(selectChart("/chart/NOTANINDEX"), "/terminal");
   for (const search of ["", "?next=https://evil.test", "?next=//evil.test", "?next=javascript:alert(1)", "?next=/admin", "?next=/terminal?url=https://evil.test"]) {
     assert.equal(destination(search), "/terminal");
   }
@@ -255,8 +374,10 @@ function dashboardHarness() {
       };
       if (name === "next/link") return { default: "a" };
       if (name === "@/components/auth/AuthProvider") return {
+        chartSessionFragment: (sessionId) => sessionId ? `#session=${sessionId}` : "",
         useAuth: () => ({
           session: { access_token: "test-token" },
+          chartSessionId: userId,
           signOut: async () => { signedOut = true; },
         }),
       };
@@ -373,6 +494,7 @@ test("a server-reported stale quote is retained only as non-current historical d
   assert.equal(dashboard.snapshots().NIFTY50.current, false);
   assert.equal(dashboard.snapshots().NIFTY50.feedState, "stale");
   assert.equal(dashboard.snapshots().NIFTY50.candles.length, 1);
+  assert.doesNotMatch(JSON.stringify(dashboard.view()), /Current confirmed signal/);
   cleanup();
 });
 
@@ -401,7 +523,7 @@ test("each index title opens a separate chart tab and shows the latest decision"
   };
   const links = visit(dashboard.view());
   for (const symbol of ["NIFTY50", "BANKNIFTY"]) {
-    assert.ok(links.some((link) => link.props?.href === `/chart/${symbol}` && link.props?.target === "_blank"));
+    assert.ok(links.some((link) => link.props?.href === `/chart/${symbol}?provider=groww#session=${userId}` && link.props?.target === "_blank"));
   }
   assert.equal(dashboard.snapshots().NIFTY50.decision.decision, "BUY");
   assert.ok(dashboard.requests().some((url) => url.includes("timeframe=15m")));

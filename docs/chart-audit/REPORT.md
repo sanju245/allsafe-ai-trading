@@ -32,3 +32,12 @@ API fixture coverage checks the 15-minute default, rejection of `5m`, historical
 ## Live-data limits
 
 The checks above use repository fixtures and build/test tools. They do not establish that a real Groww or Upstox feed is connected or that a production customer session can fetch current prices. Live candle and signal availability still depends on the selected provider being configured, a valid customer session, and complete confirmed data. The chart identifies unavailable or stale data rather than treating it as a current signal.
+
+## Follow-up repairs from the production audit
+
+- Both index charts reuse an active browser session when opened from the terminal. The chart verifies the account with the API and joins sign-out across linked tabs. An expired invitation leads to sign-in and returns to the requested chart and history range.
+- The chart provider selector updates the URL and requests the selected provider immediately. Upstox historical chart links keep their selected date range and can show completed candles when the live request is unavailable.
+- A failed refresh clears the chart's current decision and live markers. The API only marks a BUY or SELL signal current when the feed is fresh and the decision comes from the latest closed candle in the current session.
+- The Upstox runtime loads completed 15-minute history for both indices on startup. The historical adapter uses the intraday endpoint for the current session and the historical endpoint for earlier sessions.
+
+The browser audit used a Next.js production build, real separate browser tabs, and synthetic sign-in and candle responses. It verified the two chart tabs after one sign-in, 15-minute candles, BUY and SELL markers, zoom, the historical range, provider switching, refresh error handling, and group sign-out. The test uses a disposable browser profile and can also verify the browser build on the public deployment. See `apps/web/scripts/browser-chart-audit.mjs`.

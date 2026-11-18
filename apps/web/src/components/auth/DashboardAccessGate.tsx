@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
-export default function DashboardAccessGate({ children }: { children: ReactNode }) {
+export default function DashboardAccessGate({
+  children,
+  signInDestination = "/terminal",
+}: {
+  children: ReactNode;
+  signInDestination?: string;
+}) {
   const router = useRouter();
   const { session, profile, loading, signOut } = useAuth();
 
@@ -33,7 +39,7 @@ export default function DashboardAccessGate({ children }: { children: ReactNode 
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
             Your administrator creates your account. Sign in with your email and password from any network.
           </p>
-          <Link href="/login?next=%2Fterminal" className="mt-5 inline-flex rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
+          <Link href={`/login?${new URLSearchParams({ next: signInDestination })}`} className="mt-5 inline-flex rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
             Go to sign in
           </Link>
         </section>

@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 type MarketSymbol = "NIFTY50" | "BANKNIFTY";
@@ -44,7 +45,35 @@ type QuoteResponse = {
   quote: { ltp: number; timestamp: string } | null;
 };
 type FormingResponse = { available: boolean; forming_candle: Candle | null };
+type HistoryResponse = {
+  timeframe: string;
+  start_date: string;
+  candles: Candle[];
+  message: string;
+};
 type Provider = "groww" | "upstox";
+type ChartScope = {
+  symbol: MarketSymbol;
+  provider: Provider;
+  token: string | undefined;
+  historyDays: number | null;
+};
+type LiveSnapshot = {
+  scope: ChartScope;
+  candles: Candle[];
+  decision: Decision;
+  signalHistory: SignalPoint[];
+  quote: QuoteResponse["quote"];
+  feedState: string;
+  message: string;
+  checkedAt: Date;
+};
+type HistorySnapshot = {
+  scope: ChartScope;
+  data: HistoryResponse;
+};
+type ChartError = { scope: ChartScope; message: string };
+const emptyCandles: Candle[] = [];
 const chartControlClass = "min-h-9 rounded border border-white/10 px-2 text-xs text-slate-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400";
 
 function subscribeToMarketProvider(onChange: () => void) {
@@ -57,15 +86,47 @@ function subscribeToMarketProvider(onChange: () => void) {
 }
 
 function getMarketProviderSnapshot(): Provider {
-  const requested = new URLSearchParams(window.location.search).get("provider");
-  if (requested === "groww" || requested === "upstox") return requested;
-  const stored = window.localStorage.getItem("allsafe-market-provider");
-  return stored === "upstox" ? "upstox" : "groww";
+  try {
+    return window.localStorage.getItem("allsafe-market-provider") === "upstox" ? "upstox" : "groww";
+  } catch {
+    return "groww";
+  }
 }
 
 function setMarketProvider(provider: Provider) {
-  window.localStorage.setItem("allsafe-market-provider", provider);
-  window.dispatchEvent(new Event("allsafe-market-provider-change"));
+  const params = new URLSearchParams(window.location.search);
+  params.set("provider", provider);
+  if (provider !== "upstox") params.delete("days");
+  window.history.replaceState(null, "", `?${params.toString()}${window.location.hash}`);
+  try {
+    window.localStorage.setItem("allsafe-market-provider", provider);
+    window.dispatchEvent(new Event("allsafe-market-provider-change"));
+  } catch {
+    // The URL still preserves the selected provider when storage is unavailable.
+  }
+}
+
+function selectedHistoryDays(provider: Provider, days: string | null): number | null {
+  if (provider !== "upstox" || !days || !/^(?:[1-9]|[12][0-9]|30)$/.test(days)) return null;
+  return Number(days);
+}
+
+function mergeChartCandles(history: HistoryResponse | undefined, live: Candle[]): Candle[] {
+  const candles = new Map<number, Candle>();
+  for (const candle of history?.candles ?? []) {
+    if (candle.timeframe === "15m") candles.set(Date.parse(candle.timestamp), { ...candle, is_forming: false });
+  }
+  const start = history ? Date.parse(`${history.start_date}T00:00:00+05:30`) : -Infinity;
+  for (const candle of live) {
+    const timestamp = Date.parse(candle.timestamp);
+    if (candle.timeframe !== "15m" || timestamp < start) continue;
+    if ((candle.is_incomplete || candle.is_forming) && candles.has(timestamp)) continue;
+    candles.set(timestamp, candle);
+  }
+  return Array.from(candles.entries())
+    .filter(([timestamp]) => Number.isFinite(timestamp))
+    .sort(([left], [right]) => left - right)
+    .map(([, candle]) => candle);
 }
 
 const API_BASE_URL = (
@@ -166,7 +227,7 @@ function CandlestickPanel({
   const end = Math.max(0, candles.length - offset);
   const start = Math.max(0, end - visibleCount);
   const visible = candles.slice(start, end);
-  const decisionByTimestamp = new Map(signalHistory.map((point) => [point.timestamp, point.decision]));
+  const decisionByTimestamp = new Map(signalHistory.map((point) => [Date.parse(point.timestamp), point.decision]));
   const minimum = visible.length ? Math.min(...visible.map((candle) => candle.low)) : 0;
   const maximum = visible.length ? Math.max(...visible.map((candle) => candle.high)) : 1;
   const range = Math.max(maximum - minimum, Math.abs(maximum) * 0.0001, 1);
@@ -174,8 +235,10 @@ function CandlestickPanel({
   const plotWidth = width - left - right;
   const slot = visible.length ? plotWidth / visible.length : plotWidth;
   const visibleSignals = visible.flatMap((candle, index) => {
-    const eventDecision = decisionByTimestamp.get(candle.timestamp);
-    const latestMatches = decision.candle_timestamp === candle.timestamp;
+    if (candle.is_forming || candle.is_incomplete) return [];
+    const timestamp = Date.parse(candle.timestamp);
+    const eventDecision = decisionByTimestamp.get(timestamp);
+    const latestMatches = decision.candle_timestamp !== null && Date.parse(decision.candle_timestamp) === timestamp;
     const signal = eventDecision === "BUY" || eventDecision === "SELL"
       ? eventDecision
       : latestMatches && (decision.decision === "BUY" || decision.decision === "SELL")
@@ -197,9 +260,9 @@ function CandlestickPanel({
           <button onClick={onNewer} disabled={offset === 0} className={chartControlClass}>Newer →</button>
           <button onClick={onLatest} className={chartControlClass}>Latest</button>
           <span className="mx-1 hidden h-5 border-l border-white/10 sm:inline" />
-          <button onClick={onZoomOut} aria-label="Zoom out" className={chartControlClass}>−</button>
+          <button onClick={onZoomOut} disabled={visibleCount >= 300} aria-label="Zoom out" className={chartControlClass}>−</button>
           <span className="min-w-12 text-center text-xs tabular-nums text-slate-400">{visibleCount} bars</span>
-          <button onClick={onZoomIn} aria-label="Zoom in" className={chartControlClass}>+</button>
+          <button onClick={onZoomIn} disabled={visibleCount <= 20} aria-label="Zoom in" className={chartControlClass}>+</button>
         </div>
       </div>
       {visible.length === 0 ? (
@@ -233,11 +296,12 @@ function CandlestickPanel({
               const bodyHeight = Math.max(Math.abs(y(candle.open) - y(candle.close)), 2);
               const bodyWidth = Math.max(Math.min(slot * 0.62, 18), 2);
               const dateIndex = index === 0 || index === visible.length - 1 || index % Math.max(1, Math.floor(visible.length / 6)) === 0;
+              const outline = candle.is_incomplete ? "3 3" : undefined;
               return (
                 <g key={candle.timestamp} opacity={candle.is_forming ? 0.6 : 1}>
-                  <line x1={x} x2={x} y1={y(candle.high)} y2={y(candle.low)} stroke={color} strokeWidth="1.5" />
+                  <line x1={x} x2={x} y1={y(candle.high)} y2={y(candle.low)} stroke={color} strokeWidth="1.5" strokeDasharray={outline} />
                   <rect x={x - bodyWidth / 2} y={bodyTop} width={bodyWidth} height={bodyHeight}
-                    fill={bullish ? color : "#0b1118"} stroke={color} strokeWidth="1.5" rx="1" />
+                    fill={bullish && !candle.is_incomplete ? color : "#0b1118"} stroke={color} strokeWidth="1.5" strokeDasharray={outline} rx="1" />
                   {dateIndex && <text x={x} y={height - 16} textAnchor="middle" fill="#94a3b8" fontSize="11">{timeLabel(candle.timestamp)}</text>}
                 </g>
               );
@@ -245,7 +309,8 @@ function CandlestickPanel({
             {visibleSignals.map(({ candle, index, signal }) => {
               const x = left + index * slot + slot / 2;
               const markerY = Math.max(top + 7, y(candle.high) - 26);
-              const current = decision.candle_timestamp === candle.timestamp;
+              const current = decision.candle_timestamp !== null &&
+                Date.parse(decision.candle_timestamp) === Date.parse(candle.timestamp);
               const markerWidth = current ? 54 : 22;
               const label = current ? signal : signal === "BUY" ? "B" : "S";
               return (
@@ -259,7 +324,7 @@ function CandlestickPanel({
               );
             })}
             {visible.some((candle) => candle.is_forming) && (
-              <text x={left + 6} y={top + 16} fill="#fbbf24" fontSize="11">Dashed opacity marks the forming candle</text>
+              <text x={left + 6} y={top + 16} fill="#fbbf24" fontSize="11">Faded candle is still forming</text>
             )}
           </svg>
         </div>
@@ -267,6 +332,7 @@ function CandlestickPanel({
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/10 px-4 py-3 text-xs text-slate-400">
         <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-400" />Bullish candle</span>
         <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-rose-400" />Bearish candle</span>
+        {visible.some((candle) => candle.is_incomplete) && <span>Dashed outline means incomplete data</span>}
         {decision.candle_timestamp && <span>Signal evaluated on {timeLabel(decision.candle_timestamp)} IST</span>}
       </div>
     </section>
@@ -279,83 +345,133 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
   const instrumentName = validSymbol ? labels[normalizedSymbol] : "Index";
   const { session, signOut } = useAuth();
   const token = session?.access_token;
-  const provider = useSyncExternalStore(subscribeToMarketProvider, getMarketProviderSnapshot, () => "groww");
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [signalHistory, setSignalHistory] = useState<SignalPoint[]>([]);
-  const [decision, setDecision] = useState<Decision>(emptyDecision);
-  const [quote, setQuote] = useState<QuoteResponse["quote"]>(null);
-  const [feedState, setFeedState] = useState("checking");
-  const [feedMessage, setFeedMessage] = useState("Connecting to the market-data service.");
-  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const requestedProvider = searchParams.get("provider");
+  const storedProvider = useSyncExternalStore<Provider>(subscribeToMarketProvider, getMarketProviderSnapshot, () => "groww");
+  const provider = requestedProvider === "groww" || requestedProvider === "upstox" ? requestedProvider : storedProvider;
+  const historyDays = selectedHistoryDays(provider, searchParams.get("days"));
+  const scope = useMemo<ChartScope>(
+    () => ({ symbol: normalizedSymbol, provider, token, historyDays }),
+    [normalizedSymbol, provider, token, historyDays],
+  );
+  const [liveSnapshot, setLiveSnapshot] = useState<LiveSnapshot | null>(null);
+  const [historySnapshot, setHistorySnapshot] = useState<HistorySnapshot | null>(null);
+  const [liveFailure, setLiveFailure] = useState<ChartError | null>(null);
+  const [historyFailure, setHistoryFailure] = useState<ChartError | null>(null);
   const [visibleCount, setVisibleCount] = useState(80);
-  const [offset, setOffset] = useState(0);
-  const activeRefresh = useRef<AbortSignal | null>(null);
-
-  const refresh = useCallback(async (signal: AbortSignal) => {
-    if (!token || !validSymbol || signal.aborted || (activeRefresh.current && !activeRefresh.current.aborted)) return;
-    activeRefresh.current = signal;
-    const query = `?symbol=${normalizedSymbol}&provider=${provider}`;
-    try {
-      const [candleData, quoteData, formingData] = await Promise.all([
-        getJson<CandleResponse>(`/api/v1/live/candles${query}&timeframe=15m&limit=500&include_indicator_history=true`, token, signal),
-        getJson<QuoteResponse>(`/api/v1/live/quote${query}`, token, signal),
-        getJson<FormingResponse>(`/api/v1/live/forming-candle${query}`, token, signal),
-      ]);
-      if (signal.aborted) return;
-      const series = [...candleData.candles];
-      const quoteCurrent = quoteData.available && quoteData.feed_state === "live" && !quoteData.is_stale;
-      if (quoteCurrent && formingData.available && formingData.forming_candle) {
-        series.push(formingData.forming_candle);
-      }
-      const unique = Array.from(new Map(series.filter((candle) => candle.timeframe == null || candle.timeframe === "15m")
-        .map((candle) => [candle.timestamp, candle])).values())
-        .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
-      setCandles(unique);
-      setDecision(candleData.indicator_decision);
-      setSignalHistory(candleData.indicator_history ?? []);
-      setQuote(quoteData.quote);
-      setFeedState(quoteData.feed_state || candleData.feed_state);
-      setFeedMessage(candleData.message);
-      setCheckedAt(new Date());
-      setError(null);
-      setLoading(false);
-    } catch (reason) {
-      if (signal.aborted) return;
-      if (reason instanceof MarketAccessError) {
-        await signOut();
-        return;
-      }
-      setError(reason instanceof Error ? reason.message : "Could not load the 15-minute chart.");
-      setFeedState("unavailable");
-      setLoading(false);
-    } finally {
-      if (activeRefresh.current === signal) activeRefresh.current = null;
-    }
-  }, [normalizedSymbol, provider, signOut, token, validSymbol]);
+  const [position, setPosition] = useState<{ scope: ChartScope; offset: number } | null>(null);
 
   useEffect(() => {
+    const { token, symbol, provider, historyDays } = scope;
     if (!token || !validSymbol) return;
     const controller = new AbortController();
-    const initialRequest = window.setTimeout(() => void refresh(controller.signal), 0);
-    const timer = window.setInterval(() => void refresh(controller.signal), 15000);
+    const { signal } = controller;
+    const query = `?symbol=${symbol}&provider=${provider}`;
+    let refreshing = false;
+
+    async function refresh(authToken: string) {
+      if (refreshing || signal.aborted) return;
+      refreshing = true;
+      try {
+        const [candleData, quoteData, formingData] = await Promise.all([
+          getJson<CandleResponse>(`/api/v1/live/candles${query}&timeframe=15m&limit=500&include_indicator_history=true`, authToken, signal),
+          getJson<QuoteResponse>(`/api/v1/live/quote${query}`, authToken, signal),
+          getJson<FormingResponse>(`/api/v1/live/forming-candle${query}`, authToken, signal),
+        ]);
+        if (signal.aborted) return;
+        if (candleData.timeframe !== "15m" || !Array.isArray(candleData.candles)) {
+          throw new Error("The market-data service did not return 15-minute candles.");
+        }
+        const series = candleData.candles.filter((candle) => !candle.is_forming);
+        const currentQuote = quoteData.available && quoteData.feed_state === "live" && !quoteData.is_stale;
+        if (currentQuote && formingData.available && formingData.forming_candle) {
+          series.push({ ...formingData.forming_candle, is_forming: true });
+        }
+        const currentSignal = candleData.indicator_decision.is_current_signal &&
+          currentQuote && !candleData.is_stale && candleData.feed_state === "live";
+        setLiveSnapshot({
+          scope,
+          candles: series,
+          decision: { ...candleData.indicator_decision, is_current_signal: currentSignal },
+          signalHistory: candleData.indicator_history ?? [],
+          quote: quoteData.quote,
+          feedState: quoteData.feed_state || candleData.feed_state,
+          message: candleData.message,
+          checkedAt: new Date(),
+        });
+        setLiveFailure(null);
+      } catch (reason) {
+        if (signal.aborted) return;
+        setLiveSnapshot(null);
+        if (reason instanceof MarketAccessError) {
+          controller.abort();
+          await signOut();
+          return;
+        }
+        setLiveFailure({ scope, message: reason instanceof Error ? reason.message : "Could not load the 15-minute chart." });
+      } finally {
+        refreshing = false;
+      }
+    }
+
+    async function loadHistory(authToken: string, days: number) {
+      try {
+        const data = await getJson<HistoryResponse>(
+          `/api/v1/market-data/upstox/candles?symbol=${symbol}&days=${days}`,
+          authToken,
+          signal,
+        );
+        if (signal.aborted) return;
+        if (data.timeframe !== "15m" || !Array.isArray(data.candles)) {
+          throw new Error("Upstox did not return a readable 15-minute candle list.");
+        }
+        setHistorySnapshot({ scope, data });
+        setHistoryFailure(null);
+      } catch (reason) {
+        if (signal.aborted) return;
+        if (reason instanceof MarketAccessError) {
+          controller.abort();
+          await signOut();
+          return;
+        }
+        setHistoryFailure({ scope, message: reason instanceof Error ? reason.message : "Could not load Upstox history." });
+      }
+    }
+
+    void refresh(token);
+    if (historyDays !== null) void loadHistory(token, historyDays);
+    const timer = window.setInterval(() => void refresh(token), 15000);
     return () => {
       controller.abort();
-      window.clearTimeout(initialRequest);
       window.clearInterval(timer);
     };
-  }, [refresh, token, validSymbol]);
+  }, [scope, signOut, validSymbol]);
 
-  const latestConfirmed = useMemo(
-    () => [...candles].reverse().find((candle) => !candle.is_forming),
-    [candles],
-  );
+  const liveError = liveFailure?.scope === scope ? liveFailure.message : null;
+  const historyError = historyFailure?.scope === scope ? historyFailure.message : null;
+  const live = !liveError && liveSnapshot?.scope === scope ? liveSnapshot : null;
+  const history = historySnapshot?.scope === scope ? historySnapshot.data : undefined;
+  const liveCandles = live?.candles ?? emptyCandles;
+  const candles = useMemo(() => mergeChartCandles(history, liveCandles), [history, liveCandles]);
+  const decision = live?.decision ?? emptyDecision;
+  const quote = live?.quote ?? null;
+  const feedState = liveError ? "unavailable" : live?.feedState ?? "checking";
+  const checkedAt = live?.checkedAt ?? null;
+  const loading = !liveError && !live;
+  const loadingHistory = historyDays !== null && !history && !historyError;
+  const latestConfirmed = candles.findLast((candle) => !candle.is_forming && !candle.is_incomplete);
+  const maxOffset = Math.max(0, candles.length - visibleCount);
+  const offset = position?.scope === scope ? Math.min(position.offset, maxOffset) : 0;
   const decisionColor = decision.decision === "BUY"
     ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
     : decision.decision === "SELL"
       ? "border-rose-400/30 bg-rose-400/10 text-rose-300"
       : "border-white/10 bg-white/[0.03] text-slate-300";
+  const signalLabel = decision.is_current_signal
+    ? "Current confirmed signal"
+    : decision.decision === "DATA_UNAVAILABLE"
+      ? "Signal unavailable"
+      : decision.decision === "WAIT" ? "Based on confirmed candle data" : "Previous confirmed signal";
 
   if (!validSymbol) {
     return (
@@ -379,9 +495,8 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
           <div className="flex flex-wrap items-center gap-3">
             <label htmlFor="chart-provider" className="text-sm text-slate-400">Market data</label>
             <select id="chart-provider" value={provider} onChange={(event) => {
-              const next = event.target.value as Provider;
-              setMarketProvider(next);
-              setLoading(true);
+              const next = event.target.value;
+              if (next === "groww" || next === "upstox") setMarketProvider(next);
             }} className="min-h-10 rounded-md border border-white/15 bg-slate-900 px-3 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
               <option value="groww">Groww</option>
               <option value="upstox">Upstox</option>
@@ -394,12 +509,14 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <p className="text-xs uppercase tracking-wide text-slate-500">Last price</p>
             <p className="mt-2 text-2xl font-semibold tabular-nums">{price(quote?.ltp ?? latestConfirmed?.close)}</p>
-            <p className="mt-1 text-xs text-slate-500">{quote?.timestamp ? `${timeLabel(quote.timestamp)} IST` : "No recent quote"}</p>
+            <p className="mt-1 text-xs text-slate-500">{quote?.timestamp
+              ? `${timeLabel(quote.timestamp)} IST`
+              : latestConfirmed ? `Candle close · ${timeLabel(latestConfirmed.timestamp)} IST` : "No recent quote"}</p>
           </div>
           <div className={`rounded-xl border p-4 ${decisionColor}`}>
             <p className="text-xs uppercase tracking-wide opacity-70">Signal</p>
             <p className="mt-2 text-2xl font-bold">{decision.decision}</p>
-            <p className="mt-1 text-xs opacity-80">{decision.is_current_signal ? "Current confirmed signal" : "Based on confirmed candle data"}</p>
+            <p className="mt-1 text-xs opacity-80">{signalLabel}</p>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <p className="text-xs uppercase tracking-wide text-slate-500">Confirmed bars</p>
@@ -408,26 +525,36 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <p className="text-xs uppercase tracking-wide text-slate-500">Updated</p>
-            <p className="mt-2 text-lg font-semibold">{checkedAt ? checkedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }) : "Connecting…"}</p>
+            <p className="mt-2 text-lg font-semibold">{checkedAt
+              ? checkedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })
+              : liveError ? "Unavailable" : "Connecting…"}</p>
             <p className="mt-1 text-xs text-slate-500">Refreshes every 15 seconds · IST</p>
           </div>
         </section>
 
-        {error && <div role="alert" className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
-        {loading && <p role="status" className="text-sm text-slate-400">Loading the 15-minute chart…</p>}
-        {!error && <p className="text-sm text-slate-400">{feedMessage}</p>}
+        {liveError && <div role="alert" className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">
+          Live refresh failed. {liveError}
+        </div>}
+        {loading && <p role="status" className="text-sm text-slate-400">Loading 15-minute market data…</p>}
+        {live?.message && <p className="text-sm text-slate-400">{live.message}</p>}
+        {historyDays !== null && <p className="text-sm text-slate-400">
+          Upstox history · {historyDays === 1 ? "Today" : `Last ${historyDays} days`}
+          {history && ` · ${history.message}`}
+        </p>}
+        {loadingHistory && <p role="status" className="text-sm text-slate-400">Loading Upstox history…</p>}
+        {historyError && <p role="alert" className="text-sm text-rose-300">Upstox history could not be loaded. {historyError}</p>}
 
         <CandlestickPanel
           candles={candles}
           visibleCount={visibleCount}
           offset={offset}
           decision={decision}
-        signalHistory={signalHistory}
+          signalHistory={live?.signalHistory ?? []}
           onZoomIn={() => setVisibleCount((count) => Math.max(20, count - 20))}
           onZoomOut={() => setVisibleCount((count) => Math.min(300, count + 20))}
-          onOlder={() => setOffset((value) => Math.min(Math.max(0, candles.length - visibleCount), value + visibleCount))}
-          onNewer={() => setOffset((value) => Math.max(0, value - visibleCount))}
-          onLatest={() => setOffset(0)}
+          onOlder={() => setPosition({ scope, offset: Math.min(maxOffset, offset + visibleCount) })}
+          onNewer={() => setPosition({ scope, offset: Math.max(0, offset - visibleCount) })}
+          onLatest={() => setPosition({ scope, offset: 0 })}
         />
 
         <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
@@ -452,7 +579,9 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
               </div>
             ))}
           </div>
-          <p className="mt-4 text-sm leading-relaxed text-slate-400">{decision.reason}</p>
+          <p className="mt-4 text-sm leading-relaxed text-slate-400">
+            {liveError ? "Indicator readings are unavailable until the live data request succeeds." : decision.reason}
+          </p>
         </section>
 
         <footer className="border-t border-white/10 pt-3 text-xs leading-relaxed text-slate-500">

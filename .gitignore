@@ -19,6 +19,7 @@ htmlcov/
 node_modules/
 .next/
 .next-verification/
+.browser-audit-tool/
 out/
 build/
 dist/

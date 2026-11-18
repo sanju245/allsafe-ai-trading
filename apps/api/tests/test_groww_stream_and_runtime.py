@@ -129,7 +129,10 @@ def test_groww_stream_subscribes_both_indices_and_tracks_feed_states():
     assert feeds[0].unsubscribed is True
 
 
-def test_runtime_historical_warmup_and_indicator_protection_rules():
+def test_runtime_historical_warmup_and_indicator_protection_rules(monkeypatch):
+    from dataclasses import replace
+
+    from app.market_data import live_runtime
     from tests.test_groww_historical import HistoricalFakeGrowwAPI
 
     # Create valid 15m history across four sessions, ending at 13:30 IST on Jan 8
@@ -178,7 +181,25 @@ def test_runtime_historical_warmup_and_indicator_protection_rules():
     assert summary.decision in (TradeDecision.BUY, TradeDecision.SELL, TradeDecision.WAIT)
     assert summary.feed_state == FeedState.LIVE
 
+    original_calculate = live_runtime.calculate_decisions
+
+    def force_last_buy(candles):
+        points = original_calculate(candles)
+        points[-1] = replace(points[-1], decision=TradeDecision.BUY)
+        return points
+
+    monkeypatch.setattr(live_runtime, "calculate_decisions", force_last_buy)
+    assert runtime.evaluate_decision_for_instrument(InstrumentId.NIFTY50, as_of=t_now).is_current_signal
+
+    # A newer session can have a fresh quote before any candle in that session has closed.
+    next_session = ist(2026, 1, 9, 9, 15, 2)
+    mgr.handle_index_feed_payload(
+        {"NSE": {"CASH": {"NIFTY": {"tsInMillis": float(int(next_session.timestamp() * 1000)), "value": 24301.0}}}},
+        as_of=next_session,
+    )
+    assert not runtime.evaluate_decision_for_instrument(InstrumentId.NIFTY50, as_of=next_session).is_current_signal
+
     # Now advance time by 2 minutes without ticks -> feed becomes STALE, is_current_signal must be False!
-    stale_summary = runtime.evaluate_decision_for_instrument(InstrumentId.NIFTY50, as_of=ist(2026, 1, 8, 13, 47, 0))
+    stale_summary = runtime.evaluate_decision_for_instrument(InstrumentId.NIFTY50, as_of=ist(2026, 1, 9, 9, 17, 5))
     assert stale_summary.is_stale is True
     assert stale_summary.is_current_signal is False
