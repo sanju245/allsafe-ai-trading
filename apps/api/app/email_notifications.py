@@ -103,6 +103,26 @@ def send_request_received(email: str, name: str) -> None:
     )
 
 
+def send_admin_request_notification(
+    *,
+    name: str,
+    email: str,
+    date_of_birth: str,
+    phone_number: str,
+    whatsapp_number: str,
+) -> None:
+    """Email the configured sender/admin the submitted application details."""
+    config = get_settings()
+    send_email(
+        config.gmail_from_email,
+        "New AllSafe account request",
+        "A new customer account request is waiting for review.\n\n"
+        f"Name: {name}\nEmail: {email}\nDate of birth: {date_of_birth}\n"
+        f"Phone: {phone_number}\nWhatsApp: {whatsapp_number}\n\n"
+        "Review the request in the AllSafe admin portal. The account has not been created yet.",
+    )
+
+
 def send_approved(email: str, name: str, setup_link: str) -> None:
     send_email(
         email,

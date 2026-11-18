@@ -80,3 +80,19 @@ def test_password_admin_call_targets_only_the_authenticated_user(monkeypatch):
         "auth/v1/admin/users/00000000-0000-4000-8000-000000000001",
         {"password": "test-only-password"},
     )]
+
+
+def test_profile_lookup_by_email_normalizes_email(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        supabase_admin,
+        "_request_json",
+        lambda method, endpoint, **kwargs: calls.append((method, endpoint, kwargs["query"])) or [],
+    )
+
+    assert supabase_admin.get_profile_by_email("  SANJAY200123@GMAIL.COM  ") is None
+    assert calls == [(
+        "GET",
+        "rest/v1/profiles",
+        {"select": supabase_admin.PROFILE_COLUMNS, "email": "eq.sanjay200123@gmail.com", "limit": "1"},
+    )]

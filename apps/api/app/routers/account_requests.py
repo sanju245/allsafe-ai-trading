@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date, datetime, timezone
 from typing import Literal
@@ -14,6 +15,7 @@ from app.config import get_settings
 from app.email_notifications import (
     EmailDeliveryError,
     ensure_email_ready,
+    send_admin_request_notification,
     send_approved,
     send_declined,
     send_request_received,
@@ -27,6 +29,7 @@ from app.supabase_admin import (
     generate_account_link,
     get_account_request,
     get_profile,
+    get_profile_by_email,
     insert_account_request,
     list_account_requests,
     update_account_request,
@@ -37,6 +40,7 @@ public_router = APIRouter(prefix="/api/v1/account-requests", tags=["accounts"])
 admin_router = APIRouter(prefix="/api/v1/admin/account-requests", tags=["admin"])
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _PHONE_PATTERN = re.compile(r"^\+?[0-9][0-9 ()-]{6,18}$")
+_LOGGER = logging.getLogger(__name__)
 _request_rate_limiter = SlidingWindowRateLimiter(window_seconds=3600)
 RequestStatus = Literal["pending", "processing", "approved", "declined"]
 NotificationStatus = Literal["pending", "sent", "failed"]
@@ -183,6 +187,18 @@ def submit_account_request(body: AccountApplication, request: Request) -> dict[s
             pass
         raise HTTPException(status_code=503, detail="We could not email your receipt. Please try again later.") from None
     try:
+        send_admin_request_notification(
+            name=body.full_name,
+            email=body.email,
+            date_of_birth=body.date_of_birth.isoformat(),
+            phone_number=body.phone_number,
+            whatsapp_number=body.whatsapp_number,
+        )
+    except EmailDeliveryError:
+        # The application and applicant receipt are already durable. Keep them
+        # available in the admin queue and log only a safe, PII-free failure.
+        _LOGGER.error("Account request was saved, but the administrator email notification failed.")
+    try:
         update_account_request(str(row["id"]), {"receipt_sent_at": datetime.now(timezone.utc).isoformat()})
     except SupabaseAdminAPIError:
         # The request and receipt already exist; avoid inviting a duplicate submission.
@@ -206,6 +222,21 @@ def approve_request(
 ) -> AccountRequestResponse:
     ensure_email_ready()
     redirect_url = setup_redirect_url()
+    request_row = _load_request(request_id)
+    if request_row.get("status") != "pending":
+        raise HTTPException(status_code=409, detail="This request has already been handled.")
+    try:
+        existing_profile = get_profile_by_email(str(request_row["email"]))
+    except SupabaseAdminAPIError:
+        raise _admin_request_error() from None
+    if existing_profile is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This email already belongs to an AllSafe account. Use the existing account, "
+                "or decline this duplicate request."
+            ),
+        )
     try:
         row = update_account_request(str(request_id), {"status": "processing"}, expected_status="pending")
     except SupabaseAdminAPIError:
@@ -215,12 +246,15 @@ def approve_request(
         raise HTTPException(status_code=409, detail="This request has already been handled.")
 
     user_id: str | None = None
+    approval_stage = "creating the Supabase invitation"
     try:
         invitation = generate_account_link(str(row["email"]), link_type="invite", redirect_to=redirect_url)
         user_id = str(UUID(invitation["user"]["id"]))
+        approval_stage = "checking the new account profile"
         profile = get_profile(user_id)
         if profile is None:
             raise SupabaseAdminAPIError(502)
+        approval_stage = "saving the approval"
         completed = update_account_request(
             str(request_id),
             {
@@ -231,7 +265,32 @@ def approve_request(
         )
         if completed is None:
             raise SupabaseAdminAPIError(502)
-    except (SupabaseAdminAPIError, ValueError, KeyError, TypeError):
+    except SupabaseAdminAPIError as exc:
+        _LOGGER.warning(
+            "Account request approval failed while %s (Supabase HTTP %s).",
+            approval_stage,
+            exc.status_code,
+        )
+        if user_id:
+            try:
+                delete_auth_user(user_id)
+            except SupabaseAdminAPIError:
+                pass
+        try:
+            update_account_request(str(request_id), {"status": "pending"}, expected_status="processing")
+        except SupabaseAdminAPIError:
+            pass
+        if approval_stage == "creating the Supabase invitation" and exc.status_code in {409, 422}:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Supabase could not create an invitation for this email. It may already have an account; "
+                    "check the customer list or decline this duplicate request."
+                ),
+            ) from None
+        raise HTTPException(status_code=502, detail="Account approval failed. Please retry.") from None
+    except (ValueError, KeyError, TypeError):
+        _LOGGER.warning("Account request approval received an invalid response while %s.", approval_stage)
         if user_id:
             try:
                 delete_auth_user(user_id)
