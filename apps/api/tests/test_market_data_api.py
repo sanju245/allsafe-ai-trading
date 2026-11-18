@@ -94,5 +94,11 @@ def test_validate_requires_post():
 
 def test_openapi_lists_the_new_endpoints():
     paths = client.get("/openapi.json").json()["paths"]
-    for path in (f"{PREFIX}/instruments", f"{PREFIX}/timeframes", f"{PREFIX}/validate", "/health"):
+    for path in (
+        f"{PREFIX}/instruments",
+        f"{PREFIX}/timeframes",
+        f"{PREFIX}/validate",
+        "/api/v1/market-data/upstox/candles",
+        "/health",
+    ):
         assert path in paths

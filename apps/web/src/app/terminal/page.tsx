@@ -1,5 +1,6 @@
 import ApiStatus from "@/components/ApiStatus";
 import LiveMarketDashboard from "@/components/LiveMarketDashboard";
+import Upstox15mHistory from "@/components/Upstox15mHistory";
 import DashboardAccessGate from "@/components/auth/DashboardAccessGate";
 import Link from "next/link";
 
@@ -34,11 +35,16 @@ export default function Home() {
               Explore 15-minute candles and rule-based buy or sell signals. Open an index chart in its own tab for a larger view, and use the feed status to see whether displayed prices are current.
             </p>
             <p className="mt-3 text-xs leading-5 text-slate-400 sm:text-sm">
-              Choose Groww or Upstox below. Closed candles and the candle still forming are shown separately.
+              Choose Groww or Upstox for live charts, or review Upstox historical 15-minute candles below. Closed candles and the candle still forming are shown separately.
             </p>
           </section>
 
-          <section aria-label="Index charts" className="mt-8 sm:mt-10">
+          <section className="mt-8 sm:mt-10" aria-label="Historical index charts">
+            <Upstox15mHistory />
+          </section>
+
+          <section aria-label="Live index charts" className="mt-8 sm:mt-10">
+            <p className="mb-3 text-xs font-medium uppercase tracking-widest text-emerald-400">Live market data · 15-minute candles</p>
             <LiveMarketDashboard />
           </section>
         </main>

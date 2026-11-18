@@ -2,9 +2,9 @@
 
 Endpoints:
 * /health (Phase 1)
-* /api/v1/market-data/* (Phase 2: describe supported instruments and timeframes,
-  validate a supplied candle series)
-* /api/v1/live/* (Groww read-only live market-data status, quote, confirmed 15m
+* /api/v1/market-data/* (instrument/timeframe descriptions, supplied-series
+  validation, and authenticated Upstox historical 15-minute candles)
+* /api/v1/live/* (read-only live market-data status, quote, confirmed 15m
   candles + 5-indicator decision summary, and forming 15m candle; disabled by default).
 """
 
@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.config import get_settings
-from app.routers import account_requests, admin, auth, live, market_data
+from app.routers import account_requests, admin, auth, live, market_data, upstox_history
 from app.routers.live import build_runtimes_from_settings, set_live_runtimes
 
 settings = get_settings()
@@ -100,6 +100,7 @@ app.add_middleware(
 )
 
 app.include_router(market_data.router)
+app.include_router(upstox_history.router)
 app.include_router(live.router)
 app.include_router(auth.router)
 app.include_router(admin.router)

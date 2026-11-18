@@ -57,6 +57,8 @@ function subscribeToMarketProvider(onChange: () => void) {
 }
 
 function getMarketProviderSnapshot(): Provider {
+  const requested = new URLSearchParams(window.location.search).get("provider");
+  if (requested === "groww" || requested === "upstox") return requested;
   const stored = window.localStorage.getItem("allsafe-market-provider");
   return stored === "upstox" ? "upstox" : "groww";
 }
