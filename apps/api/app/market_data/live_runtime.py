@@ -29,7 +29,7 @@ from app.market_data.validation import ValidationReport, validate_candles
 from app.providers.base import CandleRequest, MarketDataProvider
 from app.providers.groww_historical import GrowwHistoricalProvider
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 class LiveStreamManager(Protocol):
