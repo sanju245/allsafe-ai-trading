@@ -1,14 +1,14 @@
 # Project Status
 
-Updated 2026-11-19. This file describes the release implementation and the current dedicated Upstox history branch. Live deployment records are tracked separately in the release handover; a source build alone does not prove production health.
+Updated 2026-11-19. This file describes the released implementation. Live deployment records are tracked separately in the release handover; a source build alone does not prove production health.
 
 ## Application
 
 - Public landing page at /, educational explanation at /what-we-done, signed-in terminal at /terminal, customer account at /account, customer sign-in at /login, and verified administrator portal at /admin with /admin/login.
 - The landing preview is static and contains no fabricated market prices or trade sizing. The backend engine performs five deterministic checks over confirmed candles.
 - Market-data failures clear old display values. Historical data is labeled not current. Account-service startup has a bounded wait with plain-language feedback.
-- The dedicated branch `codex/upstox-15m-chart-2026-11-19` adds authenticated Upstox Historical Candle V3 charts for completed 15-minute NIFTY 50 and BANK NIFTY candles, with a selectable 1–30 calendar-day range. It extends the current Groww/Upstox live 5-minute selector with a separate historical view.
-- The history chart reads `UPSTOX_ACCESS_TOKEN` on the API service only. This branch has not been deployed; actual token validity and Render connectivity have not been tested.
+- Production includes authenticated Upstox Historical Candle V3 charts for completed 15-minute NIFTY 50 and BANK NIFTY candles, with a selectable 1–30 calendar-day range. This extends the Groww/Upstox live 5-minute selector with a separate historical view.
+- The production chart reads `UPSTOX_ACCESS_TOKEN` on the API service only. The route and deployment are live, but no authenticated historical request was made, so token validity and returned candle data remain unverified.
 
 ## Access policy
 
@@ -33,4 +33,4 @@ Run frontend tests, typecheck, lint, and production build from apps/web. Run the
 
 No broker order-placement path was added. The application remains supervised, read-only market analysis. No autonomous or live orders are authorized by this release.
 
-No production merge or deployment was performed for the Upstox 15-minute history branch.
+Upstox 15-minute history was released to production from commit `d33fcccefa1b21c82b235bd4defaff94c472ad76` on 2026-11-19. Render reported the deploy live; Vercel reported the production deployment ready.

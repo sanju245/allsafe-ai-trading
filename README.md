@@ -19,7 +19,7 @@ A read-only Indian index market-analysis and decision-support application for NI
 ## Current behavior
 
 - The analysis engine is a deterministic five-check signal rule over confirmed candles. It returns BUY, SELL, WAIT, or DATA_UNAVAILABLE according to the engine rules.
-- The dedicated Upstox history branch adds completed 15-minute NIFTY 50 and BANK NIFTY charts for a selectable 1–30 calendar-day range. This history is separate from the selected provider's live 5-minute chart.
+- The signed-in terminal provides completed Upstox 15-minute NIFTY 50 and BANK NIFTY charts for a selectable 1–30 calendar-day range. This history is separate from the selected provider's live 5-minute chart.
 - Landing-page price, candle, decision, and risk figures are static illustrations. They are not live quotes, current signals, or enforced account risk limits.
 - The current API exposes market-data analysis and account access. No broker order-placement route was found in the reviewed main source.
 - Treat every signal as informational. It is not investment advice and can be wrong or delayed.
@@ -44,7 +44,7 @@ The local review environment has no Supabase URL or anon key configured. Sign-in
 
 The reviewed API is read-only and does not place broker orders. Local checks do not start production feeds. Keep both feed flags false for local tests. Do not add execution or autonomous-order behavior without a separately reviewed change and explicit approval.
 
-The customer market dashboard supports a server-managed market-data source selector for Groww and Upstox. Groww uses `LIVE_STREAM_ENABLED` and the existing `GROWW_*` settings. Upstox V3 live streaming remains separately disabled unless `UPSTOX_LIVE_STREAM_ENABLED=true`; the same server-only `UPSTOX_ACCESS_TOKEN` can also be used for the historical 15-minute chart on the dedicated branch. Never expose the token in browser settings or logs. Live status is reported only after a connected feed produces fresh, validated updates. Confirm that provider and exchange permissions cover displaying a shared feed to customers before enabling either source for customer distribution.
+The customer market dashboard supports a server-managed market-data source selector for Groww and Upstox. Groww uses `LIVE_STREAM_ENABLED` and the existing `GROWW_*` settings. Upstox V3 live streaming remains separately disabled unless `UPSTOX_LIVE_STREAM_ENABLED=true`; the same server-only `UPSTOX_ACCESS_TOKEN` is used for the historical 15-minute chart. Never expose the token in browser settings or logs. Live status is reported only after a connected feed produces fresh, validated updates. Confirm that provider and exchange permissions cover displaying a shared feed to customers before enabling either source for customer distribution.
 
 ## Local checks
 

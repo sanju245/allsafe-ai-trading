@@ -1,6 +1,6 @@
 # Upstox 15-minute chart setup
 
-The signed-in terminal on this branch has a separate Upstox historical-chart path for NIFTY 50 and BANK NIFTY. It requests completed 15-minute candles for a selected 1–30 calendar-day range. The default is 7 days, which normally includes yesterday and the prior session. The current Groww/Upstox live 5-minute selector remains separate.
+The production signed-in terminal has a separate Upstox historical-chart path for NIFTY 50 and BANK NIFTY. It requests completed 15-minute candles for a selected 1–30 calendar-day range. The default is 7 days, which normally includes yesterday and the prior session. The current Groww/Upstox live 5-minute selector remains separate.
 
 ## Server environment
 
@@ -8,7 +8,7 @@ The API reads one secret environment variable:
 
 - `UPSTOX_ACCESS_TOKEN` — use the existing Upstox Analytics Access Token (or another Upstox read-only token with historical market-data permission) in the Render API web service's Environment settings.
 
-Keep the token on the API service. Do not put it in Vercel, a `NEXT_PUBLIC_*` variable, browser source, or this repository, and do not send it in chat. Save the Render environment change to restart/redeploy that service after the matching API branch is deployed.
+Keep the token on the API service. Do not put it in Vercel, a `NEXT_PUBLIC_*` variable, browser source, or this repository, and do not send it in chat. If the value is missing or invalid, save the corrected Render environment setting to restart/redeploy the API service.
 
 ## API behavior
 
@@ -22,4 +22,4 @@ Keep the token on the API service. Do not put it in Vercel, a `NEXT_PUBLIC_*` va
 
 ## Release status
 
-This implementation is on branch `codex/upstox-15m-chart-2026-11-19`, based on current GitHub `main`. It has not been merged or deployed. Review the branch before any production release.
+This implementation is live in production from commit `d33fcccefa1b21c82b235bd4defaff94c472ad76`. Render is live and the Vercel production deployment is ready. The endpoint was verified as present and protected, but no authenticated Upstox token request was made, so actual candle retrieval is not yet verified.
