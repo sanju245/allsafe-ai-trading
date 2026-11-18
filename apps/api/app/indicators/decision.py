@@ -129,7 +129,7 @@ def calculate_decisions(
 
         if _has_warmup(ut, ema, rsi, macd, supertrend):
             decision = TradeDecision.DATA_UNAVAILABLE
-            reason = "Indicator warm-up: insufficient candle history."
+            reason = "Signal checks are warming up: insufficient candle history."
         elif is_15m:
             if not opening_direction:
                 decision = TradeDecision.WAIT
@@ -147,31 +147,20 @@ def calculate_decisions(
                     decision = (
                         TradeDecision.BUY if opening_direction == 1 else TradeDecision.SELL
                     )
-                    momentum_name = (
-                        "RSI"
-                        if _directional_confirmation(rsi, opening_direction)
-                        else "MACD"
-                    )
-                    reason = (
-                        f"15m opening-range {side}; UT Bot position, EMA and Supertrend "
-                        f"align; {momentum_name} confirms."
-                    )
+                    reason = f"15-minute opening-range {side}; trend and momentum checks confirm."
                 else:
                     side = "BUY" if opening_direction == 1 else "SELL"
                     decision = TradeDecision.WAIT
-                    reason = (
-                        f"Opening-range {side} breakout filtered; required indicator "
-                        "directions do not align."
-                    )
+                    reason = f"Opening-range {side} breakout filtered; confirmation checks do not align."
         elif ut.signal == UTBotSignal.BUY and all(value is True for value in filters):
             decision = TradeDecision.BUY
-            reason = "UT Bot BUY; all four confirmation indicators bullish."
+            reason = "BUY signal confirmed by all required trend and momentum checks."
         elif ut.signal == UTBotSignal.SELL and all(value is False for value in filters):
             decision = TradeDecision.SELL
-            reason = "UT Bot SELL; all four confirmation indicators bearish."
+            reason = "SELL signal confirmed by all required trend and momentum checks."
         else:
             decision = TradeDecision.WAIT
-            reason = "No confirmed UT Bot crossover with four directional confirmations."
+            reason = "No confirmed trigger with all directional checks aligned."
 
         decisions.append(
             DecisionPoint(

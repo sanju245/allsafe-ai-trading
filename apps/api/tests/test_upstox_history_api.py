@@ -1,6 +1,6 @@
 """HTTP-level tests for authenticated Upstox historical candle charts."""
 
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
+from app.indicators.decision import TradeDecision
 import app.providers.upstox_history as history_provider_module
 import app.routers.upstox_history as upstox_router
 from app.config import Settings
@@ -22,9 +23,9 @@ client = TestClient(app)
 IST = ZoneInfo("Asia/Kolkata")
 
 
-def _candle():
+def _candle(timestamp=None):
     return Candle(
-        timestamp=datetime(2026, 1, 5, 9, 15, tzinfo=IST),
+        timestamp=timestamp or datetime(2026, 1, 5, 9, 15, tzinfo=IST),
         open=100,
         high=102,
         low=99,
@@ -46,9 +47,22 @@ def test_upstox_candle_route_returns_date_range_and_historical_labels(monkeypatc
 
     def fake_fetch(instrument, *, start_date, end_date, as_of):
         captured.update(instrument=instrument, start_date=start_date, end_date=end_date, as_of=as_of)
-        return [_candle()]
+        target_day = end_date - timedelta(days=1)
+        return [
+            _candle(datetime.combine(start_date, time(9, 15), tzinfo=IST)),
+            _candle(datetime.combine(target_day, time(9, 15), tzinfo=IST)),
+            _candle(datetime.combine(target_day, time(9, 30), tzinfo=IST)),
+        ]
+
+    def fake_decisions(candles):
+        return [
+            SimpleNamespace(timestamp=candles[0].timestamp, decision=TradeDecision.BUY),
+            SimpleNamespace(timestamp=candles[1].timestamp, decision=TradeDecision.BUY),
+            SimpleNamespace(timestamp=candles[2].timestamp, decision=TradeDecision.SELL),
+        ]
 
     monkeypatch.setattr(upstox_router, "fetch_15m_candles", fake_fetch)
+    monkeypatch.setattr(upstox_router, "calculate_decisions", fake_decisions)
     response = client.get("/api/v1/market-data/upstox/candles?symbol=NIFTY50&days=7")
 
     assert response.status_code == 200
@@ -57,10 +71,14 @@ def test_upstox_candle_route_returns_date_range_and_historical_labels(monkeypatc
     assert data["provider"] == "Upstox"
     assert data["instrument"] == "NIFTY50"
     assert data["timeframe"] == "15m"
+    assert len(data["candles"]) == 2
     assert data["candles"][0]["source"]["kind"] == "historical"
-    assert data["last_candle_at"] == "2026-01-05T09:15:00+05:30"
+    assert data["candles"][-1]["timestamp"].endswith("09:30:00+05:30")
+    assert data["last_candle_at"] == data["candles"][-1]["timestamp"]
+    assert [point["decision"] for point in data["signals"]] == ["BUY", "SELL"]
+    assert data["signals"][0]["timestamp"] == data["candles"][0]["timestamp"]
     assert captured["instrument"] is InstrumentId.NIFTY50
-    assert (captured["end_date"] - captured["start_date"]).days == 6
+    assert (captured["end_date"] - captured["start_date"]).days == 27
 
 
 @pytest.mark.usefixtures("active_account_override")
