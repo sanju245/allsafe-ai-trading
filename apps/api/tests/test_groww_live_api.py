@@ -111,25 +111,30 @@ def test_all_four_live_endpoints_and_indicator_decision_over_http():
 
     base = ist(2026, 1, 5, 9, 15)
     rows = []
-    for i in range(55):
-        slot = base + timedelta(minutes=5 * i)
-        p = 24000.0 + 5.0 * i
-        rows.append([slot.strftime("%Y-%m-%dT%H:%M:%S"), p, p + 10.0, p - 5.0, p + 3.0, None, None])
+    i = 0
+    # Three full prior sessions plus today's closed bars give the five-indicator engine
+    # enough valid history without crossing an intraday session gap.
+    for day_offset, bar_count in ((0, 25), (1, 25), (2, 25), (3, 18)):
+        for bar_index in range(bar_count):
+            slot = base + timedelta(days=day_offset, minutes=15 * bar_index)
+            p = 24000.0 + 5.0 * i
+            rows.append([slot.strftime("%Y-%m-%dT%H:%M:%S"), p, p + 10.0, p - 5.0, p + 3.0, None, None])
+            i += 1
 
     rt = make_test_runtime(streaming_enabled=True, stale_after_seconds=60.0, hist_rows=rows)
-    t_open = ist(2026, 1, 5, 13, 50, 0)
+    t_open = ist(2026, 1, 8, 13, 45, 0)
     assert rt.start(as_of=t_open, run_warmup=True) is True
 
-    # Feed 2 updates in 13:50 slot, then rollover to 13:55 slot
+    # Feed 2 updates in the 13:45 slot, then rollover to 14:00
     rt.stream_manager.handle_index_feed_payload(
-        {"NSE": {"CASH": {"NIFTY": {"tsInMillis": float(int(ist(2026, 1, 5, 13, 50, 5).timestamp() * 1000)), "value": 24300.0}}}},
-        as_of=ist(2026, 1, 5, 13, 50, 5),
+        {"NSE": {"CASH": {"NIFTY": {"tsInMillis": float(int(ist(2026, 1, 8, 13, 45, 5).timestamp() * 1000)), "value": 24300.0}}}},
+        as_of=ist(2026, 1, 8, 13, 45, 5),
     )
     rt.stream_manager.handle_index_feed_payload(
-        {"NSE": {"CASH": {"NIFTY": {"tsInMillis": float(int(ist(2026, 1, 5, 13, 53, 0).timestamp() * 1000)), "value": 24325.0}}}},
-        as_of=ist(2026, 1, 5, 13, 53, 0),
+        {"NSE": {"CASH": {"NIFTY": {"tsInMillis": float(int(ist(2026, 1, 8, 13, 53, 0).timestamp() * 1000)), "value": 24325.0}}}},
+        as_of=ist(2026, 1, 8, 13, 53, 0),
     )
-    t_curr = ist(2026, 1, 5, 13, 55, 10)
+    t_curr = ist(2026, 1, 8, 14, 0, 10)
     rt.stream_manager.handle_index_feed_payload(
         {"NSE": {"CASH": {"NIFTY": {"tsInMillis": float(int(t_curr.timestamp() * 1000)), "value": 24340.0}}}},
         as_of=t_curr,
@@ -138,7 +143,7 @@ def test_all_four_live_endpoints_and_indicator_decision_over_http():
     class _FrozenNow(datetime):
         @classmethod
         def now(cls, tz=None):
-            return ist(2026, 1, 5, 13, 55, 15)
+            return ist(2026, 1, 8, 14, 0, 15)
 
     orig_dt = live_router.datetime
     live_router.datetime = _FrozenNow
@@ -155,7 +160,7 @@ def test_all_four_live_endpoints_and_indicator_decision_over_http():
         assert sb["feed_state"] == "live"
         assert sb["instruments"]["NIFTY50"]["exchange_token"] == "NIFTY"
         assert sb["instruments"]["BANKNIFTY"]["exchange_token"] == "26009"
-        assert sb["instruments"]["NIFTY50"]["historical_candle_count"] == 55
+        assert sb["instruments"]["NIFTY50"]["historical_candle_count"] == 93
         assert sb["instruments"]["NIFTY50"]["confirmed_candle_count"] == 1
         assert sb["instruments"]["NIFTY50"]["has_forming_candle"] is True
 
@@ -169,22 +174,29 @@ def test_all_four_live_endpoints_and_indicator_decision_over_http():
         assert qb["quote"]["volume"] is None
         assert qb["quote"]["provider_symbol"] == "NSE-NIFTY"
 
-        # 3. /api/v1/live/candles -> confirmed candles only + 5-indicator decision
-        rc = client.get("/api/v1/live/candles", params={"symbol": "NIFTY50", "timeframe": "5m", "limit": 10})
+        # 3. /api/v1/live/candles -> confirmed 15m candles only + five-indicator decision
+        rc = client.get("/api/v1/live/candles", params={"symbol": "NIFTY50", "timeframe": "15m", "limit": 10, "include_indicator_history": "true"})
         assert rc.status_code == 200
         assert rc.headers.get("cache-control") == "no-store"
         cb = rc.json()
-        assert cb["candle_count"] == 1
-        assert cb["candles"][0]["open"] == 24300.0
-        assert cb["candles"][0]["high"] == 24325.0
-        assert cb["candles"][0]["close"] == 24325.0
-        assert cb["candles"][0]["volume"] is None
-        assert cb["candles"][0]["is_confirmed"] is True
-        assert cb["candles"][0]["is_forming"] is False
-        assert cb["indicator_decision"]["confirmed_candle_count"] == 56
+        assert cb["timeframe"] == "15m"
+        assert cb["candle_count"] == 10
+        assert cb["candles"][0]["source"]["kind"] == "historical"
+        assert cb["candles"][0]["tick_count"] is None
+        assert cb["candles"][-1]["open"] == 24300.0
+        assert cb["candles"][-1]["high"] == 24325.0
+        assert cb["candles"][-1]["close"] == 24325.0
+        assert cb["candles"][-1]["volume"] is None
+        assert cb["candles"][-1]["is_confirmed"] is True
+        assert cb["candles"][-1]["is_forming"] is False
+        assert all(candle["timeframe"] == "15m" for candle in cb["candles"])
+        assert cb["candles"][-1]["tick_count"] == 2
+        assert cb["indicator_decision"]["confirmed_candle_count"] == 94
         assert cb["indicator_decision"]["decision"] in ("BUY", "SELL", "WAIT")
+        assert len(cb["indicator_history"]) == 94
+        assert cb["indicator_history"][-1]["timestamp"] == cb["indicator_decision"]["candle_timestamp"]
 
-        # 4. /api/v1/live/forming-candle -> 13:55 forming candle only
+        # 4. /api/v1/live/forming-candle -> 14:00 forming candle only
         rf = client.get("/api/v1/live/forming-candle", params={"symbol": "NIFTY50"})
         assert rf.status_code == 200
         assert rf.headers.get("cache-control") == "no-store"
@@ -202,9 +214,13 @@ def test_invalid_query_parameters_return_422():
     set_live_runtime(app, rt)
     client = TestClient(app)
 
+    default_candles = client.get("/api/v1/live/candles", params={"symbol": "NIFTY50"})
+    assert default_candles.status_code == 200
+    assert default_candles.json()["timeframe"] == "15m"
+    assert default_candles.json()["indicator_history"] == []
     assert client.get("/api/v1/live/quote", params={"symbol": "UNKNOWN"}).status_code == 422
-    assert client.get("/api/v1/live/candles", params={"symbol": "NIFTY50", "timeframe": "15m"}).status_code == 422
-    assert client.get("/api/v1/live/candles", params={"symbol": "NIFTY50", "timeframe": "5m", "limit": 0}).status_code == 422
+    assert client.get("/api/v1/live/candles", params={"symbol": "NIFTY50", "timeframe": "5m"}).status_code == 422
+    assert client.get("/api/v1/live/candles", params={"symbol": "NIFTY50", "timeframe": "15m", "limit": 0}).status_code == 422
     assert client.get("/api/v1/live/forming-candle", params={"symbol": "BAD"}).status_code == 422
 
 

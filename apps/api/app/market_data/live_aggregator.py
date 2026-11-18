@@ -1,8 +1,8 @@
-"""Strict live update validation and Asia/Kolkata 5-minute session candle aggregation.
+"""Strict live update validation and Asia/Kolkata 15-minute session candle aggregation.
 
 Rules enforced:
 * Never invent a source timestamp when an update has none or is timezone-naive.
-* Align all 5-minute buckets to the NSE regular session grid (Mon-Fri 09:15-15:30 IST).
+* Align all 15-minute buckets to the NSE regular session grid (Mon-Fri 09:15-15:30 IST).
 * Maintain strict separation between forming (in-progress) and confirmed (closed) candles.
 * Never fabricate synthetic flat candles across missing intervals; record MissingInterval gaps explicitly.
 * Never fabricate volume for index instruments (NIFTY 50 and BANK NIFTY have volume=None).
@@ -36,7 +36,7 @@ from app.market_data.sessions import (
 )
 from app.market_data.timeframes import Timeframe
 
-CANDLE_DURATION = timedelta(minutes=5)
+CANDLE_DURATION = timedelta(minutes=15)
 
 GROWW_SYMBOL_BY_INSTRUMENT: dict[InstrumentId, str] = {
     InstrumentId.NIFTY50: "NSE-NIFTY",
@@ -94,14 +94,14 @@ def is_regular_session_ist(ts: datetime) -> bool:
 
 
 def slot_for_ist(ts: datetime) -> datetime:
-    """Return the 5-minute NSE session slot open time (IST) for a valid session timestamp."""
+    """Return the 15-minute NSE session slot open time (IST) for a valid session timestamp."""
     local = to_ist(ts)
     if not is_regular_session_ist(local):
         raise ValueError("timestamp is outside regular NSE trading hours (Mon-Fri 09:15-15:30 IST)")
     session_open = local.replace(hour=9, minute=15, second=0, microsecond=0)
     elapsed_seconds = (local - session_open).total_seconds()
-    slot_index = int(elapsed_seconds // 300)
-    return session_open + timedelta(minutes=5 * slot_index)
+    slot_index = int(elapsed_seconds // 900)
+    return session_open + timedelta(minutes=15 * slot_index)
 
 
 @dataclass
@@ -135,7 +135,7 @@ class _ActiveBucket:
     def to_forming(self) -> FormingCandle:
         return FormingCandle(
             instrument=self.instrument,
-            timeframe=Timeframe.M5,
+            timeframe=Timeframe.M15,
             timestamp=self.slot,
             close_time=self.slot + CANDLE_DURATION,
             open=self.open,
@@ -156,7 +156,7 @@ class _ActiveBucket:
     def to_confirmed(self) -> ConfirmedCandle:
         return ConfirmedCandle(
             instrument=self.instrument,
-            timeframe=Timeframe.M5,
+            timeframe=Timeframe.M15,
             timestamp=self.slot,
             close_time=self.slot + CANDLE_DURATION,
             open=self.open,
@@ -188,7 +188,7 @@ class TickProcessResult:
 
 
 class LiveSessionAggregator:
-    """Validates live index/price updates and aggregates them into forming and confirmed 5m candles."""
+    """Validates live index/price updates and aggregates them into forming and confirmed 15m candles."""
 
     def __init__(
         self,
@@ -197,7 +197,7 @@ class LiveSessionAggregator:
         max_confirmed_candles: int = 500,
         max_rejected_ticks: int = 200,
         max_future_skew_seconds: float = 5.0,
-        max_staleness_seconds: float | None = 300.0,
+        max_staleness_seconds: float | None = 900.0,
         mid_slot_grace_seconds: float = 30.0,
         stream_started_at: datetime | None = None,
     ) -> None:
@@ -468,7 +468,7 @@ class LiveSessionAggregator:
             if missing_slots:
                 missing_interval = MissingInterval(
                     instrument=instrument,
-                    timeframe=Timeframe.M5,
+                    timeframe=Timeframe.M15,
                     previous_slot=prev_reference_slot,
                     next_slot=slot,
                     first_missing_slot=missing_slots[0],
@@ -519,20 +519,20 @@ class LiveSessionAggregator:
 
     @staticmethod
     def _compute_missing_slots(prev_slot: datetime, next_slot: datetime) -> tuple[datetime, ...]:
-        """Return all expected 5m NSE session slots strictly between prev_slot and next_slot."""
+        """Return all expected 15m NSE session slots strictly between prev_slot and next_slot."""
         missing: list[datetime] = []
         day = prev_slot.date()
         end_day = next_slot.date()
         one_day = timedelta(days=1)
         while day <= end_day:
-            for s in session_slots(day, Timeframe.M5):
+            for s in session_slots(day, Timeframe.M15):
                 if prev_slot < s < next_slot:
                     missing.append(s)
             day += one_day
         return tuple(missing)
 
     def finalize_closed(self, as_of: datetime) -> list[ConfirmedCandle]:
-        """Finalize any forming candles whose 5-minute window has closed by as_of."""
+        """Finalize any forming candles whose 15-minute window has closed by as_of."""
         if as_of.tzinfo is None or as_of.utcoffset() is None:
             raise ValueError("as_of must be timezone-aware")
         now_ist = to_ist(as_of)

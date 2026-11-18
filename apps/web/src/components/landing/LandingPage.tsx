@@ -41,7 +41,7 @@ const EXAMPLES: Record<ExampleMode, { summary: string; checks: string[] }> = {
 const FEATURES = [
   {
     title: "Confirmed candle analysis",
-    text: "Review completed 5-minute candles for NIFTY 50 and BANK NIFTY. The candle still forming is kept separate.",
+    text: "Review completed 15-minute candles for NIFTY 50 and BANK NIFTY. The candle still forming is kept separate.",
   },
   {
     title: "A clear decision state",
@@ -175,8 +175,8 @@ function LandingPage({
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.2em] text-emerald-300">Your account, your workspace</p>
             <h2 className="mt-3 text-3xl font-bold tracking-tight">Access for customers and administrators.</h2>
-            <p className="mt-4 text-sm leading-relaxed text-slate-400">Customers use an active account provided by the administrator and the public IP approved for that account. Contact your administrator if your connection changes.</p>
-            <p className="mt-3 text-sm leading-relaxed text-slate-400">Verified active administrators can sign in from any IP. Administrator tools are available only to accounts assigned the admin role.</p>
+            <p className="mt-4 text-sm leading-relaxed text-slate-400">Customers sign in with an active account provided by the administrator and can access it from any network.</p>
+            <p className="mt-3 text-sm leading-relaxed text-slate-400">Administrator tools remain available only to accounts assigned the admin role.</p>
             <div className="mt-6 flex flex-wrap gap-4">
               <Link href="/login" className="rounded-lg border border-emerald-400/30 px-5 py-3 text-sm font-semibold text-emerald-300 hover:bg-emerald-400/5 focus-visible:outline-2 focus-visible:outline-emerald-400">Customer Sign In</Link>
               <Link href="/admin/login" className="rounded-lg border border-white/15 px-5 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-emerald-400">Administrator Sign In</Link>

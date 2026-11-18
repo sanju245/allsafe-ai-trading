@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 type MarketSymbol = "NIFTY50" | "BANKNIFTY";
@@ -17,6 +18,23 @@ type CandleResponse = {
   candles: Candle[];
   feed_state: string;
   message: string;
+  indicator_decision: IndicatorDecision;
+  indicator_history?: IndicatorHistoryPoint[];
+};
+type IndicatorDecision = {
+  decision: "BUY" | "SELL" | "WAIT" | "DATA_UNAVAILABLE";
+  is_current_signal: boolean;
+  candle_timestamp: string | null;
+  reason: string;
+  ut_bot_signal: string | null;
+  ema_bullish: boolean | null;
+  rsi_bullish: boolean | null;
+  macd_bullish: boolean | null;
+  supertrend_bullish: boolean | null;
+};
+type IndicatorHistoryPoint = {
+  timestamp: string;
+  decision: "BUY" | "SELL" | "WAIT" | "DATA_UNAVAILABLE";
 };
 type QuoteResponse = {
   available: boolean;
@@ -49,6 +67,7 @@ type ProviderOption = {
 type ProviderResponse = { providers: ProviderOption[] };
 type MarketSnapshot = {
   candles: Candle[];
+  decision: IndicatorDecision | null;
   quote: QuoteResponse["quote"];
   message: string;
   loading: boolean;
@@ -73,6 +92,7 @@ const API_BASE_URL = (
 
 const emptyMarket: MarketSnapshot = {
   candles: [],
+  decision: null,
   quote: null,
   message: "",
   loading: true,
@@ -113,7 +133,7 @@ function CandlestickChart({ candles, label }: { candles: Candle[]; label: string
   if (candles.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-white/10 px-6 text-center text-sm text-slate-400">
-        No validated 5-minute candles are available. Check the feed status and account-service connection.
+        No validated 15-minute candles are available. Check the feed status and account-service connection.
       </div>
     );
   }
@@ -132,7 +152,7 @@ function CandlestickChart({ candles, label }: { candles: Candle[]; label: string
         className="block h-64 w-full"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`${label} 5-minute candlestick chart`}
+        aria-label={`${label} 15-minute candlestick chart`}
         preserveAspectRatio="none"
       >
         {[0, 0.5, 1].map((fraction) => {
@@ -176,10 +196,12 @@ function CandlestickChart({ candles, label }: { candles: Candle[]; label: string
 }
 
 function MarketCard({
+  symbol,
   title,
   snapshot,
   feedState,
 }: {
+  symbol: MarketSymbol;
   title: string;
   snapshot: MarketSnapshot;
   feedState: string;
@@ -188,15 +210,26 @@ function MarketCard({
   const latestConfirmed = [...snapshot.candles].reverse().find((candle) => !candle.is_forming);
   const price = snapshot.quote?.ltp ?? forming?.close ?? latestConfirmed?.close;
   const stateLabel = (snapshot.error ? "unavailable" : snapshot.feedState || feedState).replaceAll("_", " ");
+  const decision = snapshot.decision;
+  const signalStyle = decision?.decision === "BUY"
+    ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+    : decision?.decision === "SELL"
+      ? "border-rose-400/30 bg-rose-400/10 text-rose-300"
+      : "border-white/10 bg-slate-900 text-slate-300";
 
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <h2 className="text-lg font-semibold">
+            <Link href={`/chart/${symbol}`} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+              {title}<span className="ml-2 text-xs text-emerald-300" aria-label="opens chart in a new tab">↗</span>
+            </Link>
+          </h2>
           <p className="mt-1 text-xs capitalize text-slate-400">
             Feed: {stateLabel || "checking"}
           </p>
+          <p className="mt-1 text-xs text-slate-500">15-minute candles · NSE session</p>
         </div>
         <div className="text-right">
           <p className="text-xs uppercase tracking-wide text-slate-400">
@@ -214,6 +247,26 @@ function MarketCard({
       <div className="mt-5">
         <CandlestickChart candles={snapshot.candles} label={title} />
       </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${signalStyle}`}>
+            {decision?.decision ?? "SIGNAL PENDING"}
+          </span>
+          <span className="text-xs text-slate-400">
+            {decision?.is_current_signal ? "Current confirmed signal" : "Signal from confirmed candles"}
+          </span>
+        </div>
+        <Link
+          href={`/chart/${symbol}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-10 items-center rounded-md border border-emerald-400/30 px-3 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+        >
+          Open full chart <span aria-hidden="true" className="ml-2">↗</span>
+        </Link>
+      </div>
+      {decision && <p className="mt-2 text-xs text-slate-500">{decision.reason}</p>}
 
       {snapshot.error && <p className="mt-3 text-sm text-rose-300">{snapshot.error}</p>}
       {snapshot.message && !snapshot.error && (
@@ -279,7 +332,7 @@ export default function LiveMarketDashboard() {
       const query = `?symbol=${symbol}&provider=${selectedProvider}`;
       try {
         const [candleResponse, quoteResponse, formingResponse] = await Promise.all([
-          getJson<CandleResponse>(`/api/v1/live/candles${query}&timeframe=5m`, accessToken, signal),
+          getJson<CandleResponse>(`/api/v1/live/candles${query}&timeframe=15m&limit=500`, accessToken, signal),
           getJson<QuoteResponse>(`/api/v1/live/quote${query}`, accessToken, signal),
           getJson<FormingResponse>(`/api/v1/live/forming-candle${query}`, accessToken, signal),
         ]);
@@ -296,6 +349,7 @@ export default function LiveMarketDashboard() {
           ...current,
           [symbol]: {
             candles: uniqueCandles,
+            decision: candleResponse.indicator_decision,
             quote: quoteResponse.quote,
             message: candleResponse.message,
             loading: false,
@@ -315,6 +369,7 @@ export default function LiveMarketDashboard() {
           [symbol]: {
             ...current[symbol],
             candles: [],
+            decision: null,
             quote: null,
             message: "",
             current: false,
@@ -380,6 +435,7 @@ export default function LiveMarketDashboard() {
         {markets.map(({ symbol, title }) => (
           <MarketCard
             key={symbol}
+            symbol={symbol}
             title={title}
             snapshot={marketsState[symbol]}
             feedState={status?.instruments?.[symbol]?.feed_state ?? status?.feed_state ?? "checking"}
@@ -387,7 +443,7 @@ export default function LiveMarketDashboard() {
         ))}
       </div>
       <p className="text-xs text-slate-500">
-        Charts use the selected provider and show 5-minute candles. Educational analysis only;
+        Charts use the selected provider and show 15-minute candles. Educational analysis only;
         no orders are placed by this site.
       </p>
     </div>

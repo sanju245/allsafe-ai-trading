@@ -14,18 +14,17 @@ pytestmark = pytest.mark.usefixtures("admin_account_override")
 client = TestClient(app)
 
 
-def _profile(*, user_id, email="customer@example.com", status="active", allowed_ip="203.0.113.5", role="user"):
+def _profile(*, user_id, email="customer@example.com", status="active", role="user"):
     return {
         "id": str(user_id),
         "email": email,
         "role": role,
         "status": status,
-        "allowed_ip": allowed_ip,
         "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat(),
     }
 
 
-def test_admin_creates_email_login_bound_to_one_exact_ip(monkeypatch):
+def test_admin_creates_email_login_without_ip_requirement(monkeypatch):
     user_id = uuid4()
     captured = {}
     monkeypatch.setattr(
@@ -35,12 +34,8 @@ def test_admin_creates_email_login_bound_to_one_exact_ip(monkeypatch):
     )
     monkeypatch.setattr(
         admin_router,
-        "update_profile",
-        lambda account_id, changes: _profile(
-            user_id=account_id,
-            email=captured["email"],
-            allowed_ip=changes["allowed_ip"],
-        ),
+        "get_profile",
+        lambda account_id: _profile(user_id=account_id, email=captured["email"]),
     )
 
     response = client.post(
@@ -48,7 +43,6 @@ def test_admin_creates_email_login_bound_to_one_exact_ip(monkeypatch):
         json={
             "email": "  CUSTOMER@Example.COM ",
             "password": "initial-password-123",
-            "allowed_ip": "2001:0db8:0:0:0:0:0:10",
         },
     )
 
@@ -56,10 +50,10 @@ def test_admin_creates_email_login_bound_to_one_exact_ip(monkeypatch):
     assert captured == {"email": "customer@example.com", "password": "initial-password-123"}
     assert response.json()["email"] == "customer@example.com"
     assert response.json()["role"] == "user"
-    assert response.json()["allowed_ip"] == "2001:db8::10"
+    assert "allowed_ip" not in response.json()
 
 
-def test_admin_cannot_create_cidr_allowlist_or_short_password(monkeypatch):
+def test_admin_creation_rejects_removed_ip_field_and_short_password(monkeypatch):
     called = False
 
     def unexpected_create(*args, **kwargs):
@@ -67,16 +61,16 @@ def test_admin_cannot_create_cidr_allowlist_or_short_password(monkeypatch):
         called = True
 
     monkeypatch.setattr(admin_router, "create_auth_user", unexpected_create)
-    bad_ip = client.post(
+    legacy_ip_field = client.post(
         "/api/v1/admin/users",
         json={"email": "customer@example.com", "password": "long-enough-password", "allowed_ip": "203.0.113.0/24"},
     )
     bad_password = client.post(
         "/api/v1/admin/users",
-        json={"email": "customer@example.com", "password": "short", "allowed_ip": "203.0.113.5"},
+        json={"email": "customer@example.com", "password": "short"},
     )
 
-    assert bad_ip.status_code == 422
+    assert legacy_ip_field.status_code == 422
     assert bad_password.status_code == 422
     assert "short" not in bad_password.text
     assert called is False
@@ -85,11 +79,11 @@ def test_admin_cannot_create_cidr_allowlist_or_short_password(monkeypatch):
 def test_account_validation_errors_do_not_echo_submitted_password():
     response = client.post(
         "/api/v1/admin/users",
-        json={"email": "customer@example.com", "password": "secret-only-in-request"},
+        json={"email": "customer@example.com", "password": "secret"},
     )
 
     assert response.status_code == 422
-    assert "secret-only-in-request" not in response.text
+    assert "secret" not in response.text
 
 
 def test_admin_can_pause_and_resume_customer(monkeypatch):
@@ -135,6 +129,12 @@ def test_admin_cannot_edit_or_delete_another_admin(monkeypatch):
     assert update.status_code == 409
     assert delete.status_code == 409
     assert deleted == []
+
+
+def test_admin_update_rejects_legacy_ip_allowlist_field():
+    response = client.patch(f"/api/v1/admin/users/{uuid4()}", json={"allowed_ip": "203.0.113.5"})
+
+    assert response.status_code == 422
 
 
 def test_admin_can_delete_customer_account(monkeypatch):

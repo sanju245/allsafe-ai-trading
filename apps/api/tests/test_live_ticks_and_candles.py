@@ -1,4 +1,4 @@
-"""Tests for live index update validation, 5m IST session candle aggregation,
+"""Tests for live index update validation, 15m IST session candle aggregation,
 forming vs confirmed separation, incomplete intervals, and explicit gap tracking.
 """
 
@@ -11,6 +11,7 @@ from app.market_data.live_aggregator import (
     LiveSessionAggregator,
     groww_symbol_for,
     resolve_instrument_symbol,
+    slot_for_ist,
 )
 from app.market_data.live_models import (
     TickRejectionReason,
@@ -40,6 +41,21 @@ def test_groww_symbol_resolution(raw, expected):
 def test_groww_symbol_for_instrument():
     assert groww_symbol_for(InstrumentId.NIFTY50) == "NSE-NIFTY"
     assert groww_symbol_for(InstrumentId.BANKNIFTY) == "NSE-BANKNIFTY"
+
+
+@pytest.mark.parametrize(
+    ("timestamp", "expected_slot"),
+    [
+        (ist(2026, 1, 5, 9, 15), ist(2026, 1, 5, 9, 15)),
+        (ist(2026, 1, 5, 9, 29, 59), ist(2026, 1, 5, 9, 15)),
+        (ist(2026, 1, 5, 9, 30), ist(2026, 1, 5, 9, 30)),
+        (ist(2026, 1, 5, 9, 44, 59), ist(2026, 1, 5, 9, 30)),
+        (ist(2026, 1, 5, 9, 45), ist(2026, 1, 5, 9, 45)),
+        (ist(2026, 1, 5, 15, 29, 59), ist(2026, 1, 5, 15, 15)),
+    ],
+)
+def test_live_candle_slots_are_aligned_to_15_minutes(timestamp, expected_slot):
+    assert slot_for_ist(timestamp) == expected_slot
 
 
 def test_missing_and_naive_timestamps_rejected_without_inventing_time():
@@ -118,12 +134,14 @@ def test_forming_vs_confirmed_separation_and_missing_interval_tracking():
     assert agg.get_confirmed_candles(InstrumentId.NIFTY50) == []
     forming = agg.get_forming_candle(InstrumentId.NIFTY50)
     assert forming is not None and forming.is_forming is True and forming.is_confirmed is False
+    assert forming.timeframe.value == "15m"
+    assert forming.close_time == ist(2026, 1, 5, 9, 30)
     assert forming.volume is None
 
-    # Jump to 09:30 (skipping 09:20 and 09:25)
-    rollover = agg.process_tick(symbol="NIFTY50", price=24550.0, timestamp=ist(2026, 1, 5, 9, 30, 5))
+    # Jump to 09:30 (skipping the 09:30 candle)
+    rollover = agg.process_tick(symbol="NIFTY50", price=24550.0, timestamp=ist(2026, 1, 5, 9, 45, 5))
     assert rollover.confirmed_candle is not None
     assert rollover.confirmed_candle.timestamp == ist(2026, 1, 5, 9, 15)
     assert rollover.missing_interval is not None
-    assert rollover.missing_interval.missing_slot_count == 2
+    assert rollover.missing_interval.missing_slot_count == 1
     assert len(agg.get_confirmed_candles(InstrumentId.NIFTY50)) == 1

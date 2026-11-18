@@ -6,7 +6,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, Field, IPvAnyAddress, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from app.security import AccountPrincipal, require_admin_account
 from app.supabase_admin import (
@@ -30,7 +30,6 @@ class CreateUserRequest(BaseModel):
 
     email: str = Field(min_length=3, max_length=254)
     password: SecretStr
-    allowed_ip: IPvAnyAddress
 
     @field_validator("email")
     @classmethod
@@ -53,7 +52,6 @@ class UpdateUserRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: AccountStatus | None = None
-    allowed_ip: IPvAnyAddress | None = None
 
 
 class UserResponse(BaseModel):
@@ -61,7 +59,6 @@ class UserResponse(BaseModel):
     email: str
     role: Literal["user", "admin"]
     status: AccountStatus
-    allowed_ip: str | None
     created_at: datetime
 
 
@@ -122,10 +119,7 @@ def create_user(
             body.password.get_secret_value(),
         )
         user_id = UUID(auth_user["id"])
-        profile = update_profile(
-            str(user_id),
-            {"allowed_ip": body.allowed_ip.compressed},
-        )
+        profile = get_profile(str(user_id))
         if profile is None:
             raise SupabaseAdminAPIError(502)
     except SupabaseAdminAPIError as exc:
@@ -156,13 +150,9 @@ def update_user(
 ) -> UserResponse:
     changes = body.model_dump(exclude_unset=True)
     if not changes:
-        raise HTTPException(status_code=422, detail="Set status and/or allowed_ip.")
+        raise HTTPException(status_code=422, detail="Set a new account status.")
     if "status" in changes and changes["status"] is None:
         raise HTTPException(status_code=422, detail="status cannot be null.")
-    if "allowed_ip" in changes and changes["allowed_ip"] is None:
-        raise HTTPException(status_code=422, detail="allowed_ip must be one exact IP address.")
-    if "allowed_ip" in changes:
-        changes["allowed_ip"] = changes["allowed_ip"].compressed
 
     profile = _customer_profile(user_id)
     status_change = changes.get("status")

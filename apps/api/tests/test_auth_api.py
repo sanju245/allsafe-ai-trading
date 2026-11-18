@@ -11,14 +11,12 @@ from app.security import AccountPrincipal, require_active_account
 client = TestClient(app)
 
 
-def test_current_admin_profile_allows_null_customer_ip_allowlist():
+def test_current_admin_profile_has_only_account_access_fields():
     principal = AccountPrincipal(
         id="00000000-0000-4000-8000-000000000002",
         email="admin@example.com",
         role="admin",
         status="active",
-        allowed_ip=None,
-        client_ip=None,
     )
     missing = object()
     previous = app.dependency_overrides.get(require_active_account, missing)
@@ -35,8 +33,8 @@ def test_current_admin_profile_allows_null_customer_ip_allowlist():
 
     assert response.status_code == 200
     assert response.json()["role"] == "admin"
-    assert response.json()["allowed_ip"] is None
-    assert response.json()["client_ip"] is None
+    assert "allowed_ip" not in response.json()
+    assert "client_ip" not in response.json()
 
 
 def test_password_change_requires_a_verified_account(monkeypatch):

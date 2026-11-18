@@ -132,13 +132,16 @@ def test_groww_stream_subscribes_both_indices_and_tracks_feed_states():
 def test_runtime_historical_warmup_and_indicator_protection_rules():
     from tests.test_groww_historical import HistoricalFakeGrowwAPI
 
-    # Create 55 historical 5m candles on Mon Jan 5, 2026 (09:15 to 13:45 IST)
+    # Create valid 15m history across four sessions, ending at 13:30 IST on Jan 8
     base = ist(2026, 1, 5, 9, 15)
     rows = []
-    for i in range(55):
-        slot = base + timedelta(minutes=5 * i)
-        p = 24000.0 + 5.0 * i
-        rows.append([slot.strftime("%Y-%m-%dT%H:%M:%S"), p, p + 10.0, p - 5.0, p + 3.0, None, None])
+    i = 0
+    for day_offset, bar_count in ((0, 25), (1, 25), (2, 25), (3, 18)):
+        for bar_index in range(bar_count):
+            slot = base + timedelta(days=day_offset, minutes=15 * bar_index)
+            p = 24000.0 + 5.0 * i
+            rows.append([slot.strftime("%Y-%m-%dT%H:%M:%S"), p, p + 10.0, p - 5.0, p + 3.0, None, None])
+            i += 1
 
     class RuntimeFakeAPI(HistoricalFakeGrowwAPI):
         def __init__(self, token: str):
@@ -157,25 +160,25 @@ def test_runtime_historical_warmup_and_indicator_protection_rules():
     )
     runtime = LiveMarketDataRuntime(stream_manager=mgr)
 
-    # Start and warm up at 13:50 IST (right after the 55th candle [13:45-13:50] closed!)
-    t_now = ist(2026, 1, 5, 13, 50, 2)
+    # Start and warm up at 13:45 IST after the latest 15m bar closed.
+    t_now = ist(2026, 1, 8, 13, 45, 2)
     assert runtime.start(as_of=t_now, run_warmup=True) is True
 
-    # Feed a live update in the 13:50 slot
+    # Feed a live update in the 13:45 slot
     mgr.handle_index_feed_payload(
         {"NSE": {"CASH": {"NIFTY": {"tsInMillis": float(int(t_now.timestamp() * 1000)), "value": 24300.0}}}},
         as_of=t_now,
     )
 
-    # Evaluate decision at 13:50:05 IST:
-    # - 55 historical closed candles are used; the 13:50 forming candle is excluded from confirmed series
-    summary = runtime.evaluate_decision_for_instrument(InstrumentId.NIFTY50, as_of=ist(2026, 1, 5, 13, 50, 5))
-    assert summary.confirmed_candle_count == 55
-    assert summary.candle_timestamp == ist(2026, 1, 5, 13, 45)
+    # Evaluate decision at 13:45:05 IST:
+    # - 93 historical closed candles are used; the 13:45 forming candle is excluded from confirmed series
+    summary = runtime.evaluate_decision_for_instrument(InstrumentId.NIFTY50, as_of=ist(2026, 1, 8, 13, 45, 5))
+    assert summary.confirmed_candle_count == 93
+    assert summary.candle_timestamp == ist(2026, 1, 8, 13, 30)
     assert summary.decision in (TradeDecision.BUY, TradeDecision.SELL, TradeDecision.WAIT)
     assert summary.feed_state == FeedState.LIVE
 
-    # Now advance time by 5 minutes without ticks -> feed becomes STALE, is_current_signal must be False!
-    stale_summary = runtime.evaluate_decision_for_instrument(InstrumentId.NIFTY50, as_of=ist(2026, 1, 5, 13, 52, 0))
+    # Now advance time by 2 minutes without ticks -> feed becomes STALE, is_current_signal must be False!
+    stale_summary = runtime.evaluate_decision_for_instrument(InstrumentId.NIFTY50, as_of=ist(2026, 1, 8, 13, 47, 0))
     assert stale_summary.is_stale is True
     assert stale_summary.is_current_signal is False

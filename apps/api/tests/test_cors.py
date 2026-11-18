@@ -43,7 +43,6 @@ def test_password_change_preflight_is_allowed():
 @pytest.mark.parametrize(
     ("path", "method"),
     [
-        ("/api/v1/auth/client-ip", "GET"),
         ("/api/v1/auth/me", "GET"),
         ("/api/v1/auth/password", "PUT"),
         ("/api/v1/admin/users", "GET"),

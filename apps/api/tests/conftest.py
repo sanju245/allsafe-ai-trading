@@ -8,14 +8,12 @@ from app.security import AccountPrincipal, require_active_account, require_admin
 
 @pytest.fixture
 def active_account_override():
-    """Model an active, IP-approved customer without depending on Supabase."""
+    """Model an active customer without depending on Supabase."""
     principal = AccountPrincipal(
         id="00000000-0000-4000-8000-000000000001",
         email="customer@example.com",
         role="user",
         status="active",
-        allowed_ip="192.0.2.10",
-        client_ip="192.0.2.10",
     )
     missing = object()
     previous = app.dependency_overrides.get(require_active_account, missing)
@@ -37,8 +35,6 @@ def admin_account_override():
         email="admin@example.com",
         role="admin",
         status="active",
-        allowed_ip="192.0.2.20",
-        client_ip="192.0.2.20",
     )
     missing = object()
     previous = app.dependency_overrides.get(require_admin_account, missing)
