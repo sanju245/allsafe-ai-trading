@@ -324,9 +324,9 @@ function CandlestickPanel({
               return (
                 <g key={`signal-${candle.timestamp}`} aria-label={`${label} signal on ${timeLabel(candle.timestamp)}`}>
                   <title>{`${label} signal · ${timeLabel(candle.timestamp)} IST`}</title>
-                  <path d={pointerPath} fill={fill} />
                   <rect x={x - markerWidth / 2} y={markerY} width={markerWidth} height={markerHeight} rx="4"
-                    fill={fill} stroke={isBuy ? "#15803d" : "#b91c1c"} />
+                    fill={fill} />
+                  <path d={pointerPath} fill={fill} />
                   <text x={x} y={markerY + 14} textAnchor="middle" fill="white" fontSize="11" fontWeight="700">{label}</text>
                 </g>
               );
