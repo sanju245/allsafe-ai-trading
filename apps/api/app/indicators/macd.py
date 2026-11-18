@@ -12,6 +12,7 @@ class MACDPoint:
     signal_line: float | None
     histogram: float | None
     bullish: bool | None
+    bearish: bool | None = None
 
 def _ema(values, period):
     out = [None] * len(values)
@@ -41,6 +42,11 @@ def calculate_macd(candles: list[Candle], fast: int = 12, slow: int = 26, signal
     for i, candle in enumerate(candles):
         m, s = raw[i], sig[i]
         hist = None if m is None or s is None else m-s
-        bullish = None if hist is None else m > s and hist > 0
-        out.append(MACDPoint(candle.timestamp, m, s, hist, bullish))
+        if hist is None or hist == 0:
+            bullish = bearish = None
+        elif hist > 0:
+            bullish, bearish = True, False
+        else:
+            bullish, bearish = False, True
+        out.append(MACDPoint(candle.timestamp, m, s, hist, bullish, bearish))
     return out

@@ -10,6 +10,7 @@ class RSIPoint:
     timestamp: datetime
     rsi: float | None
     bullish: bool | None
+    bearish: bool | None = None
 
 def calculate_rsi(candles: list[Candle], period: int = 14) -> list[RSIPoint]:
     if isinstance(period, bool) or not isinstance(period, int) or period < 1:
@@ -35,5 +36,11 @@ def calculate_rsi(candles: list[Candle], period: int = 14) -> list[RSIPoint]:
             values[i] = calc(avg_gain, avg_loss)
     result: list[RSIPoint] = []
     for candle, rsi in zip(candles, values):
-        result.append(RSIPoint(candle.timestamp, rsi, None if rsi is None else rsi > 50))
+        if rsi is None or rsi == 50:
+            bullish = bearish = None
+        elif rsi > 50:
+            bullish, bearish = True, False
+        else:
+            bullish, bearish = False, True
+        result.append(RSIPoint(candle.timestamp, rsi, bullish, bearish))
     return result

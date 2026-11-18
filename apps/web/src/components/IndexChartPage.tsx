@@ -49,6 +49,7 @@ type HistoryResponse = {
   timeframe: string;
   start_date: string;
   candles: Candle[];
+  signals: SignalPoint[];
   message: string;
 };
 type Provider = "groww" | "upstox";
@@ -106,8 +107,8 @@ function setMarketProvider(provider: Provider) {
   }
 }
 
-function selectedHistoryDays(provider: Provider, days: string | null): number | null {
-  if (provider !== "upstox" || !days || !/^(?:[1-9]|[12][0-9]|30)$/.test(days)) return null;
+function selectedHistoryDays(days: string | null): number | null {
+  if (days === null || !/^(?:[1-9]|[12][0-9]|30)$/.test(days)) return 7;
   return Number(days);
 }
 
@@ -230,8 +231,11 @@ function CandlestickPanel({
   const decisionByTimestamp = new Map(signalHistory.map((point) => [Date.parse(point.timestamp), point.decision]));
   const minimum = visible.length ? Math.min(...visible.map((candle) => candle.low)) : 0;
   const maximum = visible.length ? Math.max(...visible.map((candle) => candle.high)) : 1;
-  const range = Math.max(maximum - minimum, Math.abs(maximum) * 0.0001, 1);
-  const y = (value: number) => top + ((maximum - value) / range) * plotHeight;
+  const dataRange = Math.max(maximum - minimum, Math.abs(maximum) * 0.0001, 1);
+  const chartMinimum = minimum - dataRange * 0.1;
+  const chartMaximum = maximum + dataRange * 0.1;
+  const range = chartMaximum - chartMinimum;
+  const y = (value: number) => top + ((chartMaximum - value) / range) * plotHeight;
   const plotWidth = width - left - right;
   const slot = visible.length ? plotWidth / visible.length : plotWidth;
   const visibleSignals = visible.flatMap((candle, index) => {
@@ -280,7 +284,7 @@ function CandlestickPanel({
           >
             {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
               const gridY = top + fraction * plotHeight;
-              const value = maximum - fraction * range;
+              const value = chartMaximum - fraction * range;
               return (
                 <g key={fraction}>
                   <line x1={left} x2={width - right} y1={gridY} y2={gridY} stroke="#233142" strokeDasharray="3 6" />
@@ -308,18 +312,22 @@ function CandlestickPanel({
             })}
             {visibleSignals.map(({ candle, index, signal }) => {
               const x = left + index * slot + slot / 2;
-              const markerY = Math.max(top + 7, y(candle.high) - 26);
-              const current = decision.candle_timestamp !== null &&
-                Date.parse(decision.candle_timestamp) === Date.parse(candle.timestamp);
-              const markerWidth = current ? 54 : 22;
-              const label = current ? signal : signal === "BUY" ? "B" : "S";
+              const isBuy = signal === "BUY";
+              const markerHeight = 20;
+              const markerWidth = 40;
+              const markerY = isBuy ? y(candle.low) + 8 : y(candle.high) - 30;
+              const label = isBuy ? "Buy" : "Sell";
+              const fill = isBuy ? "#22c55e" : "#ef4444";
+              const pointerPath = isBuy
+                ? `M ${x - 6} ${markerY} L ${x} ${markerY - 6} L ${x + 6} ${markerY} Z`
+                : `M ${x - 6} ${markerY + markerHeight} L ${x} ${markerY + markerHeight + 6} L ${x + 6} ${markerY + markerHeight} Z`;
               return (
-                <g key={`signal-${candle.timestamp}`} aria-label={`${signal} signal on ${timeLabel(candle.timestamp)}`}>
-                  <title>{`${signal} signal · ${timeLabel(candle.timestamp)} IST`}</title>
-                  <rect x={x - markerWidth / 2} y={markerY} width={markerWidth} height="22" rx="11"
-                    fill={signal === "BUY" ? "#064e3b" : "#881337"}
-                    stroke={signal === "BUY" ? "#34d399" : "#fb7185"} />
-                  <text x={x} y={markerY + 15} textAnchor="middle" fill="white" fontSize="11" fontWeight="700">{label}</text>
+                <g key={`signal-${candle.timestamp}`} aria-label={`${label} signal on ${timeLabel(candle.timestamp)}`}>
+                  <title>{`${label} signal · ${timeLabel(candle.timestamp)} IST`}</title>
+                  <rect x={x - markerWidth / 2} y={markerY} width={markerWidth} height={markerHeight} rx="4"
+                    fill={fill} />
+                  <path d={pointerPath} fill={fill} />
+                  <text x={x} y={markerY + 14} textAnchor="middle" fill="white" fontSize="11" fontWeight="700">{label}</text>
                 </g>
               );
             })}
@@ -330,6 +338,7 @@ function CandlestickPanel({
         </div>
       )}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/10 px-4 py-3 text-xs text-slate-400">
+        <span>{visibleSignals.length} confirmed BUY/SELL {visibleSignals.length === 1 ? "signal" : "signals"} in view</span>
         <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-400" />Bullish candle</span>
         <span><span className="mr-1 inline-block h-2 w-2 rounded-full bg-rose-400" />Bearish candle</span>
         {visible.some((candle) => candle.is_incomplete) && <span>Dashed outline means incomplete data</span>}
@@ -349,7 +358,7 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
   const requestedProvider = searchParams.get("provider");
   const storedProvider = useSyncExternalStore<Provider>(subscribeToMarketProvider, getMarketProviderSnapshot, () => "groww");
   const provider = requestedProvider === "groww" || requestedProvider === "upstox" ? requestedProvider : storedProvider;
-  const historyDays = selectedHistoryDays(provider, searchParams.get("days"));
+  const historyDays = selectedHistoryDays(searchParams.get("days"));
   const scope = useMemo<ChartScope>(
     () => ({ symbol: normalizedSymbol, provider, token, historyDays }),
     [normalizedSymbol, provider, token, historyDays],
@@ -358,7 +367,7 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
   const [historySnapshot, setHistorySnapshot] = useState<HistorySnapshot | null>(null);
   const [liveFailure, setLiveFailure] = useState<ChartError | null>(null);
   const [historyFailure, setHistoryFailure] = useState<ChartError | null>(null);
-  const [visibleCount, setVisibleCount] = useState(80);
+  const [visibleCount, setVisibleCount] = useState(150);
   const [position, setPosition] = useState<{ scope: ChartScope; offset: number } | null>(null);
 
   useEffect(() => {
@@ -453,6 +462,12 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
   const history = historySnapshot?.scope === scope ? historySnapshot.data : undefined;
   const liveCandles = live?.candles ?? emptyCandles;
   const candles = useMemo(() => mergeChartCandles(history, liveCandles), [history, liveCandles]);
+  const chartSignals = useMemo(() => {
+    const byTimestamp = new Map<number, SignalPoint>();
+    for (const point of history?.signals ?? []) byTimestamp.set(Date.parse(point.timestamp), point);
+    for (const point of live?.signalHistory ?? []) byTimestamp.set(Date.parse(point.timestamp), point);
+    return Array.from(byTimestamp.values());
+  }, [history, live]);
   const decision = live?.decision ?? emptyDecision;
   const quote = live?.quote ?? null;
   const feedState = liveError ? "unavailable" : live?.feedState ?? "checking";
@@ -490,7 +505,7 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
           <div>
             <Link href="/terminal" className="text-xs text-emerald-300 hover:text-emerald-200">← Market dashboard</Link>
             <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{instrumentName}</h1>
-            <p className="mt-1 text-sm text-slate-400">15-minute price chart · Rule-based indicator analysis</p>
+            <p className="mt-1 text-sm text-slate-400">15-minute price chart · Confirmed signal analysis</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <label htmlFor="chart-provider" className="text-sm text-slate-400">Market data</label>
@@ -521,7 +536,7 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <p className="text-xs uppercase tracking-wide text-slate-500">Confirmed bars</p>
             <p className="mt-2 text-2xl font-semibold tabular-nums">{decision.confirmed_candle_count}</p>
-            <p className="mt-1 text-xs text-slate-500">15-minute candles for indicator analysis</p>
+            <p className="mt-1 text-xs text-slate-500">Closed 15-minute candles used for signal checks</p>
           </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <p className="text-xs uppercase tracking-wide text-slate-500">Updated</p>
@@ -549,7 +564,7 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
           visibleCount={visibleCount}
           offset={offset}
           decision={decision}
-          signalHistory={live?.signalHistory ?? []}
+          signalHistory={chartSignals}
           onZoomIn={() => setVisibleCount((count) => Math.max(20, count - 20))}
           onZoomOut={() => setVisibleCount((count) => Math.min(300, count + 20))}
           onOlder={() => setPosition({ scope, offset: Math.min(maxOffset, offset + visibleCount) })}
@@ -560,18 +575,18 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
         <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="font-semibold">Indicator readings</h2>
+              <h2 className="font-semibold">Signal confirmation checks</h2>
               <p className="mt-1 text-xs text-slate-500">Calculated from complete, confirmed 15-minute candles. Forming candles are excluded.</p>
             </div>
             <span className="text-xs text-slate-500">{decision.candle_timestamp ? `Evaluated ${timeLabel(decision.candle_timestamp)} IST` : "Waiting for confirmed data"}</span>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
             {[
-              ["UT Bot", decision.ut_bot_signal ?? "No signal", decision.ut_bot_signal === "BUY" ? "text-emerald-300" : decision.ut_bot_signal === "SELL" ? "text-rose-300" : "text-slate-500"],
-              ["EMA", voteLabel(decision.ema_bullish), voteStyle(decision.ema_bullish)],
-              ["RSI", voteLabel(decision.rsi_bullish), voteStyle(decision.rsi_bullish)],
-              ["MACD", voteLabel(decision.macd_bullish), voteStyle(decision.macd_bullish)],
-              ["Supertrend", voteLabel(decision.supertrend_bullish), voteStyle(decision.supertrend_bullish)],
+              ["Primary trigger", decision.ut_bot_signal ?? "No signal", decision.ut_bot_signal === "BUY" ? "text-emerald-300" : decision.ut_bot_signal === "SELL" ? "text-rose-300" : "text-slate-500"],
+              ["Trend check A", voteLabel(decision.ema_bullish), voteStyle(decision.ema_bullish)],
+              ["Momentum check A", voteLabel(decision.rsi_bullish), voteStyle(decision.rsi_bullish)],
+              ["Momentum check B", voteLabel(decision.macd_bullish), voteStyle(decision.macd_bullish)],
+              ["Trend check B", voteLabel(decision.supertrend_bullish), voteStyle(decision.supertrend_bullish)],
             ].map(([name, value, style]) => (
               <div key={name} className="rounded-lg border border-white/10 bg-slate-950/70 px-3 py-3">
                 <p className="text-xs text-slate-500">{name}</p>
@@ -580,7 +595,7 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
             ))}
           </div>
           <p className="mt-4 text-sm leading-relaxed text-slate-400">
-            {liveError ? "Indicator readings are unavailable until the live data request succeeds." : decision.reason}
+            {liveError ? "Signal checks are unavailable until the live data request succeeds." : decision.reason}
           </p>
         </section>
 
