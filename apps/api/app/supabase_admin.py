@@ -144,6 +144,19 @@ def get_profile(user_id: str, *, settings: Settings | None = None) -> dict[str, 
     return rows[0] if rows else None
 
 
+def get_profile_by_email(email: str, *, settings: Settings | None = None) -> dict[str, Any] | None:
+    """Return an existing profile for a normalized email, if one exists."""
+    rows = _request_json(
+        "GET",
+        "rest/v1/profiles",
+        query={"select": PROFILE_COLUMNS, "email": f"eq.{email.strip().lower()}", "limit": "1"},
+        settings=settings,
+    )
+    if not isinstance(rows, list):
+        raise SupabaseAdminAPIError(502)
+    return rows[0] if rows else None
+
+
 def list_customer_profiles(*, settings: Settings | None = None) -> list[dict[str, Any]]:
     rows = _request_json(
         "GET",

@@ -65,6 +65,34 @@ def test_gmail_api_failure_is_private(monkeypatch):
     assert str(exc.value) == ""
 
 
+def test_admin_request_notification_includes_application_details(monkeypatch):
+    settings = Settings(
+        gmail_client_id="client-id",
+        gmail_client_secret=SecretStr("client-secret"),
+        gmail_refresh_token=SecretStr("refresh-token"),
+        gmail_from_email="admin@example.com",
+    )
+    sent = []
+    monkeypatch.setattr(notifications, "get_settings", lambda: settings)
+    monkeypatch.setattr(notifications, "send_email", lambda *args: sent.append(args))
+
+    notifications.send_admin_request_notification(
+        name="Asha Kumar",
+        email="asha@example.com",
+        date_of_birth="1995-04-20",
+        phone_number="+91 9876543210",
+        whatsapp_number="+91 9876543210",
+    )
+
+    assert len(sent) == 1
+    recipient, subject, body = sent[0]
+    assert recipient == "admin@example.com"
+    assert subject == "New AllSafe account request"
+    assert "asha@example.com" in body
+    assert "1995-04-20" in body
+    assert "+91 9876543210" in body
+
+
 @pytest.fixture
 def store(monkeypatch):
     rows = {}
@@ -74,6 +102,11 @@ def store(monkeypatch):
     monkeypatch.setattr(routes, "request_client_ip", lambda request: "203.0.113.5")
     monkeypatch.setattr(routes._request_rate_limiter, "check", lambda *args, **kwargs: None)
     monkeypatch.setattr(routes, "send_request_received", lambda email, name: calls.append(("received", email)))
+    monkeypatch.setattr(
+        routes,
+        "send_admin_request_notification",
+        lambda **values: calls.append(("admin_request", values["email"])),
+    )
     monkeypatch.setattr(routes, "send_approved", lambda email, name, link: calls.append(("approved", email, link)))
     monkeypatch.setattr(routes, "send_declined", lambda email, name: calls.append(("declined", email)))
 
@@ -97,6 +130,7 @@ def store(monkeypatch):
 
     monkeypatch.setattr(routes, "insert_account_request", insert)
     monkeypatch.setattr(routes, "get_account_request", lambda request_id: rows.get(request_id))
+    monkeypatch.setattr(routes, "get_profile_by_email", lambda email: None)
     monkeypatch.setattr(routes, "list_account_requests", lambda: list(rows.values()))
     monkeypatch.setattr(routes, "update_account_request", update)
     monkeypatch.setattr(routes, "delete_account_request", lambda request_id: rows.pop(request_id, None))
@@ -119,7 +153,7 @@ def test_public_request_sends_receipt_without_creating_account(store, monkeypatc
     assert response.status_code == 202
     assert len(rows) == 1
     assert next(iter(rows.values()))["status"] == "pending"
-    assert calls == [("received", "asha@example.com")]
+    assert calls == [("received", "asha@example.com"), ("admin_request", "asha@example.com")]
 
 
 def test_request_needs_no_customer_ip_and_duplicate_is_generic(store):
@@ -129,7 +163,7 @@ def test_request_needs_no_customer_ip_and_duplicate_is_generic(store):
     assert first.status_code == duplicate.status_code == 202
     assert len(rows) == 1
     assert next(iter(rows.values()))["request_ip"] == "203.0.113.5"
-    assert calls == [("received", "asha@example.com")]
+    assert calls == [("received", "asha@example.com"), ("admin_request", "asha@example.com")]
 
 
 def test_failed_receipt_does_not_leave_a_pending_request(store, monkeypatch):
@@ -138,6 +172,23 @@ def test_failed_receipt_does_not_leave_a_pending_request(store, monkeypatch):
     response = client.post("/api/v1/account-requests", json=application())
     assert response.status_code == 503
     assert rows == {}
+
+
+def test_failed_admin_notification_keeps_saved_request_and_receipt(store, monkeypatch, caplog):
+    rows, calls = store
+    monkeypatch.setattr(
+        routes,
+        "send_admin_request_notification",
+        lambda **kwargs: (_ for _ in ()).throw(EmailDeliveryError()),
+    )
+
+    response = client.post("/api/v1/account-requests", json=application())
+
+    assert response.status_code == 202
+    assert len(rows) == 1
+    assert next(iter(rows.values()))["status"] == "pending"
+    assert calls == [("received", "asha@example.com")]
+    assert "administrator email notification failed" in caplog.text
 
 
 @pytest.mark.usefixtures("admin_account_override")
@@ -158,6 +209,37 @@ def test_approval_creates_user_without_ip_binding_and_sends_setup_link(store, mo
     assert ("approved", "asha@example.com", "https://auth.example/verify?token=secret") in calls
     assert rows[request_id]["notification_status"] == "sent"
     assert client.post(f"/api/v1/admin/account-requests/{request_id}/approve").status_code == 409
+
+
+@pytest.mark.usefixtures("admin_account_override")
+def test_approval_explains_existing_account_and_leaves_request_pending(store, monkeypatch):
+    rows, _ = store
+    client.post("/api/v1/account-requests", json=application())
+    request_id = next(iter(rows))
+    existing_user_id = str(uuid4())
+    monkeypatch.setattr(routes, "get_profile_by_email", lambda email: {
+        "id": existing_user_id, "email": "asha@example.com", "role": "user", "status": "active",
+    })
+    monkeypatch.setattr(routes, "generate_account_link", lambda *args, **kwargs: pytest.fail("Duplicate account invite was attempted"))
+
+    response = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
+
+    assert response.status_code == 409
+    assert "already belongs to an AllSafe account" in response.json()["detail"]
+    assert rows[request_id]["status"] == "pending"
+
+
+@pytest.mark.usefixtures("admin_account_override")
+def test_approval_database_lookup_failure_does_not_claim_request(store, monkeypatch):
+    rows, _ = store
+    client.post("/api/v1/account-requests", json=application())
+    request_id = next(iter(rows))
+    monkeypatch.setattr(routes, "get_profile_by_email", lambda email: (_ for _ in ()).throw(SupabaseAdminAPIError(503)))
+
+    response = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
+
+    assert response.status_code == 502
+    assert rows[request_id]["status"] == "pending"
 
 
 @pytest.mark.usefixtures("admin_account_override")
