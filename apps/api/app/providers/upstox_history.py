@@ -15,6 +15,12 @@ from app.config import Settings, get_settings
 from app.market_data.instruments import InstrumentId
 from app.market_data.models import Candle, DataSource, DataSourceKind
 from app.market_data.timeframes import Timeframe
+from app.providers.base import (
+    CandleRequest,
+    MarketDataProvider,
+    ProviderUnavailableError,
+    UnsupportedRequestError,
+)
 
 _IST = ZoneInfo("Asia/Kolkata")
 _UPSTOX_BASE_URL = "https://api.upstox.com/v3/historical-candle"
@@ -141,6 +147,57 @@ def fetch_15m_candles(
             continue
         candles_by_timestamp[candle.timestamp] = candle
     return [candles_by_timestamp[key] for key in sorted(candles_by_timestamp)]
+
+
+class UpstoxHistoricalProvider(MarketDataProvider):
+    """Provide recent Upstox history to the shared live/indicator runtime."""
+
+    def __init__(self, settings: Settings | None = None) -> None:
+        self.settings = settings
+
+    @property
+    def name(self) -> str:
+        return "Upstox Historical Candle V3"
+
+    @property
+    def source_kind(self) -> DataSourceKind:
+        return DataSourceKind.HISTORICAL
+
+    @property
+    def supported_timeframes(self) -> frozenset[Timeframe]:
+        return frozenset({Timeframe.M15})
+
+    def fetch_candles(self, request: CandleRequest) -> list[Candle]:
+        if request.timeframe is not Timeframe.M15:
+            raise UnsupportedRequestError("Upstox history supports only 15-minute candles.")
+
+        end = (request.end or datetime.now(_IST)).astimezone(_IST)
+        start = (request.start or end - timedelta(days=4)).astimezone(_IST)
+        start_date = start.date()
+        end_date = end.date()
+        if start_date > end_date:
+            raise UnsupportedRequestError("Upstox history start must not follow its end.")
+        # The provider accepts at most 30 inclusive calendar dates. Keep the most
+        # recent supported part of a wider runtime warm-up window.
+        if (end_date - start_date).days + 1 > MAX_RANGE_DAYS:
+            start_date = end_date - timedelta(days=MAX_RANGE_DAYS - 1)
+
+        try:
+            candles = fetch_15m_candles(
+                request.instrument,
+                start_date=start_date,
+                end_date=end_date,
+                settings=self.settings,
+                as_of=end,
+            )
+        except UpstoxHistoryError as exc:
+            if exc.status_code == 422:
+                raise UnsupportedRequestError(exc.detail) from None
+            raise ProviderUnavailableError(exc.detail) from None
+
+        if request.limit is not None:
+            candles = candles[-request.limit:]
+        return candles
 
 
 def _parse_candle_row(

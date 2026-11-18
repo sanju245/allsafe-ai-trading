@@ -3,6 +3,7 @@
 from datetime import date, datetime
 from io import BytesIO
 import json
+from types import SimpleNamespace
 from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 
@@ -11,9 +12,11 @@ from pydantic import SecretStr
 
 from app.config import Settings
 from app.market_data.instruments import InstrumentId
+from app.market_data.models import Candle, DataSource, DataSourceKind
 from app.market_data.timeframes import Timeframe
+from app.providers.base import CandleRequest
 from app.providers import upstox_history
-from app.providers.upstox_history import UpstoxHistoryError
+from app.providers.upstox_history import UpstoxHistoricalProvider, UpstoxHistoryError
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -184,3 +187,87 @@ def test_invalid_ohlc_is_rejected(monkeypatch):
             settings=_settings(),
             as_of=datetime(2026, 1, 5, 10, tzinfo=IST),
         )
+
+
+def test_upstox_provider_adapts_runtime_request_and_respects_limit(monkeypatch):
+    calls = []
+    now = datetime(2026, 1, 8, 10, tzinfo=IST)
+    candle = Candle(
+        timestamp=datetime(2026, 1, 8, 9, 15, tzinfo=IST),
+        open=100,
+        high=102,
+        low=99,
+        close=101,
+        volume=None,
+        instrument=InstrumentId.NIFTY50,
+        timeframe=Timeframe.M15,
+        source=DataSource(
+            name="Upstox Historical Candle V3",
+            kind=DataSourceKind.HISTORICAL,
+            retrieved_at=now,
+        ),
+    )
+
+    def fake_fetch(instrument, *, start_date, end_date, settings, as_of):
+        calls.append((instrument, start_date, end_date, settings, as_of))
+        return [candle, candle]
+
+    monkeypatch.setattr(upstox_history, "fetch_15m_candles", fake_fetch)
+    settings = _settings()
+    provider = UpstoxHistoricalProvider(settings=settings)
+    request = CandleRequest(
+        instrument=InstrumentId.NIFTY50,
+        timeframe=Timeframe.M15,
+        start=datetime(2026, 1, 5, 9, 15, tzinfo=IST),
+        end=now,
+        limit=1,
+    )
+
+    result = provider.fetch_candles(request)
+
+    assert len(result) == 1
+    assert calls == [(InstrumentId.NIFTY50, date(2026, 1, 5), date(2026, 1, 8), settings, now)]
+
+
+def test_upstox_runtime_build_warms_history_for_both_indices(monkeypatch):
+    from app.main import startup_live_runtime
+    from app.routers.live import build_runtime_from_settings
+
+    now = datetime(2026, 1, 8, 10, tzinfo=IST)
+    calls = []
+
+    def fake_fetch(instrument, *, start_date, end_date, settings, as_of):
+        calls.append((instrument, start_date, end_date))
+        price = 24_000 if instrument is InstrumentId.NIFTY50 else 50_000
+        return [Candle(
+            timestamp=datetime(2026, 1, 8, 9, 15, tzinfo=IST),
+            open=price,
+            high=price + 10,
+            low=price - 5,
+            close=price + 3,
+            volume=None,
+            instrument=instrument,
+            timeframe=Timeframe.M15,
+            source=DataSource(
+                name="Upstox Historical Candle V3",
+                kind=DataSourceKind.HISTORICAL,
+                retrieved_at=as_of,
+            ),
+        )]
+
+    monkeypatch.setattr(upstox_history, "fetch_15m_candles", fake_fetch)
+    runtime = build_runtime_from_settings(_settings(), provider="upstox")
+    app = SimpleNamespace(state=SimpleNamespace(live_runtimes={"upstox": runtime}))
+
+    # History must still be loaded when the streaming switch is off; the full
+    # chart can then show earlier candles while correctly marking the feed idle.
+    startup_live_runtime(app)
+
+    assert runtime.stream_manager.streaming_enabled is False
+    assert [call[0] for call in calls] == [InstrumentId.NIFTY50, InstrumentId.BANKNIFTY]
+    for instrument in InstrumentId:
+        candles = runtime.merged_complete_confirmed_candles(instrument, as_of=now)
+        assert len(candles) == 1
+        assert candles[0].source.kind is DataSourceKind.HISTORICAL
+        status = runtime.stream_manager.evaluate_instrument_state(instrument, as_of=now)
+        assert status.historical_candle_count == 1

@@ -36,6 +36,13 @@ def startup_live_runtime(application: FastAPI) -> None:
     for runtime in runtimes.values():
         if runtime.stream_manager.streaming_enabled:
             runtime.start(run_warmup=True)
+        elif runtime.historical_provider is not None:
+            try:
+                runtime.warmup_from_historical_provider()
+            except Exception as exc:  # noqa: BLE001 - history failure must not block API startup
+                runtime.stream_manager._record_error(
+                    f"Historical warm-up warning: {exc}", permanent=False
+                )
 
 
 def shutdown_live_runtime(application: FastAPI) -> None:
