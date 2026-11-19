@@ -1,9 +1,9 @@
 # Final website and project audit
 
-**Audit date:** 2026-11-19 10:22 IST (2026-11-19 04:52 UTC)
+**Audit date:** 2026-11-19 10:25 IST (2026-11-19 04:55 UTC)
 **Repository:** `sanju245/allsafe-ai-trading`
-**Production baseline:** web `6f9b696` (Vercel READY); API `0125822` (Render live)
-**Overall:** the website and API are reachable. The account-approval fix is deployed. This follow-up exposes the latest returned historical-candle time, fixes zoom when fewer candles are loaded than the initial viewport, repairs the chart browser audit, synchronizes the local API environment, and raises two transitive Python packages above published security fixes. Frontend and backend checks pass. The provider's missing Nov 18 candles and a credential-backed live-market chart check remain unresolved.
+**Production release:** web and API commit `9c184cb` is pushed to `main`; Vercel is **READY** and Render is **live**.
+**Overall:** the site and API are reachable on the updated release. The follow-up exposes the latest returned historical-candle time, fixes zoom when fewer candles are loaded than the initial viewport, repairs the chart browser audit, synchronizes the local API environment, and applies two published Python dependency security fixes. Frontend and backend checks pass. The provider's missing Nov 18 candles and a credential-backed live-market chart check remain unresolved.
 
 ## Highest-priority findings
 
@@ -11,7 +11,7 @@
 
 In the earlier read-only admin browser session, the account-request queue showed a request still marked **pending** and the message **“Account approval failed. Please retry.”** I did not approve, decline, retry, or otherwise change the request. No personal details are recorded in this report.
 
-Since that observation, Render's deployment history confirms commit `0125822`—“Fix account request approval and email alerts”—is **live** on the API service. The account-request and storage regression tests pass. I did not approve or retry a real customer request, so the prior 502 is a historical observation; the live transaction still needs a safe test request before declaring the workflow fully verified.
+The approval fix from `0125822` is included in the current API release `9c184cb`. The account-request and storage regression tests pass. I did not approve or retry a real customer request, so the prior 502 is a historical observation; the live transaction still needs a safe test request before declaring the workflow fully verified.
 
 ### Medium — Sign-in can look stalled for up to roughly a minute
 
@@ -31,14 +31,14 @@ The implementation path is connected end to end: the chart polls the live candle
 
 Expected live behavior: after a 15-minute candle is confirmed, a qualifying BUY or SELL should appear on its matching candle on the next successful chart refresh (normally within 15 seconds). No label should appear while a candle is still forming, when the decision is WAIT, or when the API cannot validate a continuous candle series. The signal rules also stop accepting new 15-minute breakouts after the configured 14:15 candle-time cutoff. The market was open during this follow-up, but no signed-in customer chart session was available in the browser. Therefore, the audit did not observe a real-time quote or an actual live label on a confirmed signal candle.
 
-The repaired browser audit now exercises the current UI with synthetic data: it asserts both BUY and SELL SVG labels, the latest returned history timestamp, chart zoom, provider switching, refresh failure handling, and sign-out across tabs. It passes locally against a production build. This verifies marker rendering, but it does not validate Upstox data or prove that a fresh signal arrives during a real market session. The production screenshot's zero-signal result is consistent with the renderer.
+The repaired browser audit now exercises the current UI with synthetic data: it asserts both BUY and SELL SVG labels, the latest returned history timestamp, chart zoom, provider switching, refresh failure handling, and sign-out across tabs. It passes against the local production build and twice against the deployed site after release. This verifies marker rendering, but it does not validate provider data or prove that a fresh signal arrives during a real market session. The production screenshot's zero-signal result is consistent with the renderer.
 
 ### Medium — Market-hour feed freshness remains unverified
 
 The audit ran while the market was open, but there was no signed-in customer chart session available in the browser. The API health endpoint confirms only that the service responds; the live feed and a fresh market-hour signal were not verified. Render application-log retrieval was unavailable, and the protected live-data routes require a customer session.
 ### Resolved — Local backend environment and package advisories
 
-The local `.venv` initially lacked `jwt` despite the declared requirements. It was synchronized from `requirements.txt`; the full backend suite then passed: **311 passed**. The first advisory scan found vulnerable `certifi` and `opentelemetry-api` versions. The API now uses `certifi 2026.10.23` and `opentelemetry-api 1.45.2`, the fixed releases listed by the [certifi advisory](https://github.com/advisories/GHSA-6q48-6c7w-9gw2) and [OpenTelemetry advisory](https://github.com/open-telemetry/opentelemetry-python/security/advisories/GHSA-mf5v-w3w3-f6cg). The published market-data SDK capped `certifi` below 2026, so its MIT-licensed 1.5.0 source is vendored with package code unchanged and only that dependency bound updated; see `apps/api/vendor/growwapi/UPSTREAM.md`. The API dependency set installs cleanly and `pip check` reports no broken requirements. `pip-audit --local` found no known vulnerable installed dependencies; it notes that the locally patched SDK version is not published on PyPI and therefore cannot be matched to a package advisory record.
+The local `.venv` initially lacked `jwt` despite the declared requirements. It was synchronized from `requirements.txt`; the full backend suite then passed: **311 passed**. The first advisory scan found vulnerable `certifi` and `opentelemetry-api` versions. The API now uses `certifi 2026.10.23` and `opentelemetry-api 1.45.2`, the fixed releases listed by the [certifi advisory](https://github.com/advisories/GHSA-6q48-6c7w-9gw2) and [OpenTelemetry advisory](https://github.com/open-telemetry/opentelemetry-python/security/advisories/GHSA-mf5v-w3w3-f6cg). The published market-data SDK capped `certifi` below 2026, so its MIT-licensed 1.5.0 source is vendored with only whitespace cleanup in Python files; packaging metadata raises the certificate dependency minimum. See `apps/api/vendor/growwapi/UPSTREAM.md`. The API dependency set installs cleanly and `pip check` reports no broken requirements. `pip-audit --local` found no known vulnerable installed dependencies; it notes that the locally patched SDK version is not published on PyPI and therefore cannot be matched to a package advisory record.
 
 ### Resolved — The browser chart audit helper now matches the chart
 
@@ -75,12 +75,13 @@ Treat this as an exploratory historical result, not a guarantee or profitability
 
 - Production web routes: all 11 listed routes returned HTTP 200.
 - Production API: `/health` and `/openapi.json` returned HTTP 200; protected data/account endpoints returned HTTP 401 without credentials; CORS preflight passed.
-- Vercel: the current `main` deployment on `6f9b696` was **READY**; the production domain returned HTTP 200. The follow-up UI release is to be verified after this commit.
-- Render: deployment history confirms API commit `0125822` is **live**; public `GET /health` returned `status: ok`, `environment: production`, and version `0.2.0`.
+- Vercel: deployment for `9c184cb` is **READY**; the production domain returned HTTP 200 and all 11 production routes returned HTTP 200 after release.
+- Render: API deployment for `9c184cb` is **live**; post-deploy `GET /health` returned `status: ok`, `environment: production`, and version `0.2.0`.
+- Post-deploy API checks: `/openapi.json` returned HTTP 200, `/api/v1/auth/me` rejected an unauthenticated request with HTTP 401, and the production-site CORS preflight returned HTTP 200 with the expected origin.
 - Frontend tests: **32 passed, 0 failed**.
 - Backend tests: **311 passed** in the synchronized project virtual environment.
 - Focused account-approval, storage, and historical-data tests: **34 passed**; one Starlette/httpx deprecation warning.
-- Browser chart audit: **passed** against a local production build with synthetic market responses; both candle labels, the newest history timestamp, zoom, provider switching, refresh failure, and cross-tab sign-out passed.
+- Browser chart audit: **passed** locally and twice against the deployed site with synthetic market responses; both candle labels, the newest history timestamp, zoom, provider switching, refresh failure, and cross-tab sign-out passed.
 - Frontend lint, TypeScript typecheck, and production build: **passed**.
 - `npm audit` and `npm audit --omit=dev`: **0 vulnerabilities** reported.
 - Python dependency checks: `pip check` reported no broken requirements; `pip-audit --local` found no known vulnerable installed dependencies and noted the local patched SDK is not listed on PyPI.
@@ -96,4 +97,4 @@ This was a source, test, deployment, route, and read-only portal audit. It was n
 4. During an authenticated market session, verify a fresh quote and a real BUY/SELL marker on the corresponding confirmed candle.
 5. Keep evaluating signal performance on unseen periods and authorized data before treating the historical percentage as expected future accuracy.
 
-This follow-up changes chart presentation and zoom behavior, the browser-audit helper, and API dependency resolution to apply the patched certificate bundle. It does not change signal generation, API routes, customer data, or market-data settings.
+This follow-up changes chart presentation and zoom behavior, the browser-audit helper, and API dependency resolution to apply the patched certificate bundle. It does not change signal generation, API routes, customer data, or market-data settings. Live release checks confirmed the updated frontend and API are serving on `main`; real authenticated market candles and signals still require a signed-in customer session to verify.
