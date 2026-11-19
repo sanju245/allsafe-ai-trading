@@ -212,7 +212,7 @@ function LandingPage({
                 If you like this project, you can make a one-time contribution of ₹{CONTRIBUTION_AMOUNT} via UPI.
               </p>
               <p className="mt-3 text-sm text-slate-400">
-                Pay manually in your UPI app using <span className="select-all font-mono text-slate-200">{CONTRIBUTION_UPI_ID}</span>.
+                Choose Pay now to open your UPI app with ₹{CONTRIBUTION_AMOUNT} pre-filled. You can review the payment before continuing.
               </p>
             </div>
             <div className="flex flex-col items-start gap-3">
