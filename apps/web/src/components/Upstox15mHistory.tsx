@@ -26,6 +26,7 @@ type CandleReply = {
 type MarketSnapshot = {
   candles: Candle[];
   retrievedAt: string | null;
+  lastCandleAt: string | null;
   startDate: string | null;
   endDate: string | null;
   loading: boolean;
@@ -50,6 +51,7 @@ const API_BASE_URL = (
 const emptySnapshot = (): MarketSnapshot => ({
   candles: [],
   retrievedAt: null,
+  lastCandleAt: null,
   startDate: null,
   endDate: null,
   loading: true,
@@ -181,6 +183,7 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
           [symbol]: {
             candles: result.candles,
             retrievedAt: result.retrieved_at,
+            lastCandleAt: result.last_candle_at,
             startDate: result.start_date,
             endDate: result.end_date,
             loading: false,
@@ -265,7 +268,10 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
                   </Link>
                 </h3>
                 {snapshot.retrievedAt && (
-                  <p className="text-xs text-slate-500">Loaded {formatIst(snapshot.retrievedAt)} IST</p>
+                  <div className="text-xs text-slate-500">
+                    <p>Loaded {formatIst(snapshot.retrievedAt)} IST</p>
+                    <p>Latest returned candle: {snapshot.lastCandleAt ? `${formatIst(snapshot.lastCandleAt)} IST` : "Unavailable"}</p>
+                  </div>
                 )}
               </div>
               {snapshot.error && <p role="alert" className="mb-3 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">{snapshot.error}</p>}

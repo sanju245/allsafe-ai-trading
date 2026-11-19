@@ -48,6 +48,7 @@ type FormingResponse = { available: boolean; forming_candle: Candle | null };
 type HistoryResponse = {
   timeframe: string;
   start_date: string;
+  last_candle_at: string | null;
   candles: Candle[];
   signals: SignalPoint[];
   message: string;
@@ -264,9 +265,9 @@ function CandlestickPanel({
           <button onClick={onNewer} disabled={offset === 0} className={chartControlClass}>Newer →</button>
           <button onClick={onLatest} className={chartControlClass}>Latest</button>
           <span className="mx-1 hidden h-5 border-l border-white/10 sm:inline" />
-          <button onClick={onZoomOut} disabled={visibleCount >= 300} aria-label="Zoom out" className={chartControlClass}>−</button>
-          <span className="min-w-12 text-center text-xs tabular-nums text-slate-400">{visibleCount} bars</span>
-          <button onClick={onZoomIn} disabled={visibleCount <= 20} aria-label="Zoom in" className={chartControlClass}>+</button>
+          <button onClick={onZoomOut} disabled={visibleCount >= Math.min(300, candles.length)} aria-label="Zoom out" className={chartControlClass}>−</button>
+          <span className="min-w-12 text-center text-xs tabular-nums text-slate-400">{visible.length} bars</span>
+          <button onClick={onZoomIn} disabled={visibleCount <= 20 || candles.length <= 20} aria-label="Zoom in" className={chartControlClass}>+</button>
         </div>
       </div>
       {visible.length === 0 ? (
@@ -556,6 +557,9 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
           Upstox history · {historyDays === 1 ? "Today" : `Last ${historyDays} days`}
           {history && ` · ${history.message}`}
         </p>}
+        {historyDays !== null && history && <p className="text-xs text-slate-500">
+          Latest returned historical candle: {history.last_candle_at ? `${timeLabel(history.last_candle_at)} IST` : "Unavailable"}
+        </p>}
         {loadingHistory && <p role="status" className="text-sm text-slate-400">Loading Upstox history…</p>}
         {historyError && <p role="alert" className="text-sm text-rose-300">Upstox history could not be loaded. {historyError}</p>}
 
@@ -565,8 +569,8 @@ export default function IndexChartPage({ symbol }: { symbol: string }) {
           offset={offset}
           decision={decision}
           signalHistory={chartSignals}
-          onZoomIn={() => setVisibleCount((count) => Math.max(20, count - 20))}
-          onZoomOut={() => setVisibleCount((count) => Math.min(300, count + 20))}
+          onZoomIn={() => setVisibleCount((count) => Math.max(20, Math.min(count, candles.length) - 20))}
+          onZoomOut={() => setVisibleCount((count) => Math.min(300, candles.length, count + 20))}
           onOlder={() => setPosition({ scope, offset: Math.min(maxOffset, offset + visibleCount) })}
           onNewer={() => setPosition({ scope, offset: Math.max(0, offset - visibleCount) })}
           onLatest={() => setPosition({ scope, offset: 0 })}

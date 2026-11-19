@@ -1,0 +1,1 @@
+This directory carries source files from the Groww `growwapi` 1.5.0 release under the included MIT license. The only source edits are whitespace-only cleanup. Packaging metadata is local; the sole dependency policy change raises the `certifi` minimum to patched release `2026.10.18`.

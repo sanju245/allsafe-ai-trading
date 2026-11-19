@@ -28,7 +28,8 @@ const fixtureToken = "synthetic-browser-chart-audit-access-token";
 const fixtureCredentials = [fixtureUser.email, fixturePassword, fixtureToken];
 const health = { status: "ok", service: "chart-audit-fixture", version: "1", environment: "test" };
 const symbols = ["NIFTY50", "BANKNIFTY"];
-const fixtureDays = ["2026-11-12", "2026-11-13", "2026-11-16", "2026-11-17"];
+const fixtureDays = ["2026-11-12", "2026-11-13", "2026-11-16", "2026-11-17", "2026-11-18"];
+const liveWarmupDays = ["2026-11-06", "2026-11-09", "2026-11-11", ...fixtureDays];
 const fixtureRequests = [];
 const requestErrors = [];
 const runtimeErrors = [];
@@ -36,10 +37,10 @@ const failedCharts = new Set();
 let signInCount = 0;
 let forbiddenAccessCount = 0;
 
-function bars(symbol) {
+function bars(symbol, days = fixtureDays) {
   const base = symbol === "BANKNIFTY" ? 52000 : 25000;
-  return fixtureDays.flatMap((date, day) =>
-    Array.from({ length: day === 3 ? 23 : 25 }, (_, index) => {
+  return days.flatMap((date, day) =>
+    Array.from({ length: date === "2026-11-17" ? 23 : date === "2026-11-18" ? 21 : 25 }, (_, index) => {
       const timestamp = new Date(Date.parse(`${date}T03:45:00Z`) + index * 900000).toISOString();
       const price = base + day * 13 + index * 4;
       return { timestamp, open: price, high: price + 9, low: price - 6, close: price + 2, timeframe: "15m", is_forming: false };
@@ -48,7 +49,7 @@ function bars(symbol) {
 }
 
 function candleFixture(symbol, includeHistory) {
-  const candles = bars(symbol);
+  const candles = bars(symbol, liveWarmupDays);
   const current = symbol === "BANKNIFTY" ? "SELL" : "BUY";
   const opposite = current === "BUY" ? "SELL" : "BUY";
   return {
@@ -141,7 +142,7 @@ async function intercept(route) {
       return respond(candleFixture(symbol, includeHistory));
     }
     if (pathname === "/api/v1/live/quote") {
-      const last = bars(symbol).at(-1);
+      const last = bars(symbol, liveWarmupDays).at(-1);
       return respond({ available: true, feed_state: "live", is_stale: false, quote: { ltp: last.close, timestamp: last.timestamp } });
     }
     if (pathname === "/api/v1/live/forming-candle") return respond({ available: false, forming_candle: null });
@@ -180,9 +181,9 @@ async function openChart(context, link, symbol) {
 async function assertFullChart(chart, title) {
   await chart.getByRole("heading", { name: title, exact: true }).waitFor();
   await chart.getByRole("img", { name: /^15-minute candlestick chart with \d+ bars$/ }).waitFor();
-  await chart.locator('svg [aria-label^="BUY signal on"]').first().waitFor();
-  await chart.locator('svg [aria-label^="SELL signal on"]').first().waitFor();
-  await chart.getByRole("heading", { name: "Indicator readings" }).waitFor();
+  await chart.locator('svg [aria-label^="Buy signal on"]').first().waitFor();
+  await chart.locator('svg [aria-label^="Sell signal on"]').first().waitFor();
+  await chart.getByRole("heading", { name: "Signal confirmation checks" }).waitFor();
 }
 
 async function audit(context) {
@@ -218,7 +219,7 @@ async function audit(context) {
     assert.ok(fixtureRequests.some((item) => item.symbol === symbol && item.includeHistory));
   }
   await nifty.getByRole("button", { name: "Zoom in" }).click();
-  await nifty.getByRole("img", { name: "15-minute candlestick chart with 60 bars" }).waitFor();
+  await nifty.getByRole("img", { name: "15-minute candlestick chart with 99 bars" }).waitFor();
 
   const historyRequest = context.waitForEvent("request", {
     predicate(request) {
@@ -232,6 +233,7 @@ async function audit(context) {
   await historical.getByRole("heading", { name: "NIFTY 50", exact: true }).waitFor();
   assert.equal(new URL(historical.url()).searchParams.get("days"), "7");
   await historical.getByText("Upstox history · Last 7 days").waitFor();
+  await historical.getByText(/Latest returned historical candle: 18 Nov, 14:15 IST/).waitFor();
   const provider = historical.getByRole("combobox", { name: "Market data" });
   await historical.waitForFunction(() => document.querySelector("#chart-provider")?.value === "upstox");
   await historical.getByRole("img", { name: /^15-minute candlestick chart with \d+ bars$/ }).waitFor();
