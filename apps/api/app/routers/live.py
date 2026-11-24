@@ -15,7 +15,7 @@ Safety guarantees:
   `is_current_signal=False` whenever the feed is stale, disconnected, closed, or unavailable.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
@@ -282,6 +282,7 @@ def get_live_quote(
     response: Response,
     symbol: str = Query(..., min_length=1, description="Instrument symbol, e.g. NIFTY50 or BANKNIFTY"),
     provider: str | None = Query(default=None),
+    include_forming: bool = Query(default=False),
     _: AccountPrincipal = Depends(require_active_account),  # noqa: B008
 ) -> LiveQuoteResponse:
     """Return the latest validated live quote for a subscribed index, never inventing prices or volume."""
@@ -292,6 +293,7 @@ def get_live_quote(
     now_ist = datetime.now(IST)
     inst_status = mgr.evaluate_instrument_state(instrument, as_of=now_ist)
     quote = mgr.aggregator.get_latest_quote(instrument)
+    forming = mgr.aggregator.get_forming_candle(instrument, as_of=now_ist) if include_forming else None
 
     quote_schema: LiveQuotePayloadSchema | None = None
     if quote is not None:
@@ -318,6 +320,7 @@ def get_live_quote(
         is_stale=inst_status.is_stale,
         age_seconds=inst_status.age_seconds,
         quote=quote_schema,
+        forming_candle=FormingCandleSchema.model_validate(forming, from_attributes=True) if forming else None,
         message=_status_message(
             inst_status.feed_state,
             mgr.streaming_enabled,
@@ -334,9 +337,10 @@ def get_live_candles(
     response: Response,
     symbol: str = Query(..., min_length=1, description="Instrument symbol, e.g. NIFTY50 or BANKNIFTY"),
     timeframe: str = Query(default="15m", description="Candle timeframe (must be 15m)"),
-    limit: int = Query(default=100, ge=1, le=500, description="Maximum number of confirmed candles to return"),
+    limit: int = Query(default=100, ge=1, le=750, description="Maximum number of confirmed candles to return"),
     provider: str | None = Query(default=None),
     include_indicator_history: bool = Query(default=False),
+    history_days: int | None = Query(default=None, ge=1, le=30),
     _: AccountPrincipal = Depends(require_active_account),  # noqa: B008
 ) -> LiveCandlesResponse:
     """Return confirmed 15-minute candles only (never mixed with the forming candle) plus indicator decision."""
@@ -347,23 +351,33 @@ def get_live_candles(
     rt = get_live_runtime(request, provider)
     mgr = rt.stream_manager
     now_ist = datetime.now(IST)
+    warning = rt.refresh_chart_history(instrument, as_of=now_ist) if history_days is not None else None
     inst_status = mgr.evaluate_instrument_state(instrument, as_of=now_ist)
     confirmed = mgr.aggregator.get_confirmed_candles(instrument, as_of=now_ist)
     forming = mgr.aggregator.get_forming_candle(instrument, as_of=now_ist)
     missing = mgr.aggregator.get_missing_intervals(instrument)
-    decision_summary = rt.evaluate_decision_for_instrument(instrument, as_of=now_ist)
-
-    candle_by_timestamp = {
-        candle.timestamp: candle
-        for candle in rt.merged_complete_confirmed_candles(instrument, as_of=now_ist)
-    }
-    live_by_timestamp = {candle.timestamp: candle for candle in confirmed}
+    complete = rt.merged_complete_confirmed_candles(instrument, as_of=now_ist)
+    incomplete_tail = confirmed[-1].timestamp if confirmed and confirmed[-1].is_incomplete else None
+    decision_summary, points = rt.evaluate_series(instrument, complete, as_of=now_ist, incomplete_tail=incomplete_tail)
+    candle_by_timestamp = {c.timestamp: c for c in complete}
+    live_by_timestamp = {}
     for candle in confirmed:
-        # Retain even an incomplete live close in the chart, but its incomplete flag
-        # remains visible and it is excluded from the indicator history.
-        candle_by_timestamp[candle.timestamp] = candle.to_candle()
+        if candle.is_incomplete and candle.timestamp in candle_by_timestamp:
+            continue
+        live_by_timestamp[candle.timestamp] = candle
+        candle_by_timestamp.setdefault(candle.timestamp, candle.to_candle())
 
-    ordered_chart_candles = sorted(candle_by_timestamp.values(), key=lambda candle: candle.timestamp)[-limit:]
+    start = now_ist.date() - timedelta(days=history_days - 1) if history_days else None
+    ordered_chart_candles = [c for stamp, c in sorted(candle_by_timestamp.items())
+                             if start is None or stamp.astimezone(IST).date() >= start][-limit:]
+    visible_stamps = {c.timestamp for c in ordered_chart_candles}
+    previous = None
+    if history_days and ordered_chart_candles:
+        for candle in complete:
+            if candle.timestamp >= ordered_chart_candles[0].timestamp:
+                break
+            ha_open = sum(previous) / 2 if previous else (candle.open + candle.close) / 2
+            previous = (ha_open, (candle.open + candle.high + candle.low + candle.close) / 4)
     candle_schemas = []
     for candle in ordered_chart_candles:
         live_candle = live_by_timestamp.get(candle.timestamp)
@@ -436,7 +450,8 @@ def get_live_candles(
                 supertrend_bullish=point.supertrend_bullish,
                 reason=point.reason,
             )
-            for point in rt.decision_history_for_instrument(instrument, as_of=now_ist)
+            for point in points
+            if history_days is None or (point.timestamp in visible_stamps and point.decision.value in ("BUY", "SELL"))
         ]
 
     return LiveCandlesResponse(
@@ -457,6 +472,8 @@ def get_live_candles(
         missing_intervals=missing_schemas,
         indicator_decision=decision_schema,
         indicator_history=decision_history,
+        history_warning=warning,
+        heikin_ashi_previous_open_close=previous,
         message=_status_message(
             inst_status.feed_state,
             mgr.streaming_enabled,

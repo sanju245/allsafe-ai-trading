@@ -13,6 +13,8 @@ import math
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from functools import wraps
+from threading import RLock
 
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_models import (
@@ -30,7 +32,7 @@ from app.market_data.sessions import (
     IST,
     SESSION_CLOSE,
     SESSION_OPEN,
-    is_weekday,
+    is_regular_trading_day,
     session_slots,
     to_ist,
 )
@@ -87,7 +89,7 @@ def is_regular_session_ist(ts: datetime) -> bool:
     if ts.tzinfo is None or ts.utcoffset() is None:
         raise ValueError("timestamp must be timezone-aware")
     local = to_ist(ts)
-    if not is_weekday(local.date()):
+    if not is_regular_trading_day(local.date()):
         return False
     t = local.time().replace(tzinfo=None)
     return SESSION_OPEN <= t < SESSION_CLOSE
@@ -187,6 +189,15 @@ class TickProcessResult:
     missing_interval: MissingInterval | None = None
 
 
+def _synchronized(method):
+    """Serialize broker callbacks and HTTP snapshots at a candle boundary."""
+    @wraps(method)
+    def locked(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return locked
+
+
 class LiveSessionAggregator:
     """Validates live index/price updates and aggregates them into forming and confirmed 15m candles."""
 
@@ -204,6 +215,7 @@ class LiveSessionAggregator:
         if max_confirmed_candles < 1:
             raise ValueError("max_confirmed_candles must be >= 1")
         self.source = source or DataSource(name="groww", kind=DataSourceKind.LIVE)
+        self._lock = RLock()
         self.max_confirmed_candles = max_confirmed_candles
         self.max_rejected_ticks = max_rejected_ticks
         self.max_future_skew_seconds = max_future_skew_seconds
@@ -234,6 +246,7 @@ class LiveSessionAggregator:
             raise ValueError("started_at must be timezone-aware")
         self.stream_started_at = to_ist(started_at)
 
+    @_synchronized
     def mark_disconnection(self, as_of: datetime | None = None) -> None:
         """Mark all active forming candles as interrupted by a feed disconnect."""
         for inst, bucket in self._active.items():
@@ -265,6 +278,7 @@ class LiveSessionAggregator:
             self._rejected_counts_by_instrument[instrument] += 1
         return TickProcessResult(accepted=False, rejection=rejection)
 
+    @_synchronized
     def process_tick(
         self,
         *,
@@ -531,6 +545,7 @@ class LiveSessionAggregator:
             day += one_day
         return tuple(missing)
 
+    @_synchronized
     def finalize_closed(self, as_of: datetime) -> list[ConfirmedCandle]:
         """Finalize any forming candles whose 15-minute window has closed by as_of."""
         if as_of.tzinfo is None or as_of.utcoffset() is None:
@@ -546,12 +561,14 @@ class LiveSessionAggregator:
                 emitted.append(confirmed)
         return emitted
 
+    @_synchronized
     def get_forming_candle(self, instrument: InstrumentId, *, as_of: datetime | None = None) -> FormingCandle | None:
         if as_of is not None:
             self.finalize_closed(as_of)
         bucket = self._active.get(instrument)
         return bucket.to_forming() if bucket is not None else None
 
+    @_synchronized
     def get_confirmed_candles(
         self,
         instrument: InstrumentId,
@@ -574,6 +591,7 @@ class LiveSessionAggregator:
     def get_missing_intervals(self, instrument: InstrumentId) -> list[MissingInterval]:
         return list(self._missing_intervals[instrument])
 
+    @_synchronized
     def get_rejected_ticks(self, instrument: InstrumentId | None = None) -> list[RejectedTick]:
         if instrument is None:
             return list(self._rejected_ticks)

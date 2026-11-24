@@ -54,15 +54,15 @@ def test_upstox_candle_route_returns_date_range_and_historical_labels(monkeypatc
             _candle(datetime.combine(target_day, time(9, 30), tzinfo=IST)),
         ]
 
-    def fake_decisions(candles):
+    def fake_decisions(candles, *, instrument, as_of):
         return [
             SimpleNamespace(timestamp=candles[0].timestamp, decision=TradeDecision.BUY),
             SimpleNamespace(timestamp=candles[1].timestamp, decision=TradeDecision.BUY),
             SimpleNamespace(timestamp=candles[2].timestamp, decision=TradeDecision.SELL),
-        ]
+        ], len(candles)
 
     monkeypatch.setattr(upstox_router, "fetch_15m_candles", fake_fetch)
-    monkeypatch.setattr(upstox_router, "calculate_decisions", fake_decisions)
+    monkeypatch.setattr(upstox_router, "validated_decisions", fake_decisions)
     response = client.get("/api/v1/market-data/upstox/candles?symbol=NIFTY50&days=7")
 
     assert response.status_code == 200

@@ -349,7 +349,7 @@ export default function LiveMarketDashboard() {
       const query = `?symbol=${symbol}&provider=${selectedProvider}`;
       try {
         const [candleResponse, quoteResponse, formingResponse] = await Promise.all([
-          getJson<CandleResponse>(`/api/v1/live/candles${query}&timeframe=15m&limit=500`, accessToken, signal),
+          getJson<CandleResponse>(`/api/v1/live/candles${query}&timeframe=15m&limit=500&history_days=7`, accessToken, signal),
           getJson<QuoteResponse>(`/api/v1/live/quote${query}`, accessToken, signal),
           getJson<FormingResponse>(`/api/v1/live/forming-candle${query}`, accessToken, signal),
         ]);

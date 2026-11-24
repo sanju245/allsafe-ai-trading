@@ -7,8 +7,9 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
-from app.indicators.decision import TradeDecision, calculate_decisions
+from app.indicators.decision import TradeDecision
 from app.market_data.instruments import InstrumentId
+from app.market_data.live_runtime import validated_decisions
 from app.market_data.models import Candle
 from app.market_data.timeframes import Timeframe
 from app.providers.upstox_history import MAX_RANGE_DAYS, UpstoxHistoryError, fetch_15m_candles
@@ -64,7 +65,7 @@ def get_upstox_15m_candles(
         candle for candle in calculation_candles
         if start_date <= candle.timestamp.astimezone(_IST).date() <= end_date
     ]
-    decisions = calculate_decisions(calculation_candles)
+    decisions, _ = validated_decisions(calculation_candles, instrument=symbol, as_of=retrieved_at)
     signals = [
         HistoricalSignal(timestamp=point.timestamp, decision=point.decision.value)
         for point in decisions

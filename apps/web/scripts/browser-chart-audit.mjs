@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
@@ -34,6 +35,9 @@ const fixtureRequests = [];
 const requestErrors = [];
 const runtimeErrors = [];
 const failedCharts = new Set();
+const staleQuotes = new Set();
+const rolled = new Set();
+let recording;
 let signInCount = 0;
 let forbiddenAccessCount = 0;
 
@@ -42,21 +46,28 @@ function bars(symbol, days = fixtureDays) {
   return days.flatMap((date, day) =>
     Array.from({ length: date === "2026-11-17" ? 23 : date === "2026-11-18" ? 21 : 25 }, (_, index) => {
       const timestamp = new Date(Date.parse(`${date}T03:45:00Z`) + index * 900000).toISOString();
-      const price = base + day * 13 + index * 4;
-      return { timestamp, open: price, high: price + 9, low: price - 6, close: price + 2, timeframe: "15m", is_forming: false };
+      const wave = (n) => day * 13 + n * 1.3 + Math.sin((n + day * 6) / 3) * 39;
+      const price = base + wave(index), close = base + wave(index + 1);
+      return { timestamp, open: price, high: Math.max(price, close) + 4, low: Math.min(price, close) - 6, close, timeframe: "15m", is_forming: false };
     }),
   );
 }
 
-function candleFixture(symbol, includeHistory) {
+function candleFixture(symbol, includeHistory, historyDays) {
   const candles = bars(symbol, liveWarmupDays);
   const current = symbol === "BANKNIFTY" ? "SELL" : "BUY";
   const opposite = current === "BUY" ? "SELL" : "BUY";
+  const events = [{ timestamp: candles.at(-17).timestamp, decision: opposite }, { timestamp: candles.at(-1).timestamp, decision: current }];
+  if (rolled.has(symbol)) {
+    candles.push(nextBar(candles.at(-1)));
+    events.push({ timestamp: candles.at(-1).timestamp, decision: current });
+  }
   return {
-    candles,
+    candles: historyDays ? candles.filter(c => Date.parse(c.timestamp) >= Date.parse("2026-11-19T00:00:00+05:30") - historyDays * 86400000) : candles,
     timeframe: "15m",
     feed_state: "live",
     is_stale: false,
+    checked_at: new Date(Date.parse(candles.at(-1).timestamp) + 902000).toISOString(),
     message: "Synthetic live data for browser audit.",
     indicator_decision: {
       decision: current,
@@ -70,11 +81,13 @@ function candleFixture(symbol, includeHistory) {
       supertrend_bullish: current === "BUY",
       confirmed_candle_count: candles.length,
     },
-    indicator_history: includeHistory ? [
-      { timestamp: candles.at(-4).timestamp, decision: opposite },
-      { timestamp: candles.at(-1).timestamp, decision: current },
-    ] : undefined,
+    indicator_history: includeHistory ? [...events, { timestamp: nextBar(candles.at(-1)).timestamp, decision: opposite }] : undefined,
   };
+}
+
+function nextBar(last) {
+  return { ...last, timestamp: new Date(Date.parse(last.timestamp) + 900000).toISOString(),
+    open: last.close, high: last.close + 9, low: last.close - 4, close: last.close + 7 };
 }
 
 async function intercept(route) {
@@ -139,11 +152,19 @@ async function intercept(route) {
     if (pathname === "/api/v1/live/candles") {
       assert.equal(searchParams.get("timeframe"), "15m");
       if (includeHistory && failedCharts.has(symbol)) return respond({ detail: "Simulated refresh outage." }, 503);
-      return respond(candleFixture(symbol, includeHistory));
+      if (recording && includeHistory && provider === "upstox") return respond(recording[symbol]);
+      return respond(candleFixture(symbol, includeHistory, Number(searchParams.get("history_days"))));
     }
     if (pathname === "/api/v1/live/quote") {
-      const last = bars(symbol, liveWarmupDays).at(-1);
-      return respond({ available: true, feed_state: "live", is_stale: false, quote: { ltp: last.close, timestamp: last.timestamp } });
+      if (recording && provider === "upstox" && searchParams.has("include_forming")) return respond({
+        available: false, feed_state: "closed", is_stale: false, checked_at: recording[symbol].checked_at, quote: null, forming_candle: null,
+      });
+      const snapshot = candleFixture(symbol, false);
+      const forming = nextBar(snapshot.candles.at(-1));
+      const stale = staleQuotes.has(symbol);
+      return respond({ available: true, feed_state: stale ? "stale" : "live", is_stale: stale, checked_at: snapshot.checked_at,
+        quote: { ltp: forming.close, timestamp: snapshot.checked_at },
+        forming_candle: searchParams.get("include_forming") ? { ...forming, is_forming: true, is_confirmed: false } : null });
     }
     if (pathname === "/api/v1/live/forming-candle") return respond({ available: false, forming_candle: null });
     if (pathname === "/api/v1/market-data/upstox/candles") {
@@ -180,10 +201,10 @@ async function openChart(context, link, symbol) {
 
 async function assertFullChart(chart, title) {
   await chart.getByRole("heading", { name: title, exact: true }).waitFor();
-  await chart.getByRole("img", { name: /^15-minute candlestick chart with \d+ bars$/ }).waitFor();
-  await chart.locator('svg [aria-label^="Buy signal on"]').first().waitFor();
-  await chart.locator('svg [aria-label^="Sell signal on"]').first().waitFor();
-  await chart.getByRole("heading", { name: "Signal confirmation checks" }).waitFor();
+  await chart.getByRole("region", { name: "Interactive 15-minute Heikin Ashi chart" }).waitFor();
+  for (const side of ["Buy", "Sell"]) await chart.locator(`[aria-label^="${side} signal on"]`).first().waitFor();
+  await chart.getByText("Signal confirmation checks", { exact: true }).waitFor();
+  assert.equal(await chart.locator(".chart-badge").count(), 2, "Only confirmed events have badges.");
 }
 
 async function audit(context) {
@@ -218,25 +239,51 @@ async function audit(context) {
   for (const symbol of symbols) {
     assert.ok(fixtureRequests.some((item) => item.symbol === symbol && item.includeHistory));
   }
+  await nifty.bringToFront();
+  const plot = nifty.locator(".chart-plot");
+  const initialSize = Number(await plot.getAttribute("data-range-size"));
+  const badge = nifty.locator('.chart-badge.buy');
+  const originalBadgeX = await badge.evaluate(el => el.getBoundingClientRect().x);
+  const box = await plot.boundingBox();
+  assert.ok(box && box.width > 300 && box.height > 250);
   await nifty.getByRole("button", { name: "Zoom in" }).click();
-  await nifty.getByRole("img", { name: "15-minute candlestick chart with 99 bars" }).waitFor();
+  await nifty.waitForFunction((size) => Number(document.querySelector(".chart-plot").dataset.rangeSize) < size, initialSize);
+  await nifty.mouse.move(box.x + box.width * .45, box.y + box.height * .55);
+  await nifty.mouse.down();
+  await nifty.mouse.move(box.x + box.width * .58, box.y + box.height * .55, { steps: 6 });
+  await nifty.mouse.up();
+  await nifty.waitForFunction(x => Math.abs(document.querySelector(".chart-badge.buy").getBoundingClientRect().x - x) > 3, originalBadgeX);
+  await nifty.getByRole("button", { name: "Fit", exact: true }).click();
+  await nifty.getByRole("button", { name: "Latest", exact: true }).click();
+  await nifty.getByRole("button", { name: "Signals", exact: true }).click();
+  assert.equal(await nifty.locator(".chart-badge").count(), 0);
+  await nifty.getByRole("button", { name: "Signals", exact: true }).click();
+  await assertFullChart(nifty, "NIFTY 50");
+  await nifty.getByRole("button", { name: "Full screen", exact: true }).click();
+  await nifty.getByRole("button", { name: "Exit full screen" }).click();
+  await nifty.setViewportSize({ width: 390, height: 844 });
+  await nifty.getByRole("button", { name: "Fit", exact: true }).click();
+  await assertFullChart(nifty, "NIFTY 50");
+  assert.ok(await nifty.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  await nifty.setViewportSize({ width: 1280, height: 800 });
+  await nifty.getByRole("button", { name: "Fit", exact: true }).click();
+  if (process.env.CHART_AUDIT_SCREENSHOT && !process.env.CHART_AUDIT_REPLAY) await nifty.screenshot({ path: process.env.CHART_AUDIT_SCREENSHOT, fullPage: true });
 
   const historyRequest = context.waitForEvent("request", {
     predicate(request) {
       const url = new URL(request.url());
-      return url.pathname === "/api/v1/market-data/upstox/candles" && url.searchParams.get("symbol") === "NIFTY50" &&
-        url.searchParams.get("days") === "7" && new URL(request.frame().url()).pathname === "/chart/NIFTY50";
+      return url.pathname === "/api/v1/live/candles" && url.searchParams.get("symbol") === "NIFTY50" &&
+        url.searchParams.get("history_days") === "7" && new URL(request.frame().url()).pathname === "/chart/NIFTY50";
     },
   });
   const historical = await openChart(context, history.getByRole("link", { name: /^NIFTY 50/ }), "NIFTY50");
   await historyRequest;
   await historical.getByRole("heading", { name: "NIFTY 50", exact: true }).waitFor();
   assert.equal(new URL(historical.url()).searchParams.get("days"), "7");
-  await historical.getByText("Upstox history · Last 7 days").waitFor();
-  await historical.getByText(/Latest returned historical candle: 18 Nov, 14:15 IST/).waitFor();
+  assert.equal(await historical.getByRole("combobox", { name: "History" }).inputValue(), "7");
   const provider = historical.getByRole("combobox", { name: "Market data" });
   await historical.waitForFunction(() => document.querySelector("#chart-provider")?.value === "upstox");
-  await historical.getByRole("img", { name: /^15-minute candlestick chart with \d+ bars$/ }).waitFor();
+  await assertFullChart(historical, "NIFTY 50");
   const switched = historical.waitForRequest((request) => {
     const url = new URL(request.url());
     return url.pathname === "/api/v1/live/candles" && url.searchParams.get("provider") === "groww";
@@ -249,10 +296,48 @@ async function audit(context) {
   await assertFullChart(nifty, "NIFTY 50");
   await nifty.getByText("Current confirmed signal", { exact: true }).waitFor();
   await nifty.bringToFront();
+  staleQuotes.add("NIFTY50");
+  await nifty.getByText("Feed delayed", { exact: true }).waitFor();
+  assert.equal(await plot.getAttribute("data-forming"), "false");
+  assert.equal(await nifty.getByText("Current confirmed signal", { exact: true }).count(), 0);
+  assert.equal(await nifty.locator(".chart-badge").count(), 2);
+  staleQuotes.delete("NIFTY50");
+  const oldCount = Number(await plot.getAttribute("data-closed-bars"));
+  rolled.add("NIFTY50");
+  await nifty.waitForFunction(n => Number(document.querySelector(".chart-plot").dataset.closedBars) === n + 1, oldCount);
+  await nifty.getByText("Current confirmed signal", { exact: true }).waitFor();
+  assert.equal(await nifty.locator(".chart-badge").count(), 3, "The new close preserves the preceding signals.");
   failedCharts.add("NIFTY50");
   await nifty.getByRole("alert").filter({ hasText: /503|unavailable|refresh|load/i }).waitFor({ timeout: 35000 });
   assert.equal(await nifty.getByText("Current confirmed signal", { exact: true }).count(), 0);
   failedCharts.delete("NIFTY50");
+
+  if (process.env.CHART_AUDIT_REPLAY) {
+    recording = JSON.parse(await readFile(process.env.CHART_AUDIT_REPLAY, "utf8"));
+    for (const [index, page] of [nifty, bank].entries()) {
+      const expected = recording[symbols[index]];
+      await page.bringToFront();
+      await page.getByRole("combobox", { name: "Market data" }).selectOption("upstox");
+      await page.evaluate(() => window.dispatchEvent(new Event("online")));
+      await page.getByText("Market closed", { exact: true }).waitFor();
+      await page.waitForFunction(n => Number(document.querySelector(".chart-plot")?.dataset.closedBars) === n, expected.candles.length);
+      await page.getByRole("button", { name: "Fit", exact: true }).click();
+      assert.equal(await page.locator(".chart-badge").count(), expected.indicator_history.length);
+      for (const p of expected.indicator_history) {
+        const mark = page.locator(`.chart-badge[data-time="${Date.parse(p.timestamp) / 1000}"][data-side="${p.decision}"]`);
+        await mark.waitFor();
+        await mark.hover({ force: true });
+        const name = await mark.getAttribute("aria-label");
+        await page.locator(".chart-values").getByText(name.split("signal on ")[1], { exact: true }).waitFor();
+      }
+      assert.equal(await page.getByText("Current confirmed signal", { exact: true }).count(), 0);
+      if (!index && process.env.CHART_AUDIT_SCREENSHOT) {
+        await page.mouse.move(1, 1);
+        await page.screenshot({ path: process.env.CHART_AUDIT_SCREENSHOT, fullPage: true });
+      }
+    }
+    console.log("PASS: actual recorded broker candles, badge timestamps, crosshair alignment and closed-market status for both indices.");
+  }
 
   const hasStoredToken = await nifty.evaluate((token) => [localStorage, sessionStorage].some((storage) =>
     Object.values(storage).some((value) => value.includes(token))), fixtureToken);
@@ -267,7 +352,7 @@ async function audit(context) {
   assert.equal(forbiddenAccessCount, 0, "The frontend should wait for authorization before fetching protected data.");
   assert.deepEqual(requestErrors, []);
   assert.deepEqual(runtimeErrors, []);
-  console.log("PASS: one sign-in, both new chart tabs, 15-minute candles, BUY and SELL markers, zoom, provider switch, refresh failure, and sign-out across tabs.");
+  console.log("PASS: sign-in, both chart tabs, Heikin Ashi, confirmed markers, zoom, drag, fit, fullscreen, mobile, provider switch, stale feed, close rollover, refresh failure and sign-out.");
 }
 
 let server;

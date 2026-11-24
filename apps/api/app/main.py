@@ -27,13 +27,17 @@ from app.routers.live import build_runtimes_from_settings, set_live_runtimes
 settings = get_settings()
 
 
-def startup_live_runtime(application: FastAPI) -> None:
-    """Initialize configured read-only Groww and Upstox market-data runtimes."""
+def _register_live_runtimes(application: FastAPI):
     runtimes = getattr(application.state, "live_runtimes", None)
     if not isinstance(runtimes, dict):
         runtimes = build_runtimes_from_settings(get_settings())
         set_live_runtimes(application, runtimes)
-    for runtime in runtimes.values():
+    return runtimes
+
+
+def startup_live_runtime(application: FastAPI) -> None:
+    """Initialize configured read-only Groww and Upstox market-data runtimes."""
+    for runtime in _register_live_runtimes(application).values():
         if runtime.stream_manager.streaming_enabled:
             runtime.start(run_warmup=True)
         elif runtime.historical_provider is not None:
@@ -59,13 +63,17 @@ def shutdown_live_runtime(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    # The Groww SDK creates and runs its own asyncio loop during feed startup.
-    # Keep that blocking SDK work off the ASGI loop to avoid nested-loop errors.
-    await asyncio.to_thread(startup_live_runtime, application)
+    # Register handles before serving. Authentication and health can respond while
+    # the brokers connect and supply historical candles on a separate thread.
+    _register_live_runtimes(application)
+    startup = asyncio.create_task(asyncio.to_thread(startup_live_runtime, application))
     try:
         yield
     finally:
-        await asyncio.to_thread(shutdown_live_runtime, application)
+        try:
+            await startup
+        finally:
+            await asyncio.to_thread(shutdown_live_runtime, application)
 
 
 _fastapi_kwargs: dict[str, object] = {

@@ -1,5 +1,7 @@
 """Response schemas for read-only live market-data endpoints."""
 
+from __future__ import annotations
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -82,6 +84,7 @@ class LiveQuoteResponse(BaseModel):
     is_stale: bool
     age_seconds: float | None = None
     quote: LiveQuotePayloadSchema | None = None
+    forming_candle: FormingCandleSchema | None = None
     message: str
     checked_at: datetime
 
@@ -176,6 +179,8 @@ class LiveCandlesResponse(BaseModel):
     missing_intervals: list[MissingIntervalSchema]
     indicator_decision: IndicatorDecisionSchema
     indicator_history: list[IndicatorHistoryPointSchema] = Field(default_factory=list)
+    history_warning: str | None = None
+    heikin_ashi_previous_open_close: tuple[float, float] | None = None
     message: str
     checked_at: datetime
 

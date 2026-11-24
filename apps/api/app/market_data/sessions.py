@@ -8,8 +8,8 @@ Conventions (all documented in the README):
 * Intraday candles sit on a grid that starts at 09:15 IST. A 1h candle therefore
   opens at 09:15, 10:15, ... 15:15.
 * A daily candle is identified by its IST calendar date; its time of day is ignored.
-* No exchange holiday calendar is bundled. Weekdays are treated as trading days, so
-  callers must treat "missing whole day" findings as possible holidays.
+* The regular-session calendar includes published 2026 NSE cash-market closures.
+  Other years currently use weekdays.
 
 IST is a fixed UTC+05:30 offset (India has no daylight saving), so no tz database
 is needed. That also avoids a ``tzdata`` requirement on Windows.
@@ -37,6 +37,20 @@ def is_weekday(day: date) -> bool:
     return day.weekday() < 5
 
 
+# NSE capital market circular CMTR71775, plus the January 15 election closure.
+_REGULAR_HOLIDAYS_2026 = frozenset({
+    (1, 15), (1, 26), (3, 3), (3, 26), (3, 31), (4, 3), (4, 14),
+    (5, 1), (5, 28), (6, 26), (9, 14), (10, 2), (10, 20), (11, 10),
+    (11, 24), (12, 25),
+})
+
+
+def is_regular_trading_day(day: date) -> bool:
+    return is_weekday(day) and not (
+        day.year == 2026 and (day.month, day.day) in _REGULAR_HOLIDAYS_2026
+    )
+
+
 def _at(day: date, at: time) -> datetime:
     return datetime.combine(day, at, tzinfo=IST)
 
@@ -44,7 +58,7 @@ def _at(day: date, at: time) -> datetime:
 @lru_cache(maxsize=256)
 def session_slots(day: date, timeframe: Timeframe) -> tuple[datetime, ...]:
     """Expected candle OPEN times (IST) for one calendar day. Empty on weekends."""
-    if not is_weekday(day):
+    if not is_regular_trading_day(day):
         return ()
     open_dt = _at(day, SESSION_OPEN)
     if timeframe is Timeframe.D1:
@@ -78,7 +92,7 @@ def classify_timestamp(ts: datetime, timeframe: Timeframe) -> tuple[SlotClass, d
     """
     local = to_ist(ts)
     day = local.date()
-    if not is_weekday(day):
+    if not is_regular_trading_day(day):
         return SlotClass.OUTSIDE_SESSION, local
     if timeframe is Timeframe.D1:
         return SlotClass.ON_GRID, _at(day, SESSION_OPEN)
@@ -122,7 +136,7 @@ def find_gap(prev_slot: datetime, next_slot: datetime, timeframe: Timeframe) -> 
     missing_days: list[date] = []
     day = prev_day + _ONE_DAY
     while day < next_day:
-        if is_weekday(day):
+        if is_regular_trading_day(day):
             missing_days.append(day)
         day += _ONE_DAY
     return Gap(len(partial), partial[0] if partial else None, tuple(missing_days))
