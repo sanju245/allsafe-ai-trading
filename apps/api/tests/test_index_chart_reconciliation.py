@@ -117,3 +117,25 @@ def test_health_and_account_requests_can_run_during_broker_startup(monkeypatch, 
             assert account.status_code == 200 and account.json()["id"] == active_account_override.id
         finally:
             release.set()
+
+
+@pytest.mark.usefixtures("active_account_override")
+def test_connected_broker_is_reported_as_closed_on_a_holiday(monkeypatch):
+    from pydantic import SecretStr
+    from app.market_data.live_models import FeedState
+
+    runtime = make_test_runtime()
+    monkeypatch.setattr(runtime.stream_manager, "status_snapshot",
+                        lambda: SimpleNamespace(connected=True, feed_state=FeedState.CLOSED))
+    settings = live.get_settings().model_copy(update={
+        "upstox_live_stream_enabled": True, "upstox_access_token": SecretStr("test-only"),
+    })
+    monkeypatch.setattr(live, "get_settings", lambda: settings)
+    live.set_live_runtimes(app, {"upstox": runtime})
+    try:
+        data = TestClient(app).get("/api/v1/live/providers").json()
+        upstox = next(p for p in data["providers"] if p["id"] == "upstox")
+        assert upstox["connected"] and upstox["feed_state"] == "closed"
+        assert "session is closed" in upstox["message"]
+    finally:
+        live.set_live_runtime(app, None)

@@ -146,7 +146,7 @@ async function intercept(route) {
       last_error: null, instruments: Object.fromEntries(symbols.map((id) => [id, { feed_state: "live" }])),
     });
     if (pathname === "/api/v1/live/providers") return respond({
-      providers: ["groww", "upstox"].map((id) => ({ id, label: id === "groww" ? "Groww" : "Upstox", configured: true, feed_state: "live", connected: true, message: "Fixture" })),
+      providers: ["groww", "upstox"].map((id) => ({ id, label: id === "groww" ? "Groww" : "Upstox", configured: true, feed_state: id === "groww" ? "failed" : "live", connected: id === "upstox", message: "Fixture" })),
     });
     assert.ok(symbols.includes(symbol), `Expected a supported index for ${pathname}.`);
     if (pathname === "/api/v1/live/candles") {
@@ -226,6 +226,7 @@ async function audit(context) {
   await entry.getByRole("button", { name: "Sign in", exact: true }).click();
   await entry.waitForURL("**/terminal");
   const live = entry.getByRole("region", { name: "Live index charts" });
+  await entry.waitForFunction(() => document.querySelector("#market-data-provider")?.value === "upstox");
   await live.getByRole("img", { name: "NIFTY 50 15-minute candlestick chart" }).waitFor();
   await live.getByRole("img", { name: "BANK NIFTY 15-minute candlestick chart" }).waitFor();
   const history = entry.getByRole("region", { name: "Historical index charts" });

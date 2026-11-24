@@ -261,15 +261,15 @@ def get_live_providers(
         )
         runtime = runtimes.get(provider) if isinstance(runtimes, dict) else None
         snapshot = runtime.stream_manager.status_snapshot() if isinstance(runtime, LiveMarketDataRuntime) else None
+        state = snapshot.feed_state if snapshot else FeedState.UNAVAILABLE
         output.append({
             "id": provider,
             "label": label,
             "configured": configured,
-            "feed_state": snapshot.feed_state.value if snapshot else "unavailable",
+            "feed_state": state.value,
             "connected": snapshot.connected if snapshot else False,
             "message": (
-                "Connected live feed" if snapshot and snapshot.connected
-                else "Feed is configured but not currently connected" if configured
+                _status_message(state, configured, state == FeedState.LIVE, provider) if configured
                 else "Platform feed is not configured"
             ),
         })

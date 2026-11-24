@@ -24,8 +24,8 @@ function subscribeProvider(change: () => void) {
   };
 }
 function savedProvider(): Provider {
-  try { return localStorage.getItem("allsafe-market-provider") === "upstox" ? "upstox" : "groww"; }
-  catch { return "groww"; }
+  try { return localStorage.getItem("allsafe-market-provider") === "groww" ? "groww" : "upstox"; }
+  catch { return "upstox"; }
 }
 function updateQuery(provider: Provider, days?: number) {
   const url = new URL(window.location.href);
@@ -102,7 +102,7 @@ function Workspace({ symbol, provider, days, token, signOut }: {
 export default function IndexChartPage({ symbol }: { symbol: string }) {
   const { session, signOut } = useAuth();
   const query = useSearchParams();
-  const stored = useSyncExternalStore(subscribeProvider, savedProvider, () => "groww" as Provider);
+  const stored = useSyncExternalStore(subscribeProvider, savedProvider, () => "upstox" as Provider);
   const requested = query.get("provider");
   const provider = requested === "groww" || requested === "upstox" ? requested : stored;
   const value = Number(query.get("days"));

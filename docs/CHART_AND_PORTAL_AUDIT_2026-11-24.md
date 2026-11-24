@@ -14,7 +14,7 @@ The white Heikin Ashi chart supports drag, wheel and pinch controls, a crosshair
 
 ## Seven-day label check
 
-The selected range was **18–24 November**, with 100 completed candles per index across four regular sessions. The dates below give the **candle open** in IST. The signal first becomes eligible at the close 15 minutes later. The deployed interface, tested with these recorded Upstox candles, placed the badges at the listed times. Moving the crosshair to each badge returned its matching candle time. [Upstox historical candle API](https://upstox.com/developer/api-documentation/v3/get-historical-candle-data/)
+The selected range was **18–24 November**, with 100 completed candles per index across four regular sessions. The dates below give the **candle open** in IST. The signal first becomes eligible at the close 15 minutes later. The customer's signed-in production charts showed all three badges at these times. The independent broker replay and crosshair check matched them. [NIFTY 50 screenshot](chart-audit/2026-11-24-nifty50.jpg) · [BANK NIFTY screenshot](chart-audit/2026-11-24-banknifty.jpg) · [Upstox historical candle API](https://upstox.com/developer/api-documentation/v3/get-historical-candle-data/)
 
 | Index | Candle open, IST | Earliest confirmation, IST | Label | One-hour direction |
 |---|---|---|---|---|
@@ -57,15 +57,19 @@ These comparisons apply one confirmation to the historical primary-trigger event
 |---|---|
 | GitHub and hosting | The production Vercel alias served `399f44d`. Render reported the same commit live at 10:32 IST. |
 | Production broker connection | After deployment, Render logged successful Upstox startup history loads of 75 completed candles for each index. |
-| Automated checks | 315 API tests and 35 website tests passed. Type checking, linting and the production build passed. The API suite emitted one test-client dependency deprecation warning. |
+| Automated checks | 316 API tests and 35 website tests passed, including a connected broker on a trading holiday. Type checking, linting and the production build passed. The API suite emitted one test-client dependency deprecation warning. |
 | Browser on the production website | Controlled sign-in, both chart tabs, seven-day history, zoom, drag, fit, full screen, mobile layout, signal toggle, provider switching, delayed feed, confirmed-candle rollover and cross-tab sign-out passed. The broker-data replay matched every visible historical badge to its candle. The browser used an isolated test identity and intercepted data for these repeatable checks. |
 | Public pages | The home page, feature explanation, privacy page and customer login rendered their expected headings. All ten tested routes returned HTTP 200 and had zero uncaught page errors during the check. |
 | Customer access | Signed-out visits to the terminal, account and both charts showed their access screens. The live production quote API returned HTTP 401 without a customer session. |
-| Customer session inspected | The customer's existing NIFTY 50 tab showed the earlier chart, 100 displayed candles, 75 bars used for its decision and the 23 November close of 25,366.40. The shared tab subsequently required sign-in. The production interface with recorded candles was verified separately. |
+| Signed-in customer on production | Opened both full charts from the customer's terminal. Each loaded 100 completed candles, used 500 bars, displayed “Market closed” and reported “Wait” on the latest candle. Last actual closes were 25,366.40 for NIFTY 50 and 62,609.20 for BANK NIFTY. The earlier NIFTY tab had used only 75 bars. A fresh sign-in after a break was required for the final check. |
 | Admin access | The admin landing and login screens rendered. Automated tests cover denied access and stale responses. A production approval, password change or customer mutation was outside this read-only release check. The previous admin audit records the earlier approval incident. |
 | Public response times | One warm network check measured 0.28 s for the login page, 0.55 s for API health, 0.55 s for the NIFTY chart route and 0.66 s for the BANK NIFTY route. These timings measure page or health responses. |
 
 The public checks covered the customer and administrator entry points. The earlier full project audit provides the feature-by-feature history for account requests, approvals, privacy and password management. [Earlier portal audit](FINAL_AUDIT_2026-11-19.md)
+
+### Provider selection
+
+The customer's terminal initially selected Groww. Groww rejected the configured account token because it lacks the required permissions. Upstox supplied both charts successfully, and the customer's dashboard was switched to Upstox. New dashboard sessions without a saved choice can switch automatically to a usable configured feed if the initial feed fails. An explicit customer selection is respected. The selector uses the broker's feed state so a connected socket during a holiday reads “market closed”. Direct chart links without a provider or saved choice open on Upstox. Groww still requires market-data permission on its broker account.
 
 ### Customer sign-in delay
 

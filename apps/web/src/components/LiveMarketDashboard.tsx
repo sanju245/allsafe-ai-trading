@@ -299,17 +299,22 @@ export default function LiveMarketDashboard() {
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const activeRefresh = useRef<AbortSignal | null>(null);
   const refreshController = useRef<AbortController | null>(null);
+  const hasProviderPreference = useRef(false);
 
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem("allsafe-market-provider");
-      if (saved === "groww" || saved === "upstox") setSelectedProvider(saved);
+      if (saved === "groww" || saved === "upstox") {
+        hasProviderPreference.current = true;
+        setSelectedProvider(saved);
+      }
     } catch {
       // Customers can still select a provider when browser storage is unavailable.
     }
   }, []);
 
   const selectProvider = (provider: "groww" | "upstox") => {
+    hasProviderPreference.current = true;
     if (provider === selectedProvider) return;
     refreshController.current?.abort();
     setSelectedProvider(provider);
@@ -332,8 +337,19 @@ export default function LiveMarketDashboard() {
         getJson<ProviderResponse>("/api/v1/live/providers", accessToken, signal),
       ]);
       if (!signal.aborted) {
-        setStatus(latestStatus);
         setProviders(providerResponse.providers);
+        const usable = (p: ProviderOption) => p.configured && ["live", "closed"].includes(p.feed_state);
+        const selected = providerResponse.providers.find(p => p.id === selectedProvider);
+        const alternative = providerResponse.providers.find(p => p.id !== selectedProvider && usable(p));
+        if (!hasProviderPreference.current && (!selected || !usable(selected)) && alternative) {
+          setStatus(null);
+          setMarketsState({ NIFTY50: emptyMarket, BANKNIFTY: emptyMarket });
+          setCheckedAt(null);
+          activeRefresh.current = null;
+          setSelectedProvider(alternative.id);
+          return;
+        }
+        setStatus(latestStatus);
       }
     } catch (error) {
       if (signal.aborted) return;
@@ -440,7 +456,9 @@ export default function LiveMarketDashboard() {
             >
               {(["groww", "upstox"] as const).map((id) => {
                 const option = providers.find((item) => item.id === id);
-                return <option key={id} value={id}>{option?.label ?? (id === "groww" ? "Groww" : "Upstox")}{option?.connected ? " · live" : option?.configured ? " · configured" : " · unavailable"}</option>;
+                const state = option?.configured ? option.feed_state : "unavailable";
+                const label = state === "closed" ? "market closed" : state === "failed" ? "unavailable" : state;
+                return <option key={id} value={id}>{option?.label ?? (id === "groww" ? "Groww" : "Upstox")}{option && ` · ${label}`}</option>;
               })}
             </select>
             <p className="text-sm text-slate-300">{backendMessage}</p>
