@@ -11,7 +11,7 @@ import pytest
 from pydantic import SecretStr
 
 from app.config import Settings
-from app.indicators.decision import TradeDecision
+from app.indicators.decision import DecisionPoint, TradeDecision
 from app.market_data import live_runtime
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_models import FeedState
@@ -132,7 +132,7 @@ def test_upstox_runtime_warms_both_indices_and_excludes_future_data(monkeypatch)
     )
     monkeypatch.setattr(
         live_runtime, "calculate_decisions",
-        lambda bars: [SimpleNamespace(
+        lambda bars: [DecisionPoint(
             timestamp=bars[-1].timestamp, decision=TradeDecision.BUY, reason="Confirmed fixture.",
             ut_bot_signal=None, ema_bullish=True, rsi_bullish=True,
             macd_bullish=True, supertrend_bullish=True,

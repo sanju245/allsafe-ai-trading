@@ -67,6 +67,9 @@ def test_chart_repairs_one_partial_live_bar_and_replays_the_next_close(monkeypat
         assert snapshot["indicator_decision"]["is_current_signal"]
         expected_side = "BUY" if direction > 0 else "SELL"
         assert snapshot["indicator_decision"]["decision"] == expected_side
+        assert snapshot["indicator_decision"]["opening_range_state"] == ("ABOVE_HIGH" if direction > 0 else "BELOW_LOW")
+        assert snapshot["indicator_decision"]["ut_bot_position"] == direction
+        assert snapshot["indicator_decision"]["ut_bot_signal"] is None
         marks = [(p["timestamp"], p["decision"]) for p in snapshot["indicator_history"]]
         assert (partial.isoformat(), expected_side) in marks
         quote = client.get("/api/v1/live/quote", params={"symbol": symbol.value, "include_forming": True}).json()

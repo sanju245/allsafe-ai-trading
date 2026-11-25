@@ -5,7 +5,7 @@ import ts from "typescript";
 
 const source = await readFile(new URL("../src/lib/indexChart.ts", import.meta.url), "utf8");
 const compiled = ts.transpile(source, { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 });
-const { chartHistory, currentSignal, epoch, formingBar, heikinAshiBar } = await import("data:text/javascript;base64," + Buffer.from(compiled).toString("base64"));
+const { chartHistory, currentSignal, decisionChecks, epoch, formingBar, heikinAshiBar } = await import("data:text/javascript;base64," + Buffer.from(compiled).toString("base64"));
 
 const raw = { timestamp: "2026-11-23T09:15:00+05:30", open: 100, high: 110, low: 90, close: 108 };
 const next = { ...raw, timestamp: "2026-11-23T09:30:00+05:30", open: 111, high: 121, low: 110, close: 118 };
@@ -29,6 +29,21 @@ test("only complete candles get markers, anchored on the correct displayed wick"
   assert.deepEqual(marks, [{ time: epoch(raw.timestamp), side: "SELL", price: 110 }, { time: epoch(next.timestamp), side: "BUY", price: 103 }]);
   const partial = chartHistory({ ...series, candles: [raw, { ...next, is_incomplete: true }] });
   assert.equal(partial.marks.length, 1);
+});
+
+test("the opening range and trend position are independent of a crossover or confirmed signal", () => {
+  const decision = { decision: "WAIT", opening_range_state: "BELOW_LOW", ut_bot_position: -1,
+    ut_bot_signal: null, ema_bullish: null, rsi_bullish: false, macd_bullish: true, supertrend_bullish: false };
+  const readings = Object.fromEntries(decisionChecks(decision));
+  assert.equal(readings["09:15 IST opening range"], "Close below low");
+  assert.equal(readings["Trend position"], "Bearish");
+  assert.equal(readings["Trend check A"], "Neutral");
+  const warming = Object.fromEntries(decisionChecks({ ...decision, decision: "DATA_UNAVAILABLE", ut_bot_position: null }));
+  assert.equal(warming["Trend check A"], "No reading");
+  assert.equal(warming["Trend position"], "No reading");
+  const legacy = Object.fromEntries(decisionChecks({ decision: "SELL", ut_bot_signal: "SELL" }));
+  assert.equal(legacy["09:15 IST opening range"], "No reading");
+  assert.equal(legacy["Trend position"], "No reading");
 });
 
 test("a stale, partial, older or rolled forming candle cannot supply a live signal", () => {

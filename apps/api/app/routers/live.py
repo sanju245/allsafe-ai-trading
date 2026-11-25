@@ -429,6 +429,8 @@ def get_live_candles(
         evaluated_at=decision_summary.evaluated_at,
         source=decision_summary.source,
         ut_bot_signal=decision_summary.ut_bot_signal,
+        opening_range_state=decision_summary.opening_range_state,
+        ut_bot_position=decision_summary.ut_bot_position,
         ema_bullish=decision_summary.ema_bullish,
         rsi_bullish=decision_summary.rsi_bullish,
         macd_bullish=decision_summary.macd_bullish,

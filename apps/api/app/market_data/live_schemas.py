@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.indicators.decision import TradeDecision
+from app.indicators.decision import OpeningRangeState, TradeDecision
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_models import (
     FeedState,
@@ -136,6 +136,8 @@ class IndicatorDecisionSchema(BaseModel):
     evaluated_at: datetime
     source: DataSource | None = None
     ut_bot_signal: str | None = None
+    opening_range_state: OpeningRangeState | None = None
+    ut_bot_position: int | None = None
     ema_bullish: bool | None = None
     rsi_bullish: bool | None = None
     macd_bullish: bool | None = None
