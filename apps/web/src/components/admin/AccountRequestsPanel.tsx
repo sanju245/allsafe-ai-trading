@@ -14,6 +14,7 @@ type AccountRequest = {
   notification_status: "pending" | "sent" | "failed";
   created_at: string;
   decided_at: string | null;
+  uses_chosen_password: boolean;
 };
 
 const PAGE_SIZE = 25;
@@ -159,7 +160,7 @@ export default function AccountRequestsPanel({ accessToken, onApproved }: { acce
               {(request.status === "approved" || (request.status === "declined" && request.notification_status !== "sent")) && (
                 <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "retry-email")}
                   className="rounded-lg border border-amber-300/25 px-4 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-50">
-                  {request.notification_status === "sent" ? "Send new setup link" : "Retry email"}
+                  {request.notification_status !== "sent" ? "Retry email" : request.uses_chosen_password ? "Resend approval email" : "Send new setup link"}
                 </button>
               )}
               <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "delete")}

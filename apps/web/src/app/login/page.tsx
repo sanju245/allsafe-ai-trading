@@ -50,7 +50,7 @@ export default function LoginPage() {
         <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">Customer access</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Sign in</h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-300">
-          Sign in after an administrator approves your account request and you set your password. You can sign in from any network.
+          Sign in with the email and password for your approved AllSafe account. You can sign in from any network.
         </p>
 
         {!SUPABASE_CONFIGURED ? (
