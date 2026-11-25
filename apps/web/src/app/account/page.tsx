@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CustomerWarnings from "@/components/auth/CustomerWarnings";
 
@@ -14,6 +14,8 @@ export default function AccountPage() {
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const saving = useRef(false);
 
   useEffect(() => {
     if (!loading && !session) router.replace("/login?next=%2Faccount");
@@ -21,6 +23,7 @@ export default function AccountPage() {
 
   async function submitPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saving.current) return;
     setError(null);
     setMessage(null);
     if (password.length < 8 || password.length > 128) {
@@ -31,14 +34,23 @@ export default function AccountPage() {
       setError("The password entries do not match.");
       return;
     }
+    if (password === currentPassword) {
+      setError("Choose a new password different from your current password.");
+      return;
+    }
+    saving.current = true;
+    setSavingPassword(true);
     try {
       await changePassword(currentPassword, password);
       setCurrentPassword("");
       setPassword("");
       setConfirmation("");
-      setMessage("Password changed. You are still signed in.");
+      setMessage("Password changed. Check your registered email for confirmation.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not change the password.");
+    } finally {
+      saving.current = false;
+      setSavingPassword(false);
     }
   }
 
@@ -109,12 +121,12 @@ export default function AccountPage() {
             This login is paused. Contact the administrator to restore access.
           </div>
         ) : (
-          <form onSubmit={submitPassword} className="mt-7 max-w-xl">
+          <form id="change-password" onSubmit={submitPassword} aria-busy={savingPassword} className="mt-7 max-w-xl">
             <h2 className="text-lg font-semibold text-white">Change password</h2>
-            <p className="mt-1 text-sm text-slate-400">Use between 8 and 128 characters and enter it twice.</p>
+            <p className="mt-1 text-sm text-slate-400">Use between 8 and 128 characters. We’ll email your registered address when your password changes.</p>
             <label className="mt-4 block text-sm text-slate-300">
               Current password
-              <input type="password" autoComplete="current-password" maxLength={128} required value={currentPassword}
+              <input type="password" autoComplete="current-password" maxLength={128} required value={currentPassword} disabled={savingPassword}
                 onChange={(event) => setCurrentPassword(event.target.value)}
                 className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white" />
             </label>
@@ -127,6 +139,7 @@ export default function AccountPage() {
                   minLength={8}
                   maxLength={128}
                   required
+                  disabled={savingPassword}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/60"
@@ -140,6 +153,7 @@ export default function AccountPage() {
                   minLength={8}
                   maxLength={128}
                   required
+                  disabled={savingPassword}
                   value={confirmation}
                   onChange={(event) => setConfirmation(event.target.value)}
                   className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/60"
@@ -148,10 +162,10 @@ export default function AccountPage() {
             </div>
             <button
               type="submit"
-              disabled={loading}
+              disabled={savingPassword}
               className="mt-4 rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60"
             >
-              {loading ? "Updating password…" : "Change password"}
+              {savingPassword ? "Updating password…" : "Change password"}
             </button>
           </form>
         )}

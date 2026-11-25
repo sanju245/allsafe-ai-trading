@@ -197,6 +197,24 @@ test("a denied password operation clears a stale session and obeys the API passw
   assert.equal(harness.context().profile, null);
 });
 
+test("password change shows validation errors and accepts the successful account update", async () => {
+  const submissions = [];
+  const harness = authHarness(async (url, options) => {
+    if (url === "/api/auth/session" && options.method === "PUT") return json(authReply);
+    if (url.endsWith("/api/v1/auth/password")) {
+      submissions.push(JSON.parse(options.body));
+      return submissions.length === 1 ? json({ detail: "The current password is incorrect." }, 422)
+        : new Response(null, { status: 204 });
+    }
+    return json(activeProfile);
+  });
+  await harness.context().signIn("customer@example.com", "password-123");
+  await assert.rejects(harness.context().changePassword("bad-password", "new-password-123"), /current password is incorrect/);
+  await harness.context().changePassword("fixture-current", "new-password-123");
+  assert.equal(harness.context().session.user.id, userId);
+  assert.deepEqual(submissions[1], { current_password: "fixture-current", password: "new-password-123" });
+});
+
 test("temporary profile outage preserves a valid session, but expired authentication removes it", async () => {
   let profileStatus = 200;
   const harness = authHarness(async (url, options) => {

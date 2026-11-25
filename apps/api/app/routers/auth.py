@@ -10,7 +10,8 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, SecretStr, Val
 
 from app.config import get_settings
 from app.email_notifications import (
-    EmailDeliveryError, account_setup_link, ensure_email_ready, send_password_reset, setup_redirect_url,
+    EmailDeliveryError, account_setup_link, ensure_email_ready, send_password_changed, send_password_reset,
+    setup_redirect_url,
 )
 from app.password_policy import require_safe_password
 from app.security import (
@@ -112,20 +113,32 @@ def get_customer_warnings(
     return CustomerWarningsResponse(warnings=warnings, next_before=warnings[-1].id if len(rows) > 20 else None)
 
 
+def _send_password_confirmation(email: str) -> None:
+    try:
+        send_password_changed(email)
+    except (EmailDeliveryError, HTTPException, ValueError):
+        _LOGGER.warning("An AllSafe password change confirmation email could not be sent.")
+
+
 @router.put("/password", status_code=204)
 def change_password(
     body: ChangePasswordRequest,
+    background: BackgroundTasks,
     account: AccountPrincipal = Depends(require_active_account),
 ) -> Response:
     _credential_rate.check(account.id, limit=5, resource="Password change")
+    current_password = body.current_password.get_secret_value()
+    password = body.password.get_secret_value()
     try:
-        if not check_current_password(account.email, body.current_password.get_secret_value(), expected_user_id=account.id):
+        if not check_current_password(account.email, current_password, expected_user_id=account.id):
             raise HTTPException(status_code=422, detail="The current password is incorrect.")
-        password = body.password.get_secret_value()
+        if password == current_password:
+            raise HTTPException(status_code=422, detail="Choose a new password different from your current password.")
         require_safe_password(password)
         update_auth_user_password(account.id, password)
     except SupabaseAdminAPIError as exc:
         raise sanitized_admin_error(exc) from None
+    background.add_task(_send_password_confirmation, account.email)
     return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 

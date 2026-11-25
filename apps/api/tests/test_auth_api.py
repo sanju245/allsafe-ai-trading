@@ -9,6 +9,7 @@ from app import security
 from app.main import app
 from app.routers import auth as auth_router
 from app.security import AccountPrincipal, require_sign_in_account
+from app.supabase_admin import SupabaseAdminAPIError
 from tests.test_security import _hs256_token, _settings
 
 
@@ -151,20 +152,25 @@ def test_password_change_checks_minimum_password_length(monkeypatch):
 
 
 @pytest.mark.usefixtures("active_account_override")
-def test_password_change_uses_the_current_verified_user(monkeypatch):
+def test_password_change_sends_confirmation_only_after_updating_the_verified_user(monkeypatch, active_account_override):
     calls = []
+    monkeypatch.setattr(auth_router, "_credential_rate", security.SlidingWindowRateLimiter(window_seconds=60))
     monkeypatch.setattr(auth_router, "check_current_password",
-                        lambda email, password, **_: password == "fixture-current")
+                        lambda email, password, expected_user_id: email == active_account_override.email
+                        and expected_user_id == active_account_override.id and password == "fixture-current")
     monkeypatch.setattr(auth_router, "require_safe_password", lambda password: None)
+    monkeypatch.setattr(auth_router, "update_auth_user_password",
+                        lambda user_id, password: calls.append(("update", user_id, password)))
+    monkeypatch.setattr(auth_router, "send_password_changed",
+                        lambda email: calls.append(("email", email)))
     denied = client.put("/api/v1/auth/password", headers={"Authorization": "Bearer test-token"},
                         json={"current_password": "wrong", "password": "new-password-123"})
     assert denied.status_code == 422
     assert "current password is incorrect" in denied.text
-    monkeypatch.setattr(
-        auth_router,
-        "update_auth_user_password",
-        lambda user_id, password: calls.append((user_id, password)),
-    )
+    unchanged = client.put("/api/v1/auth/password", headers={"Authorization": "Bearer test-token"},
+                           json={"current_password": "fixture-current", "password": "fixture-current"})
+    assert unchanged.status_code == 422
+    assert calls == []
 
     response = client.put(
         "/api/v1/auth/password",
@@ -173,7 +179,40 @@ def test_password_change_uses_the_current_verified_user(monkeypatch):
     )
 
     assert response.status_code == 204
-    assert calls == [("00000000-0000-4000-8000-000000000001", "new-password-123")]
+    assert calls == [("update", active_account_override.id, "new-password-123"),
+                     ("email", active_account_override.email)]
+
+
+@pytest.mark.usefixtures("active_account_override")
+def test_password_update_failure_sends_no_confirmation(monkeypatch):
+    def failed_update(*_):
+        raise SupabaseAdminAPIError(502)
+
+    monkeypatch.setattr(auth_router, "check_current_password", lambda *_, **__: True)
+    monkeypatch.setattr(auth_router, "require_safe_password", lambda _: None)
+    monkeypatch.setattr(auth_router, "update_auth_user_password", failed_update)
+    monkeypatch.setattr(auth_router, "send_password_changed", lambda _: pytest.fail("An email was dispatched"))
+    response = client.put("/api/v1/auth/password", json={
+        "current_password": "fixture-current", "password": "new-password-123",
+    })
+    assert response.status_code == 502
+
+
+@pytest.mark.usefixtures("active_account_override")
+def test_confirmation_email_failure_leaves_the_password_change_successful(monkeypatch, caplog):
+    def failed_delivery(_):
+        raise auth_router.EmailDeliveryError()
+
+    monkeypatch.setattr(auth_router, "check_current_password", lambda *_, **__: True)
+    monkeypatch.setattr(auth_router, "require_safe_password", lambda _: None)
+    monkeypatch.setattr(auth_router, "update_auth_user_password", lambda *_: None)
+    monkeypatch.setattr(auth_router, "send_password_changed", failed_delivery)
+    response = client.put("/api/v1/auth/password", json={
+        "current_password": "fixture-current", "password": "new-password-123",
+    })
+    assert response.status_code == 204
+    assert "confirmation email could not be sent." in caplog.text
+    assert "new-password-123" not in caplog.text
 
 
 def test_email_password_reset_uses_generic_public_response(monkeypatch):

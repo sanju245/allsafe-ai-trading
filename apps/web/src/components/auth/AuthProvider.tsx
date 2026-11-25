@@ -383,6 +383,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (active.current === session && [401, 403].includes(response.status)) {
         void endSession(response.status === 403 ? accountPauseMessage(body) : null);
       }
+      if (response.status === 422) {
+        throw new Error(errorText(body, "Check your current password and choose a new password."));
+      }
       throw new Error(accessDeniedMessage(body, response.status));
     }
   }, [endSession, session]);

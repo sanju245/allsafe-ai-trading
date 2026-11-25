@@ -43,7 +43,7 @@ In **Admin → Customers**, use **Warning** beside one customer or **Warn all cu
 
 The public account form still uses the trusted `CF-Connecting-IP` value for request rate limiting and audit metadata. This check is independent of customer authentication. Source tests cover missing, malformed, comma-separated, and duplicate proxy headers.
 
-The app restores sessions through a same-origin HttpOnly refresh cookie. Changing a password from the account page requires the current password. Sign-in also offers email recovery for active accounts. The API screens new passwords set through AllSafe against the padded Pwned Passwords database before updating an account.
+The app restores sessions through a same-origin HttpOnly refresh cookie. **Account → Change password** requires the current password. After the change succeeds, AllSafe sends a confirmation to the account’s registered email using the configured Gmail sender. Sign-in also offers email recovery for active accounts. The API screens new passwords set through AllSafe against the padded Pwned Passwords database before updating an account.
 
 ## Trading safety
 

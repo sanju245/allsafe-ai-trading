@@ -1,4 +1,4 @@
-"""Transactional account-request email through the Gmail HTTPS API."""
+"""Transactional account email through the Gmail HTTPS API."""
 
 from __future__ import annotations
 
@@ -63,6 +63,16 @@ def send_password_reset(email: str, setup_link: str) -> None:
         email, "Reset your AllSafe password",
         f"Open this one-time link to choose a new password for AllSafe AI Trading:\n\n{setup_link}\n\n"
         "If you did not request a password reset, you can ignore this message.",
+    )
+
+
+def send_password_changed(email: str) -> None:
+    send_email(
+        email,
+        "Your AllSafe password has changed",
+        "The password for your AllSafe AI Trading account has been changed.\n\n"
+        "If you did not make this change, please contact the AllSafe administrator right away.\n\n"
+        "AllSafe AI Trading",
     )
 
 

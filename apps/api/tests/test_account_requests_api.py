@@ -51,6 +51,19 @@ def test_gmail_https_delivery(monkeypatch):
     assert "Hello Asha" in sent.get_payload(decode=True).decode()
 
 
+def test_password_confirmation_uses_the_account_email_and_a_plain_notice(monkeypatch):
+    sent = []
+    monkeypatch.setattr(notifications, "send_email", lambda *args: sent.append(args))
+    notifications.send_password_changed("customer@example.test")
+    assert len(sent) == 1
+    recipient, subject, body = sent[0]
+    assert recipient == "customer@example.test"
+    assert subject == "Your AllSafe password has changed"
+    assert "AllSafe AI Trading account has been changed" in body
+    assert "contact the AllSafe administrator" in body
+    assert "://" not in body
+
+
 def test_gmail_api_failure_is_private(monkeypatch):
     monkeypatch.setattr(notifications, "get_settings", lambda: Settings(
         gmail_client_id="client-id",
