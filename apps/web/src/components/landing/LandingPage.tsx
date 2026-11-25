@@ -18,7 +18,7 @@ export interface LandingPageProps {
 }
 
 type ExampleMode = "BUY" | "SELL" | "WAIT";
-const CREATOR_NAME = "Sanjesh Singh";
+const CREATOR_NAME = "Sanjay Singh";
 const CONTRIBUTION_AMOUNT = 250;
 const CONTRIBUTION_UPI_ID = "8240770247@upi";
 const CONTRIBUTION_QUERY = new URLSearchParams({
