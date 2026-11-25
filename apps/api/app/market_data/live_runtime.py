@@ -18,7 +18,7 @@ from threading import Lock
 from time import monotonic
 from typing import Any, Protocol
 
-from app.indicators.decision import DecisionPoint, TradeDecision, calculate_decisions
+from app.indicators.decision import DecisionPoint, OpeningRangeState, TradeDecision, calculate_decisions
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_aggregator import LiveSessionAggregator
 from app.market_data.live_models import (
@@ -112,6 +112,8 @@ class LiveDecisionSummary:
     supertrend_bullish: bool | None
     reason: str
     confirmed_candle_count: int
+    opening_range_state: OpeningRangeState | None = None
+    ut_bot_position: int | None = None
 
 
 class LiveMarketDataRuntime:
@@ -308,6 +310,8 @@ class LiveMarketDataRuntime:
             macd_bullish=point.macd_bullish if point else None,
             supertrend_bullish=point.supertrend_bullish if point else None,
             reason=reason,
+            opening_range_state=point.opening_range_state if point else None,
+            ut_bot_position=point.ut_bot_position if point else None,
         )
         return summary, points
 
