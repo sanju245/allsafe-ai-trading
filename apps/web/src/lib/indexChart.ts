@@ -13,6 +13,16 @@ export type Bar = { time: number; open: number; high: number; low: number; close
 export type Side = "BUY" | "SELL";
 export type Signal = { timestamp: string; decision: Side | "WAIT" | "DATA_UNAVAILABLE" };
 export type ChartMark = { time: number; side: Side; price: number };
+
+const openingRangeLabels = {
+  MISSING: "Opening candle missing",
+  SET: "Range established",
+  INSIDE: "Close inside range",
+  ABOVE_HIGH: "Close above high",
+  BELOW_LOW: "Close below low",
+};
+const trendPositionLabels = { [-1]: "Bearish", 0: "Neutral", 1: "Bullish" };
+
 export type Decision = {
   decision: Signal["decision"];
   is_current_signal: boolean;
@@ -20,6 +30,8 @@ export type Decision = {
   reason: string;
   confirmed_candle_count: number;
   ut_bot_signal: string | null;
+  opening_range_state?: keyof typeof openingRangeLabels | null;
+  ut_bot_position?: keyof typeof trendPositionLabels | null;
   ema_bullish: boolean | null;
   rsi_bullish: boolean | null;
   macd_bullish: boolean | null;
@@ -50,6 +62,24 @@ export const formatPrice = (price: number) => priceFormat.format(price);
 export const formatStamp = (seconds: number) => stampFormat.format(seconds * 1000);
 export const epoch = (stamp: string) => Math.floor(Date.parse(stamp) / 1000);
 export const slotAt = (stamp: string) => Math.floor(epoch(stamp) / 900) * 900;
+
+export function decisionChecks(decision?: Decision): [label: string, reading: string][] {
+  const state = decision?.opening_range_state;
+  const position = decision?.ut_bot_position;
+  const direction = (bullish?: boolean | null) => {
+    if (bullish === true) return "Bullish";
+    if (bullish === false) return "Bearish";
+    return bullish === null && decision?.decision !== "DATA_UNAVAILABLE" ? "Neutral" : "No reading";
+  };
+  return [
+    ["09:15 IST opening range", state ? openingRangeLabels[state] : "No reading"],
+    ["Trend position", position == null ? "No reading" : trendPositionLabels[position]],
+    ["Trend check A", direction(decision?.ema_bullish)],
+    ["Momentum check A", direction(decision?.rsi_bullish)],
+    ["Momentum check B", direction(decision?.macd_bullish)],
+    ["Trend check B", direction(decision?.supertrend_bullish)],
+  ];
+}
 
 export function heikinAshiBar(c: RawCandle, previous?: Pick<Bar, "open" | "close">): Bar | null {
   const time = epoch(c.timestamp);
