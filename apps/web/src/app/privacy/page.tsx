@@ -5,7 +5,7 @@ export const metadata = { title: "Privacy · AllSafe AI Trading" };
 
 export default function PrivacyPage() {
   return (
-    <main className="as-container min-h-screen max-w-3xl py-8 text-slate-300">
+    <main className="as-container min-h-screen max-w-3xl py-8 text-ui-muted">
       <BrandLink />
       <h1 className="as-title mt-6">Privacy Policy</h1>
       <div className="as-panel mt-6 space-y-5 p-5 text-sm leading-7 sm:p-7">

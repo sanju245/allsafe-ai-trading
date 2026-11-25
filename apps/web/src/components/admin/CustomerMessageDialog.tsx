@@ -51,24 +51,24 @@ export default function CustomerMessageDialog({
       aria-labelledby="customer-message-title"
       aria-describedby="customer-message-audience"
       onCancel={(event) => { event.preventDefault(); if (!pending.current) onClose(); }}
-      className="as-panel m-auto max-h-[85dvh] w-[calc(100%-1.5rem)] max-w-lg overflow-y-auto p-5 text-slate-200 shadow-2xl backdrop:bg-black/75 sm:p-6"
+      className="as-panel m-auto max-h-[85dvh] w-[calc(100%-1.5rem)] max-w-lg overflow-y-auto p-5 text-ui-ink shadow-2xl backdrop:bg-black/75 sm:p-6"
     >
       <h2 id="customer-message-title" className="as-section-title">
         {pause ? "Pause customer login" : email ? "Send a warning" : "Warn all customers"}
       </h2>
-      <p id="customer-message-audience" className="mt-1 break-words text-sm text-slate-400">{email ?? "All current customer accounts"}</p>
+      <p id="customer-message-audience" className="mt-1 break-words text-sm text-ui-muted">{email ?? "All current customer accounts"}</p>
       <form onSubmit={submit} className="mt-5 grid gap-4">
-        <label className="block text-sm font-medium text-slate-200">
+        <label className="block text-sm font-medium text-ui-ink">
           {pause ? "Reason for pausing" : "Warning message"}
           <textarea value={message} onChange={(event) => setMessage(event.target.value)} required
             maxLength={messageLimit} rows={5} disabled={saving} autoFocus
             className="as-field mt-2 min-h-28 w-full resize-y"/>
         </label>
-        <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-400">
+        <div className="flex flex-wrap justify-between gap-2 text-xs text-ui-muted">
           <p>{pause ? "The customer will see this reason at sign-in." : "Customers will see this warning in AllSafe."}</p>
           <span>{message.length}/{messageLimit}</span>
         </div>
-        {error && <p role="alert" className="text-sm text-rose-200">{error}</p>}
+        {error && <p role="alert" className="text-sm text-ui-red">{error}</p>}
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" disabled={saving} onClick={onClose} className="as-button as-button--quiet">Cancel</button>
           <button type="submit" disabled={saving || !message.trim()} className="as-button as-button--amber">

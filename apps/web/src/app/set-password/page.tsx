@@ -75,24 +75,24 @@ export default function SetPasswordPage() {
         <p className="as-kicker">Account setup</p>
         <h1 className="mt-2">Set your password</h1>
         {done ? (
-          <div role="status" className="mt-5 text-sm leading-6 text-slate-300">
-            Your password is ready. <Link href="/login" className="font-semibold text-emerald-300 underline">Sign in</Link> from any network.
+          <div role="status" className="mt-5 text-sm leading-6 text-ui-muted">
+            Your password is ready. <Link href="/login" className="font-semibold text-ui-green underline">Sign in</Link> from any network.
           </div>
         ) : proof ? (
           <form onSubmit={submit} className="mt-5 grid gap-4">
-            <label className="text-sm text-slate-300">New password
+            <label className="text-sm text-ui-muted">New password
               <input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} className="as-field mt-1 w-full" />
             </label>
-            <label className="text-sm text-slate-300">Confirm password
+            <label className="text-sm text-ui-muted">Confirm password
               <input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="as-field mt-1 w-full" />
             </label>
-            {error && <p role="alert" className="text-sm text-rose-200">{error}</p>}
+            {error && <p role="alert" className="text-sm text-ui-red">{error}</p>}
             <button type="submit" disabled={busy} className="as-button as-button--primary">{busy ? "Saving…" : "Set password"}</button>
           </form>
         ) : (
-          <p role="alert" className="mt-5 text-sm leading-6 text-rose-200">{error || "Checking your setup link…"}</p>
+          <p role="alert" className="mt-5 text-sm leading-6 text-ui-red">{error || "Checking your setup link…"}</p>
         )}
-        {!done && <Link href="/forgot-password" className="mt-5 inline-block text-sm text-emerald-300 underline">Request a new password link</Link>}
+        {!done && <Link href="/forgot-password" className="mt-5 inline-block text-sm text-ui-green underline">Request a new password link</Link>}
       </section>
     </div></main>
   );

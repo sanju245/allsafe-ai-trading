@@ -47,12 +47,12 @@ export default function LoginPage() {
         <section className="as-panel as-auth-card">
           <p className="as-kicker">Customer access</p>
           <h1 className="mt-2">Sign in</h1>
-          <p className="mt-2 text-sm leading-relaxed text-slate-300">
+          <p className="mt-2 text-sm leading-relaxed text-ui-muted">
             Sign in with the email and password for your approved AllSafe account. You can sign in from any network.
           </p>
 
           {!SUPABASE_CONFIGURED ? (
-            <div className="mt-5 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+            <div className="mt-5 rounded-lg border border-ui-amber/25 bg-ui-amber/10 p-4 text-sm text-ui-amber">
               <p className="font-semibold">Sign-in is not configured yet.</p>
               <p className="mt-1 leading-relaxed">
                 Account access is temporarily unavailable. Contact the administrator to finish setting up sign-in.
@@ -60,7 +60,7 @@ export default function LoginPage() {
             </div>
           ) : (
             <form onSubmit={submit} className="mt-5 grid gap-4">
-              <label className="text-sm text-slate-300">
+              <label className="text-sm text-ui-muted">
                 Email
                 <input
                   type="email"
@@ -71,7 +71,7 @@ export default function LoginPage() {
                   className="as-field mt-1 w-full"
                 />
               </label>
-              <label className="text-sm text-slate-300">
+              <label className="text-sm text-ui-muted">
                 Password
                 <input
                   type="password"
@@ -92,20 +92,20 @@ export default function LoginPage() {
             </form>
           )}
 
-          <Link href="/forgot-password" className="mt-4 inline-flex text-sm text-emerald-300 underline">Forgot password?</Link>
+          <Link href="/forgot-password" className="mt-4 inline-flex text-sm text-ui-green underline">Forgot password?</Link>
 
           {loading && !session && (
-            <p role="status" className="mt-4 text-sm text-slate-400">
+            <p role="status" className="mt-4 text-sm text-ui-muted">
               Checking your account. After inactivity, the account service may take about a minute to start. Keep this page open.
             </p>
           )}
           {(error || pauseMessage) && (
-            <p role="alert" className="mt-4 whitespace-pre-wrap break-words rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
+            <p role="alert" className="mt-4 whitespace-pre-wrap break-words rounded-lg border border-ui-red/25 bg-ui-red/10 p-3 text-sm text-ui-red">
               {error ?? pauseMessage}
             </p>
           )}
-          <p className="mt-4 text-xs leading-relaxed text-slate-500">
-            Need access? <Link href="/" className="text-emerald-300 underline">Request an account</Link> from the home page. Charts opened from the terminal use your active browser session.
+          <p className="mt-4 text-xs leading-relaxed text-ui-muted">
+            Need access? <Link href="/" className="text-ui-green underline">Request an account</Link> from the home page. Charts opened from the terminal use your active browser session.
           </p>
         </section>
       </div>

@@ -15,8 +15,8 @@ const ist = new Intl.DateTimeFormat("en-IN", {
 function WarningEntry({ warning }: { warning: Warning }) {
   return (
     <div className="min-w-0">
-      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-amber-100">{warning.message}</p>
-      <time dateTime={warning.sent_at} className="mt-1.5 block text-xs text-amber-200/75">
+      <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ui-amber">{warning.message}</p>
+      <time dateTime={warning.sent_at} className="mt-1.5 block text-xs text-ui-amber">
         {ist.format(new Date(warning.sent_at))} IST
       </time>
     </div>
@@ -102,20 +102,20 @@ function WarningList({ token, refreshProfile }: { token: string; refreshProfile:
   const [latest, ...earlier] = page?.warnings ?? [];
   if (!latest) return null;
   return (
-    <section aria-label="Account warnings" className="my-4 rounded-xl border border-amber-400/25 bg-amber-950/40 p-4 sm:p-5">
-      <h2 className="mb-2 text-sm font-semibold text-amber-100">Account warning from your administrator</h2>
+    <section aria-label="Account warnings" className="my-4 rounded-xl border border-ui-amber/25 bg-ui-amber/10 p-4 sm:p-5">
+      <h2 className="mb-2 text-sm font-semibold text-ui-amber">Account warning from your administrator</h2>
       <div aria-live="polite"><WarningEntry warning={latest} /></div>
       {earlier.length > 0 && (
-        <details className="mt-4 border-t border-amber-400/20 pt-3">
-          <summary className="cursor-pointer text-sm font-medium text-amber-200">Earlier warnings</summary>
+        <details className="mt-4 border-t border-ui-amber/25 pt-3">
+          <summary className="cursor-pointer text-sm font-medium text-ui-amber">Earlier warnings</summary>
           <div className="mt-3 grid gap-4">
             {earlier.map((warning) => <WarningEntry key={warning.id} warning={warning} />)}
             {page?.next_before && (
-              <button type="button" disabled={loadingOlder} onClick={() => void loadEarlier()} className="w-fit rounded-lg border border-amber-400/25 px-3 py-2 text-xs text-amber-200 hover:bg-amber-400/10 disabled:opacity-60">
+              <button type="button" disabled={loadingOlder} onClick={() => void loadEarlier()} className="w-fit rounded-lg border border-ui-amber/25 px-3 py-2 text-xs text-ui-amber hover:bg-ui-amber/10 disabled:opacity-60">
                 {loadingOlder ? "Loading…" : "Load earlier warnings"}
               </button>
             )}
-            {error && <p role="alert" className="text-sm text-rose-200">Could not load earlier warnings. Try again.</p>}
+            {error && <p role="alert" className="text-sm text-ui-red">Could not load earlier warnings. Try again.</p>}
           </div>
         </details>
       )}

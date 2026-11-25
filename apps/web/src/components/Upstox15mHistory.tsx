@@ -77,7 +77,7 @@ function formatIst(value: string): string {
 function HistoryCandleChart({ candles, signals, label }: { candles: Candle[]; signals: Signal[]; label: string }) {
   if (candles.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-white/10 px-6 text-center text-sm text-slate-400">
+      <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-ui-line px-6 text-center text-sm text-ui-muted">
         No completed 15-minute candles were returned for this date range.
       </div>
     );
@@ -102,7 +102,7 @@ function HistoryCandleChart({ candles, signals, label }: { candles: Candle[]; si
   });
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-white/10 bg-slate-950/60" tabIndex={0} aria-label={`${label} historical chart; scroll horizontally to older candles`}>
+    <div className="overflow-x-auto rounded-lg border border-ui-line bg-[#102820]" tabIndex={0} aria-label={`${label} historical chart; scroll horizontally to older candles`}>
       <svg
         className="block h-72 max-w-none"
         style={{ width: `${width}px` }}
@@ -232,10 +232,10 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
         <div>
           <p className="as-kicker">Upstox history</p>
           <h2 id="upstox-history-title" className="as-section-title mt-1">15-minute candle charts</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-400">Review completed candles from earlier sessions. Scroll the chart horizontally to see older dates.</p>
+          <p className="mt-2 max-w-2xl text-sm text-ui-muted">Review completed candles from earlier sessions. Scroll the chart horizontally to see older dates.</p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
-          <label className="text-xs font-medium text-slate-400">
+          <label className="text-xs font-medium text-ui-muted">
             Date range
             <select
               value={days}
@@ -262,7 +262,7 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
         </div>
       </div>
 
-      <p className="mt-3 text-xs text-slate-500">Historical data only; it is not a live quote or trading instruction. Upstox index volume is omitted.</p>
+      <p className="mt-3 text-xs text-ui-muted">Historical data only; it is not a live quote or trading instruction. Upstox index volume is omitted.</p>
 
       <div className="mt-6 grid gap-6">
         {markets.map(({ symbol, label }) => {
@@ -270,25 +270,25 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
           return (
             <article key={symbol} aria-labelledby={`upstox-${symbol}-title`} className="as-inset min-w-0 p-3 sm:p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h3 id={`upstox-${symbol}-title`} className="font-semibold text-white">
-                  <Link href={`/chart/${symbol}?provider=upstox&days=${days}`} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
-                    {label}<span className="ml-2 text-xs text-emerald-300" aria-label="opens chart in a new tab">↗</span>
+                <h3 id={`upstox-${symbol}-title`} className="font-semibold text-ui-ink">
+                  <Link href={`/chart/${symbol}?provider=upstox&days=${days}`} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-ui-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+                    {label}<span className="ml-2 text-xs text-ui-green" aria-label="opens chart in a new tab">↗</span>
                   </Link>
                 </h3>
                 {snapshot.retrievedAt && (
-                  <div className="text-xs text-slate-500">
+                  <div className="text-xs text-ui-muted">
                     <p>Loaded {formatIst(snapshot.retrievedAt)} IST</p>
                     <p>Latest returned candle: {snapshot.lastCandleAt ? `${formatIst(snapshot.lastCandleAt)} IST` : "Unavailable"}</p>
                   </div>
                 )}
               </div>
-              {snapshot.error && <p role="alert" className="mb-3 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">{snapshot.error}</p>}
+              {snapshot.error && <p role="alert" className="mb-3 rounded-lg border border-ui-red/25 bg-ui-red/10 p-3 text-sm text-ui-red">{snapshot.error}</p>}
               {snapshot.loading && snapshot.candles.length === 0 ? (
-                <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-white/10 text-sm text-slate-400">Loading Upstox candles…</div>
+                <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-ui-line text-sm text-ui-muted">Loading Upstox candles…</div>
               ) : (
                 <HistoryCandleChart candles={snapshot.candles} signals={snapshot.signals} label={label} />
               )}
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-ui-muted">
                 {snapshot.startDate && snapshot.endDate
                   ? `${snapshot.startDate} to ${snapshot.endDate} · ${snapshot.candles.length} candles · 15-minute interval`
                   : "Choose a date range to load historical candles."}

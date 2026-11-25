@@ -132,7 +132,7 @@ function CandlestickChart({ candles, signals, label }: { candles: Candle[]; sign
 
   if (candles.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-white/10 px-6 text-center text-sm text-slate-400">
+      <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-ui-line px-6 text-center text-sm text-ui-muted">
         No validated 15-minute candles are available. Check the feed status and account-service connection.
       </div>
     );
@@ -149,7 +149,7 @@ function CandlestickChart({ candles, signals, label }: { candles: Candle[]; sign
   const y = (price: number) => inset + ((max - price) / range) * plotHeight;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-white/10 bg-slate-950/60">
+    <div className="overflow-hidden rounded-lg border border-ui-line bg-[#102820]">
       <svg
         className="block h-64 w-full"
         viewBox={`0 0 ${width} ${height}`}
@@ -215,10 +215,10 @@ function MarketCard({
   const stateLabel = (snapshot.error ? "unavailable" : snapshot.feedState || feedState).replaceAll("_", " ");
   const decision = snapshot.decision;
   const signalStyle = decision?.decision === "BUY"
-    ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+    ? "as-pill--green"
     : decision?.decision === "SELL"
-      ? "border-rose-400/30 bg-rose-400/10 text-rose-300"
-      : "border-white/10 bg-slate-900 text-slate-300";
+      ? "as-pill--red"
+      : "";
   const signalLabel = snapshot.current && decision?.is_current_signal
     ? "Current confirmed signal"
     : decision?.decision === "BUY" || decision?.decision === "SELL"
@@ -226,12 +226,12 @@ function MarketCard({
       : "Signal from confirmed candles";
 
   return (
-    <section className="as-panel p-4 sm:p-5">
+    <section className="as-panel market-index-card p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="as-section-title">
-            <Link href={chartHref} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
-              {title}<span className="ml-2 text-xs text-emerald-300" aria-label="opens chart in a new tab">↗</span>
+            <Link href={chartHref} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-ui-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+              {title}<span className="ml-2 text-xs text-ui-green" aria-label="opens chart in a new tab">↗</span>
             </Link>
           </h2>
           <p className="as-pill mt-2 capitalize">
@@ -239,12 +239,12 @@ function MarketCard({
           </p>
         </div>
         <div className="text-right">
-          <p className="text-xs uppercase tracking-wide text-slate-400">
+          <p className="text-xs uppercase tracking-wide text-ui-muted">
             {snapshot.error ? "Price unavailable" : snapshot.current ? "Latest validated price" : "Last recorded price · not current"}
           </p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">{formatPrice(price)}</p>
           {snapshot.quote?.timestamp && (
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-ui-muted">
               Recorded {new Date(snapshot.quote.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST
             </p>
           )}
@@ -257,10 +257,10 @@ function MarketCard({
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${signalStyle}`}>
+          <span className={`as-pill ${signalStyle}`}>
             {decision?.decision ?? "SIGNAL PENDING"}
           </span>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-ui-muted">
             {signalLabel}
           </span>
         </div>
@@ -273,17 +273,17 @@ function MarketCard({
           Open full chart <span aria-hidden="true" className="ml-2">↗</span>
         </Link>
       </div>
-      {decision && <p className="mt-2 text-xs text-slate-400">{decision.reason}</p>}
+      {decision && <p className="mt-2 text-xs text-ui-muted">{decision.reason}</p>}
 
-      {snapshot.error && <p className="mt-3 text-sm text-rose-300">{snapshot.error}</p>}
+      {snapshot.error && <p className="mt-3 text-sm text-ui-red">{snapshot.error}</p>}
       {snapshot.message && !snapshot.error && (
-        <p className="mt-3 text-sm text-slate-400">{snapshot.message}</p>
+        <p className="mt-3 text-sm text-ui-muted">{snapshot.message}</p>
       )}
-      {snapshot.loading && <p className="mt-3 text-xs text-slate-500">Loading market data…</p>}
+      {snapshot.loading && <p className="mt-3 text-xs text-ui-muted">Loading market data…</p>}
       {!snapshot.loading && !snapshot.current && !snapshot.error && snapshot.candles.length > 0 && (
-        <p className="mt-2 text-xs text-amber-300">Historical candles are shown. This feed is not current.</p>
+        <p className="mt-2 text-xs text-ui-amber">Historical candles are shown. This feed is not current.</p>
       )}
-      {forming && <p className="mt-2 text-xs text-amber-300">The latest candle is still forming.</p>}
+      {forming && <p className="mt-2 text-xs text-ui-amber">The latest candle is still forming.</p>}
     </section>
   );
 }
@@ -448,10 +448,10 @@ export default function LiveMarketDashboard() {
 
   return (
     <div className="space-y-4">
-      <div className="as-panel px-4 py-3">
+      <div className="as-panel market-feed-bar px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-3">
-            <label htmlFor="market-data-provider" className="text-sm text-slate-300">Market data</label>
+            <label htmlFor="market-data-provider" className="text-sm text-ui-muted">Market data</label>
             <select
               id="market-data-provider"
               value={selectedProvider}
@@ -465,14 +465,14 @@ export default function LiveMarketDashboard() {
                 return <option key={id} value={id}>{option?.label ?? (id === "groww" ? "Groww" : "Upstox")}{option && ` · ${label}`}</option>;
               })}
             </select>
-            <p className="text-sm text-slate-300">{backendMessage}</p>
+            <p className="text-sm text-ui-muted">{backendMessage}</p>
           </div>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-ui-muted">
             {checkedAt ? `Checked ${checkedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} IST · refreshes every 15 seconds` : "Connecting…"}
           </p>
         </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="market-index-grid">
         {markets.map(({ symbol, title }) => (
           <MarketCard
             key={symbol}

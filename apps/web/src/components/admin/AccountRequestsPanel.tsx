@@ -126,34 +126,34 @@ export default function AccountRequestsPanel({ accessToken, onApproved }: { acce
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="request-queue-title" className="as-section-title">Account requests</h2>
-          <p className="mt-1 text-sm text-slate-400">Accounts are created only after you approve a request.</p>
+          <p className="mt-1 text-sm text-ui-muted">Accounts are created only after you approve a request.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={busyId !== null} onClick={() => { setOffset(0); setShowHistory(value => !value); }} className="as-button as-button--quiet">{showHistory ? "Hide history" : "Show history"}</button>
           <button type="button" onClick={() => void refresh()} disabled={loading || busyId !== null} className="as-button as-button--quiet">{loading ? "Refreshing…" : "Refresh requests"}</button>
         </div>
       </div>
-      {error && <p role="alert" className="mt-4 rounded-lg border border-rose-400/25 bg-rose-400/10 p-3 text-sm text-rose-100">{error}</p>}
-      {notice && <p role="status" className="mt-4 rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{notice}</p>}
+      {error && <p role="alert" className="mt-4 rounded-lg border border-ui-red/25 bg-ui-red/10 p-3 text-sm text-ui-red">{error}</p>}
+      {notice && <p role="status" className="mt-4 rounded-lg border border-ui-green/25 bg-ui-green/10 p-3 text-sm text-ui-green">{notice}</p>}
       <div className="mt-5 grid gap-3">
         {requests.map((request) => (
           <article key={request.id} className="as-inset p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h3 className="font-semibold text-white">{request.full_name}</h3>
-                <p className="mt-1 break-all text-sm text-emerald-200">{request.email}</p>
+                <h3 className="font-semibold text-ui-ink">{request.full_name}</h3>
+                <p className="mt-1 break-all text-sm text-ui-green">{request.email}</p>
               </div>
               <span className={`as-pill capitalize ${request.status === "pending" || request.status === "processing" ? "as-pill--amber" : request.status === "approved" ? "as-pill--green" : ""}`}>{request.status}</span>
             </div>
             <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
-              <div><dt className="text-slate-400">Date of birth</dt><dd className="mt-1 text-slate-200">{request.date_of_birth}</dd></div>
-              <div><dt className="text-slate-400">Phone</dt><dd className="mt-1 text-slate-200">{request.phone_number}</dd></div>
-              <div><dt className="text-slate-400">WhatsApp</dt><dd className="mt-1 text-slate-200">{request.whatsapp_number}</dd></div>
-              <div><dt className="text-slate-400">Received</dt><dd className="mt-1 text-slate-200">{formatDate(request.created_at)}</dd></div>
-              <div><dt className="text-slate-400">Decision email</dt><dd className="mt-1 text-slate-200">{["pending", "processing"].includes(request.status) ? "Waiting for decision" : request.notification_status}</dd></div>
+              <div><dt className="text-ui-muted">Date of birth</dt><dd className="mt-1 text-ui-ink">{request.date_of_birth}</dd></div>
+              <div><dt className="text-ui-muted">Phone</dt><dd className="mt-1 text-ui-ink">{request.phone_number}</dd></div>
+              <div><dt className="text-ui-muted">WhatsApp</dt><dd className="mt-1 text-ui-ink">{request.whatsapp_number}</dd></div>
+              <div><dt className="text-ui-muted">Received</dt><dd className="mt-1 text-ui-ink">{formatDate(request.created_at)}</dd></div>
+              <div><dt className="text-ui-muted">Decision email</dt><dd className="mt-1 text-ui-ink">{["pending", "processing"].includes(request.status) ? "Waiting for decision" : request.notification_status}</dd></div>
             </dl>
             {(request.status === "pending" || request.status === "processing") && (
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-ui-line pt-4">
                 <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "approve")} className="as-button as-button--primary">{busyId === request.id ? "Working…" : request.status === "processing" ? "Resume approval" : "Approve and create account"}</button>
                 <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "decline")} className="as-button as-button--danger">Decline</button>
               </div>
@@ -172,14 +172,14 @@ export default function AccountRequestsPanel({ accessToken, onApproved }: { acce
             </div>
           </article>
         ))}
-        {!loading && requests.length === 0 && <p className="rounded-xl border border-white/10 p-5 text-center text-sm text-slate-500">No account requests to review.</p>}
+        {!loading && requests.length === 0 && <p className="rounded-xl border border-ui-line p-5 text-center text-sm text-ui-muted">No account requests to review.</p>}
       </div>
-      {(offset > 0 || hasMore) && <nav aria-label="Account request pages" className="mt-4 flex items-center gap-4 text-sm text-slate-300">
+      {(offset > 0 || hasMore) && <nav aria-label="Account request pages" className="mt-4 flex items-center gap-4 text-sm text-ui-muted">
         <button type="button" disabled={offset === 0 || loading || busyId !== null} onClick={() => setOffset(value => value - PAGE_SIZE)}
-          className="rounded-lg border border-white/15 px-3 py-2 disabled:opacity-50">Previous page</button>
+          className="rounded-lg border border-ui-line px-3 py-2 disabled:opacity-50">Previous page</button>
         <span>Page {offset / PAGE_SIZE + 1}</span>
         <button type="button" disabled={!hasMore || loading || busyId !== null} onClick={() => setOffset(value => value + PAGE_SIZE)}
-          className="rounded-lg border border-white/15 px-3 py-2 disabled:opacity-50">Next page</button>
+          className="rounded-lg border border-ui-line px-3 py-2 disabled:opacity-50">Next page</button>
       </nav>}
     </section>
   );

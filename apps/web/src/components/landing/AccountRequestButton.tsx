@@ -152,55 +152,55 @@ export default function AccountRequestButton() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="as-kicker">Customer access</p>
-                <h2 id="account-request-title" className="mt-2 text-2xl font-semibold text-white">Request an account</h2>
+                <h2 id="account-request-title" className="mt-2 text-2xl font-semibold text-ui-ink">Request an account</h2>
               </div>
               <button type="button" aria-label="Close request form" disabled={busy} onClick={close} className="as-button as-button--quiet">✕</button>
             </div>
             {submitted ? (
-              <div role="status" className="mt-6 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-5 text-sm leading-6 text-emerald-100">
+              <div role="status" className="mt-6 rounded-xl border border-ui-green/25 bg-ui-green/10 p-5 text-sm leading-6 text-ui-green">
                 {resultMessage} We’ll send sign-in instructions if your request is approved.
               </div>
             ) : (
               <>
-                <p className="mt-3 text-sm leading-6 text-slate-400">Choose a password and verify your email address to submit your request. After approval, use that email and password to sign in.</p>
+                <p className="mt-3 text-sm leading-6 text-ui-muted">Choose a password and verify your email address to submit your request. After approval, use that email and password to sign in.</p>
                 <form onSubmit={submit} className="mt-6 grid gap-4 sm:grid-cols-2">
-                  <label className="text-sm text-slate-300">Full name
+                  <label className="text-sm text-ui-muted">Full name
                     <input className={inputClass} type="text" autoComplete="name" required maxLength={120} value={fullName} onChange={(event) => setFullName(event.target.value)} />
                   </label>
-                  <label className="text-sm text-slate-300">Date of birth
+                  <label className="text-sm text-ui-muted">Date of birth
                     <input className={inputClass} type="date" autoComplete="bday" required max={new Date().toISOString().slice(0, 10)} value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} />
                   </label>
-                  <label className="text-sm text-slate-300 sm:col-span-2">Email
+                  <label className="text-sm text-ui-muted sm:col-span-2">Email
                     <input className={inputClass} type="email" autoComplete="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} />
                   </label>
-                  <label className="text-sm text-slate-300">Phone number
+                  <label className="text-sm text-ui-muted">Phone number
                     <input className={inputClass} type="tel" autoComplete="tel" required maxLength={20} value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} />
                   </label>
-                  <label className="text-sm text-slate-300">WhatsApp number
+                  <label className="text-sm text-ui-muted">WhatsApp number
                     <input className={inputClass} type="tel" required maxLength={20} value={whatsappNumber} onChange={(event) => setWhatsappNumber(event.target.value)} />
                   </label>
                   <div>
-                    <label className="text-sm text-slate-300">Password
+                    <label className="text-sm text-ui-muted">Password
                       <input className={inputClass} name="password" type="password" autoComplete="new-password" aria-describedby="account-request-password-help" required minLength={8} maxLength={72} value={password} onChange={(event) => setPassword(event.target.value)} />
                     </label>
-                    <p id="account-request-password-help" className="mt-1 text-xs text-slate-400">Use at least 8 characters.</p>
+                    <p id="account-request-password-help" className="mt-1 text-xs text-ui-muted">Use at least 8 characters.</p>
                   </div>
-                  <label className="text-sm text-slate-300">Confirm password
+                  <label className="text-sm text-ui-muted">Confirm password
                     <input className={inputClass} name="confirm-password" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
                   </label>
                   {awaitingCode && (
-                    <div className="rounded-lg border border-white/15 p-3 sm:col-span-2">
-                      <p role="status" className="text-sm text-slate-300">Enter the verification code we emailed to {codeEmail}.</p>
+                    <div className="rounded-lg border border-ui-line p-3 sm:col-span-2">
+                      <p role="status" className="text-sm text-ui-muted">Enter the verification code we emailed to {codeEmail}.</p>
                       <div className="mt-3 flex flex-wrap items-end gap-3">
-                        <label className="min-w-40 flex-1 text-sm text-slate-300">Email verification code
+                        <label className="min-w-40 flex-1 text-sm text-ui-muted">Email verification code
                           <input className={inputClass} name="email-code" type="text" autoComplete="one-time-code" autoCapitalize="characters" spellCheck={false} required pattern="[A-Z2-7]{8}" maxLength={8} value={emailCode} onChange={(event) => setEmailCode(event.target.value.trim().toUpperCase())} />
                         </label>
                         <button type="button" disabled={busy} onClick={() => void resendCode()} className="as-button as-button--quiet">Resend code</button>
                       </div>
                     </div>
                   )}
-                  {error && <p role="alert" className="rounded-lg border border-rose-400/25 bg-rose-400/10 p-3 text-sm text-rose-100 sm:col-span-2">{error}</p>}
-                  <p className="text-xs leading-5 text-slate-500 sm:col-span-2">We use these details to review your request and email a decision. See our <Link href="/privacy" className="text-emerald-300 underline">Privacy Policy</Link>.</p>
+                  {error && <p role="alert" className="rounded-lg border border-ui-red/25 bg-ui-red/10 p-3 text-sm text-ui-red sm:col-span-2">{error}</p>}
+                  <p className="text-xs leading-5 text-ui-muted sm:col-span-2">We use these details to review your request and email a decision. See our <Link href="/privacy" className="text-ui-green underline">Privacy Policy</Link>.</p>
                   <button type="submit" disabled={busy} className="as-button as-button--primary sm:col-span-2">{busy ? "Please wait…" : awaitingCode ? "Verify email and submit request" : "Send email verification code"}</button>
                 </form>
               </>

@@ -63,7 +63,7 @@ export default function AccountPage() {
     return (
       <main className="as-page">
         <div className="as-auth">
-          <p className="as-panel as-auth-card text-sm text-slate-300" role="status">
+          <p className="as-panel as-auth-card text-sm text-ui-muted" role="status">
           {loading ? "Checking your account…" : "Redirecting to sign in…"}
           </p>
         </div>
@@ -72,43 +72,49 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="as-page">
-      <CustomerWorkspaceHeader email={profile.email} isAdmin={profile.role === "admin"} active="account" onSignOut={() => void leaveAccount()} />
-      <main className="as-container py-7 sm:py-10">
-        <h1 className="as-title">Your account</h1>
-        <p className="as-subtitle mt-2 text-sm">Review your access and manage your password.</p>
+    <div className="workspace-shell">
+      <CustomerWorkspaceHeader email={profile.email} isAdmin={profile.role === "admin"} onSignOut={() => void leaveAccount()} />
+      <main className="workspace-main">
+        <header className="workspace-page-top">
+          <div className="as-container workspace-page-top-inner">
+            <p className="as-kicker">Settings</p>
+            <h1 className="as-title">Your account</h1>
+            <p className="as-subtitle mt-2 text-sm">Review your access and manage your password.</p>
+          </div>
+        </header>
+        <div className="as-container py-6">
         <CustomerWarnings />
         <div className="as-account-grid mt-6">
           <section aria-labelledby="account-details-title" className="as-panel p-5 sm:p-6">
             <h2 id="account-details-title" className="as-section-title">Account details</h2>
             <dl className="mt-4 grid gap-4 text-sm">
               <div>
-                <dt className="text-xs text-slate-400">Sign-in email</dt>
-                <dd className="mt-1 break-all font-medium text-white">{profile.email}</dd>
+                <dt className="text-xs text-ui-muted">Sign-in email</dt>
+                <dd className="mt-1 break-all font-medium text-ui-ink">{profile.email}</dd>
               </div>
               <div className="as-inset grid grid-cols-2 gap-3 p-3">
-                <div><dt className="text-xs text-slate-400">Account role</dt><dd className="mt-1 capitalize text-slate-200">{profile.role === "user" ? "Customer" : profile.role}</dd></div>
-                <div><dt className="text-xs text-slate-400">Login status</dt><dd className={`as-pill mt-1 capitalize ${profile.status === "paused" ? "as-pill--amber" : "as-pill--green"}`}>{profile.status}</dd></div>
+                <div><dt className="text-xs text-ui-muted">Account role</dt><dd className="mt-1 capitalize text-ui-ink">{profile.role === "user" ? "Customer" : profile.role}</dd></div>
+                <div><dt className="text-xs text-ui-muted">Login status</dt><dd className={`as-pill mt-1 capitalize ${profile.status === "paused" ? "as-pill--amber" : "as-pill--green"}`}>{profile.status}</dd></div>
               </div>
             </dl>
           </section>
           <section className="as-panel p-5 sm:p-6">
             {profile.status === "paused" ? (
-              <div className="mt-6 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+              <div className="mt-6 rounded-lg border border-ui-amber/25 bg-ui-amber/10 p-4 text-sm text-ui-amber">
                 This login is paused. Contact the administrator to restore access.
               </div>
             ) : (
               <form id="change-password" onSubmit={submitPassword} aria-busy={savingPassword}>
                 <h2 className="as-section-title">Change password</h2>
-                <p className="mt-1 text-sm text-slate-400">Use between 8 and 128 characters. We’ll email your registered address when your password changes.</p>
-                <label className="mt-4 block text-sm text-slate-300">
+                <p className="mt-1 text-sm text-ui-muted">Use between 8 and 128 characters. We’ll email your registered address when your password changes.</p>
+                <label className="mt-4 block text-sm text-ui-muted">
                   Current password
                   <input type="password" autoComplete="current-password" maxLength={128} required value={currentPassword} disabled={savingPassword}
                     onChange={(event) => setCurrentPassword(event.target.value)}
                     className="as-field mt-1 w-full" />
                 </label>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <label className="text-sm text-slate-300">
+                  <label className="text-sm text-ui-muted">
                     New password
                     <input
                       type="password"
@@ -122,7 +128,7 @@ export default function AccountPage() {
                       className="as-field mt-1 w-full"
                     />
                   </label>
-                  <label className="text-sm text-slate-300">
+                  <label className="text-sm text-ui-muted">
                     Confirm password
                     <input
                       type="password"
@@ -148,16 +154,17 @@ export default function AccountPage() {
             )}
 
             {error && (
-              <p role="alert" className="mt-4 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
+              <p role="alert" className="mt-4 rounded-lg border border-ui-red/25 bg-ui-red/10 p-3 text-sm text-ui-red">
                 {error}
               </p>
             )}
             {message && (
-              <p role="status" className="mt-4 rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-emerald-100">
+              <p role="status" className="mt-4 rounded-lg border border-ui-green/25 bg-ui-green/5 p-3 text-sm text-ui-green">
                 {message}
               </p>
             )}
           </section>
+        </div>
         </div>
       </main>
     </div>

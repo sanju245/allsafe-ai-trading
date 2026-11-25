@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import WorkspaceIcon from "@/components/WorkspaceIcon";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AccountRequestsPanel from "@/components/admin/AccountRequestsPanel";
 import CustomerMessageDialog from "@/components/admin/CustomerMessageDialog";
@@ -118,7 +119,7 @@ function UserActions({ user, busy, onStatusChange, onDelete, onViewSignIns, onWa
   const customer = isCustomer(user);
 
   if (!customer) {
-    return <span className="text-xs text-slate-500">Admin account protected</span>;
+    return <span className="text-xs text-ui-muted">Admin account protected</span>;
   }
 
   return (
@@ -158,7 +159,7 @@ function UserActions({ user, busy, onStatusChange, onDelete, onViewSignIns, onWa
   );
 }
 
-export default function AdminUsersPanel() {
+export default function AdminUsersPanel({ brand }: { brand?: ReactNode } = {}) {
   const { session, profile, loading: authLoading, signOut, refreshProfile } = useAuth();
   const accessToken = session?.access_token;
   const isAdmin = profile?.role === "admin" && profile.status === "active";
@@ -170,6 +171,7 @@ export default function AdminUsersPanel() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [area, setArea] = useState<"customers" | "applications">("customers");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -479,37 +481,44 @@ export default function AdminUsersPanel() {
 
   if (authLoading) {
     return (
-      <section aria-live="polite" className="py-16 text-center text-sm text-slate-400">
-        Checking your administrator access…
-      </section>
+      <main className="as-auth">
+        {brand}
+        <p role="status" className="as-panel as-auth-card text-sm text-ui-muted">Checking your administrator access…</p>
+      </main>
     );
   }
 
   if (!session || !profile) {
     return (
-      <section className="as-panel mx-auto mt-10 max-w-xl p-6 sm:p-8">
-        <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">Sign in required</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">Admin access</h1>
-        <p className="mt-3 text-sm leading-relaxed text-slate-300">Sign in with an administrator account to manage customer access.</p>
+      <main className="as-auth">
+        {brand}
+        <section className="as-panel as-auth-card">
+        <p className="text-xs font-medium uppercase tracking-widest text-ui-green">Sign in required</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ui-ink">Admin access</h1>
+        <p className="mt-3 text-sm leading-relaxed text-ui-muted">Sign in with an administrator account to manage customer access.</p>
         <Link href="/admin/login" className="as-button as-button--primary mt-5">
           Go to admin sign in
         </Link>
-      </section>
+        </section>
+      </main>
     );
   }
 
   if (!isAdmin || deniedToken === accessToken) {
     return (
-      <section className="mx-auto mt-10 max-w-xl rounded-2xl border border-rose-400/20 bg-rose-400/5 p-6 sm:p-8">
-        <p className="text-xs font-medium uppercase tracking-widest text-rose-200">Access denied</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">Administrator account required</h1>
-        <p className="mt-3 text-sm leading-relaxed text-slate-300">Administrator access could not be verified. Customer details have been cleared.</p>
-        {error && <p role="alert" className="mt-3 text-sm text-rose-100">{error}</p>}
-        <Link href="/account" className="mt-5 mr-4 inline-flex text-sm font-medium text-emerald-200 hover:text-white">Go to your account</Link>
-        <button type="button" onClick={() => void signOut()} className="mt-5 rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/5">
+      <main className="as-auth">
+        {brand}
+        <section className="as-panel as-auth-card border-ui-red/25">
+        <p className="text-xs font-medium uppercase tracking-widest text-ui-red">Access denied</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ui-ink">Administrator account required</h1>
+        <p className="mt-3 text-sm leading-relaxed text-ui-muted">Administrator access could not be verified. Customer details have been cleared.</p>
+        {error && <p role="alert" className="mt-3 text-sm text-ui-red">{error}</p>}
+        <Link href="/account" className="mt-5 mr-4 inline-flex text-sm font-medium text-ui-green hover:text-ui-ink">Go to your account</Link>
+        <button type="button" onClick={() => void signOut()} className="mt-5 rounded-lg border border-ui-line px-4 py-2.5 text-sm font-medium text-ui-ink hover:bg-ui-inset">
           Sign out
         </button>
-      </section>
+        </section>
+      </main>
     );
   }
 
@@ -541,53 +550,59 @@ export default function AdminUsersPanel() {
     : undefined;
   const activeMessage = messageAction?.token === accessToken ? messageAction?.action : undefined;
   const customers = directoryToken === accessToken ? users.filter(isCustomer) : null;
+  const showCustomers = area === "customers";
 
   return (
-    <div className="pb-12 pt-7 sm:pt-10">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="as-title">Customers</h1>
-          <p className="as-subtitle mt-2 text-sm">Review applications, manage access, and check sign-in history.</p>
+    <div className="workspace-shell">
+      <aside className="workspace-rail">
+        {brand}
+        <nav aria-label="Admin sections" className="workspace-rail-nav">
+          <p className="workspace-rail-label">Administration</p>
+          <button type="button" aria-pressed={showCustomers} onClick={() => setArea("customers")} className="workspace-item"><WorkspaceIcon name="account" /> Customers</button>
+          <button type="button" aria-pressed={!showCustomers} onClick={() => setArea("applications")} className="workspace-item"><WorkspaceIcon name="request" /> Applications</button>
+          <Link href="/terminal" className="workspace-item"><WorkspaceIcon name="dashboard" /> Market dashboard</Link>
+        </nav>
+        <div className="workspace-rail-foot">
+          <span className="workspace-rail-email" title={profile.email}>{profile.email}</span>
+          <button type="button" onClick={() => void signOut()} className="as-button workspace-signout">Sign out</button>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => openMessage({ kind: "warning", user: null })} aria-haspopup="dialog" disabled={busyUserId !== null}
-            className="as-button as-button--amber">
-            Warn all customers
-          </button>
-          <button type="button" onClick={() => void refreshUsers()} disabled={loadingUsers} className="as-button as-button--quiet">
-            {loadingUsers ? "Refreshing…" : "Refresh list"}
-          </button>
-          <button ref={createCustomerButtonRef} type="button" aria-expanded={createOpen} onClick={() => { clearNotices(); setCreateOpen((open) => !open); }} className="as-button as-button--primary">
-            {createOpen ? "Close form" : "Create customer"}
-          </button>
-          <button type="button" onClick={() => void signOut()} className="as-button as-button--quiet">
-            Sign out
-          </button>
-        </div>
-      </div>
+      </aside>
+      <main className="workspace-main">
+        <header className="workspace-page-top">
+          <div className="as-container workspace-page-top-inner flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="as-kicker">Admin portal</p>
+              <h1 className="as-title">{showCustomers ? "Customers" : "Applications"}</h1>
+              <p className="as-subtitle mt-2 text-sm">{showCustomers ? "Manage access and review customer sign-ins." : "Review requests for customer access."}</p>
+            </div>
+            {showCustomers && (
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => openMessage({ kind: "warning", user: null })} aria-haspopup="dialog" disabled={busyUserId !== null} className="as-button as-button--amber">Warn all customers</button>
+                <button type="button" onClick={() => void refreshUsers()} disabled={loadingUsers} className="as-button as-button--quiet">{loadingUsers ? "Refreshing…" : "Refresh list"}</button>
+                <button ref={createCustomerButtonRef} type="button" aria-expanded={createOpen} onClick={() => { clearNotices(); setCreateOpen((open) => !open); }} className="as-button as-button--primary">{createOpen ? "Close form" : "Create customer"}</button>
+              </div>
+            )}
+          </div>
+        </header>
+        <div className="as-container pb-12 pt-6">
+          {showCustomers ? (
+            <dl className="as-admin-metrics" aria-label="Customer account totals">
+              <div className="as-panel"><dt>Total customers</dt><dd>{customers?.length ?? "—"}</dd></div>
+              <div className="as-panel"><dt>Active logins</dt><dd className="text-ui-green">{customers?.filter((user) => user.status === "active").length ?? "—"}</dd></div>
+              <div className="as-panel"><dt>Paused logins</dt><dd className="text-ui-amber">{customers?.filter((user) => user.status === "paused").length ?? "—"}</dd></div>
+            </dl>
+          ) : accessToken && <AccountRequestsPanel accessToken={accessToken} onApproved={refreshUsers} />}
 
-      <dl className="as-admin-metrics mt-6" aria-label="Customer account totals">
-        <div className="as-panel"><dt>Total customers</dt><dd>{customers?.length ?? "—"}</dd></div>
-        <div className="as-panel"><dt>Active logins</dt><dd className="text-emerald-200">{customers?.filter((user) => user.status === "active").length ?? "—"}</dd></div>
-        <div className="as-panel"><dt>Paused logins</dt><dd className="text-amber-200">{customers?.filter((user) => user.status === "paused").length ?? "—"}</dd></div>
-      </dl>
-      <nav aria-label="Admin sections" className="as-nav-group mt-3">
-        <a href="#account-requests" className="as-nav-link">Account requests</a>
-        <a href="#account-directory" className="as-nav-link">Account directory</a>
-      </nav>
-
-      {accessToken && <AccountRequestsPanel accessToken={accessToken} onApproved={refreshUsers} />}
-
-      {createOpen && (
+      {showCustomers && createOpen && (
         <section aria-labelledby="create-customer-title" className="as-panel mt-5 p-5 sm:p-6">
           <h2 id="create-customer-title" className="as-section-title">Create a customer login</h2>
-          <p className="mt-1 text-sm text-slate-400">The email is the customer’s sign-in username. Share the initial password with them securely.</p>
+          <p className="mt-1 text-sm text-ui-muted">The email is the customer’s sign-in username. Share the initial password with them securely.</p>
           <form onSubmit={createUser} className="mt-5 grid gap-4 md:grid-cols-3">
-            <label className="text-sm text-slate-300">
+            <label className="text-sm text-ui-muted">
               Email / username
               <input type="email" required autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} className="as-field mt-1 w-full" placeholder="customer@example.com" />
             </label>
-            <label className="text-sm text-slate-300">
+            <label className="text-sm text-ui-muted">
               Initial password
               <input type="password" required minLength={8} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="as-field mt-1 w-full" placeholder="At least 8 characters" />
             </label>
@@ -595,29 +610,29 @@ export default function AdminUsersPanel() {
               <button type="submit" disabled={creating} className="as-button as-button--primary">
                 {creating ? "Creating account…" : "Create customer"}
               </button>
-              <span className="text-xs text-slate-500">Passwords are sent only to the API and are cleared after success.</span>
+              <span className="text-xs text-ui-muted">Passwords are sent only to the API and are cleared after success.</span>
             </div>
           </form>
         </section>
       )}
 
-      {error && <p role="alert" className="mt-5 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">{error}</p>}
-      {success && <p role="status" className="mt-5 rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-emerald-100">{success}</p>}
+      {error && <p role="alert" className="mt-5 rounded-lg border border-ui-red/25 bg-ui-red/10 p-3 text-sm text-ui-red">{error}</p>}
+      {success && <p role="status" className="mt-5 rounded-lg border border-ui-green/25 bg-ui-green/5 p-3 text-sm text-ui-green">{success}</p>}
 
-      <section id="account-directory" aria-labelledby="directory-title" className="as-panel mt-5 scroll-mt-6 p-4 sm:p-6">
+      {showCustomers && <section id="account-directory" aria-labelledby="directory-title" className="as-panel mt-5 scroll-mt-6 p-4 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="directory-title" className="as-section-title">Account directory</h2>
-            <p className="mt-1 text-sm text-slate-400" aria-live="polite">
+            <p className="mt-1 text-sm text-ui-muted" aria-live="polite">
               {loadingUsers ? "Loading accounts…" : `${visibleUsers.length} ${visibleUsers.length === 1 ? "account" : "accounts"}`}
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-[minmax(14rem,1fr)_10rem]">
-            <label className="text-xs font-medium text-slate-400">
+            <label className="text-xs font-medium text-ui-muted">
               Search accounts
               <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Email" className="as-field mt-1 w-full" />
             </label>
-            <label className="text-xs font-medium text-slate-400">
+            <label className="text-xs font-medium text-ui-muted">
               Status
               <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="as-field mt-1 w-full">
                 <option value="all">All statuses</option>
@@ -641,10 +656,10 @@ export default function AdminUsersPanel() {
             </thead>
             <tbody>
               {visibleUsers.map((user) => (
-                <tr key={user.id} className="border-t border-white/5 align-top text-slate-200">
+                <tr key={user.id} className="border-t border-ui-line align-top text-ui-ink">
                   <td className="px-4 py-4">
-                    <span className="font-medium text-white">{user.email}</span>
-                    <span className="mt-1 block break-all font-mono text-[10px] text-slate-400">{user.id}</span>
+                    <span className="font-medium text-ui-ink">{user.email}</span>
+                    <span className="mt-1 block break-all font-mono text-[10px] text-ui-muted">{user.id}</span>
                   </td>
                   <td className="px-4 py-4 capitalize">{isCustomer(user) ? "Customer" : user.role}</td>
                   <td className="px-4 py-4">
@@ -652,18 +667,18 @@ export default function AdminUsersPanel() {
                       {user.status}
                     </span>
                     {user.status === "paused" && user.pause_reason && (
-                      <details className="mt-2 max-w-xs text-xs text-slate-300">
-                        <summary className="cursor-pointer text-amber-200">Pause reason</summary>
+                      <details className="mt-2 max-w-xs text-xs text-ui-muted">
+                        <summary className="cursor-pointer text-ui-amber">Pause reason</summary>
                         <p className="mt-1 whitespace-pre-wrap break-words">{user.pause_reason}</p>
                       </details>
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-4 text-slate-400">{formatDate(user.created_at)}</td>
+                  <td className="whitespace-nowrap px-4 py-4 text-ui-muted">{formatDate(user.created_at)}</td>
                   <td className="px-4 py-4">{renderActions(user)}</td>
                 </tr>
               ))}
               {!loadingUsers && visibleUsers.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">No accounts match these filters.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-ui-muted">No accounts match these filters.</td></tr>
               )}
             </tbody>
           </table>
@@ -674,28 +689,28 @@ export default function AdminUsersPanel() {
             <article key={user.id} className="as-inset p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <h3 className="break-all font-medium text-white">{user.email}</h3>
-                  <p className="mt-1 break-all font-mono text-[10px] text-slate-400">{user.id}</p>
+                  <h3 className="break-all font-medium text-ui-ink">{user.email}</h3>
+                  <p className="mt-1 break-all font-mono text-[10px] text-ui-muted">{user.id}</p>
                 </div>
                 <span className={`as-pill capitalize ${user.status === "paused" ? "as-pill--amber" : "as-pill--green"}`}>
                   {user.status}
                 </span>
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                <div><dt className="text-slate-400">Role</dt><dd className="mt-1 capitalize text-slate-200">{isCustomer(user) ? "Customer" : user.role}</dd></div>
-                <div><dt className="text-slate-400">Created</dt><dd className="mt-1 text-slate-200">{formatDate(user.created_at)}</dd></div>
+                <div><dt className="text-ui-muted">Role</dt><dd className="mt-1 capitalize text-ui-ink">{isCustomer(user) ? "Customer" : user.role}</dd></div>
+                <div><dt className="text-ui-muted">Created</dt><dd className="mt-1 text-ui-ink">{formatDate(user.created_at)}</dd></div>
               </dl>
               {user.status === "paused" && user.pause_reason && (
-                <p className="mt-3 whitespace-pre-wrap break-words text-xs text-amber-200">{user.pause_reason}</p>
+                <p className="mt-3 whitespace-pre-wrap break-words text-xs text-ui-amber">{user.pause_reason}</p>
               )}
-              <div className="mt-4 border-t border-white/10 pt-3">{renderActions(user)}</div>
+              <div className="mt-4 border-t border-ui-line pt-3">{renderActions(user)}</div>
             </article>
           ))}
           {!loadingUsers && visibleUsers.length === 0 && (
-            <p className="rounded-xl border border-white/10 p-6 text-center text-sm text-slate-500">No accounts match these filters.</p>
+            <p className="rounded-xl border border-ui-line p-6 text-center text-sm text-ui-muted">No accounts match these filters.</p>
           )}
         </div>
-      </section>
+      </section>}
 
       {activeMessage && (
         <CustomerMessageDialog action={activeMessage.kind} email={activeMessage.user?.email ?? null}
@@ -715,19 +730,19 @@ export default function AdminUsersPanel() {
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDeleteDialog(); }}>
-          <section ref={deleteDialogRef} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description" className="w-full max-w-lg rounded-2xl border border-rose-400/20 bg-slate-900 p-5 shadow-2xl sm:p-6">
-            <p className="text-xs font-medium uppercase tracking-widest text-rose-200">Delete customer</p>
-            <h2 id="delete-dialog-title" className="mt-2 text-xl font-semibold text-white">This will remove the login</h2>
-            <p id="delete-dialog-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              To confirm, type <span className="font-semibold text-white">{deleteTarget.email}</span>. Any linked approved application is also removed. This action cannot be undone.
+          <section ref={deleteDialogRef} role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description" className="w-full max-w-lg rounded-2xl border border-ui-red/25 bg-ui-inset p-5 shadow-2xl sm:p-6">
+            <p className="text-xs font-medium uppercase tracking-widest text-ui-red">Delete customer</p>
+            <h2 id="delete-dialog-title" className="mt-2 text-xl font-semibold text-ui-ink">This will remove the login</h2>
+            <p id="delete-dialog-description" className="mt-3 text-sm leading-relaxed text-ui-muted">
+              To confirm, type <span className="font-semibold text-ui-ink">{deleteTarget.email}</span>. Any linked approved application is also removed. This action cannot be undone.
             </p>
-            <label className="mt-4 block text-sm text-slate-300">
+            <label className="mt-4 block text-sm text-ui-muted">
               Confirm email
-              <input type="email" autoComplete="off" autoFocus value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-rose-300 focus:outline-none" />
+              <input type="email" autoComplete="off" autoFocus value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} className="mt-1 block w-full rounded-lg border border-ui-line bg-ui-inset px-3 py-2.5 text-sm text-ui-ink focus:border-rose-300 focus:outline-none" />
             </label>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <button type="button" disabled={busyUserId === deleteTarget.id} onClick={closeDeleteDialog} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50">Cancel</button>
-              <button type="button" disabled={busyUserId === deleteTarget.id || deleteConfirmation.trim().toLowerCase() !== deleteTarget.email.trim().toLowerCase()} onClick={() => void deleteUser()} className="rounded-lg bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-40">
+              <button type="button" disabled={busyUserId === deleteTarget.id} onClick={closeDeleteDialog} className="rounded-lg border border-ui-line px-4 py-2.5 text-sm font-medium text-ui-ink hover:bg-ui-inset disabled:opacity-50">Cancel</button>
+              <button type="button" disabled={busyUserId === deleteTarget.id || deleteConfirmation.trim().toLowerCase() !== deleteTarget.email.trim().toLowerCase()} onClick={() => void deleteUser()} className="rounded-lg as-button as-button--danger disabled:cursor-not-allowed disabled:opacity-40">
                 {busyUserId === deleteTarget.id ? "Deleting…" : "Delete customer"}
               </button>
             </div>
@@ -735,7 +750,9 @@ export default function AdminUsersPanel() {
         </div>
       )}
 
-      {!API_BASE_URL && <p role="alert" className="mt-5 rounded-lg border border-amber-300/20 bg-amber-300/5 p-3 text-sm text-amber-100">Set the public API URL using <code>NEXT_PUBLIC_API_BASE_URL</code>.</p>}
+      {!API_BASE_URL && <p role="alert" className="mt-5 rounded-lg border border-ui-amber/25 bg-ui-amber/5 p-3 text-sm text-ui-amber">Set the public API URL using <code>NEXT_PUBLIC_API_BASE_URL</code>.</p>}
+        </div>
+      </main>
     </div>
   );
 }

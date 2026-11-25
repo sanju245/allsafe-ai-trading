@@ -55,13 +55,13 @@ export default function AdminLoginPage() {
         <section className="as-panel as-auth-card">
           <p className="as-kicker">Administrator access</p>
           <h1 className="mt-2">Admin sign in</h1>
-          <p className="mt-2 text-sm leading-relaxed text-slate-300">
+          <p className="mt-2 text-sm leading-relaxed text-ui-muted">
             Sign in with an active administrator account to manage customer access.
             Administrator access is available from any IP address.
           </p>
 
           {!SUPABASE_CONFIGURED ? (
-            <div className="mt-5 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+            <div className="mt-5 rounded-lg border border-ui-amber/25 bg-ui-amber/10 p-4 text-sm text-ui-amber">
               <p className="font-semibold">Administrator sign-in is temporarily unavailable.</p>
               <p className="mt-1 leading-relaxed">
                 Contact the account owner to restore access.
@@ -69,7 +69,7 @@ export default function AdminLoginPage() {
             </div>
           ) : (
             <form onSubmit={submit} className="mt-5 grid gap-4">
-              <label className="text-sm text-slate-300">
+              <label className="text-sm text-ui-muted">
                 Email
                 <input
                   type="email"
@@ -81,7 +81,7 @@ export default function AdminLoginPage() {
                   className="as-field mt-1 w-full"
                 />
               </label>
-              <label className="text-sm text-slate-300">
+              <label className="text-sm text-ui-muted">
                 Password
                 <input
                   type="password"
@@ -103,24 +103,24 @@ export default function AdminLoginPage() {
             </form>
           )}
 
-          <Link href="/forgot-password" className="mt-4 inline-flex text-sm text-emerald-300 underline">Forgot password?</Link>
+          <Link href="/forgot-password" className="mt-4 inline-flex text-sm text-ui-green underline">Forgot password?</Link>
 
           {loading && !session && (
-            <p role="status" className="mt-4 text-sm text-slate-400">
+            <p role="status" className="mt-4 text-sm text-ui-muted">
               Checking administrator access… The account service can take up to a minute to wake up.
             </p>
           )}
           {displayError && (
-            <p role="alert" className="mt-4 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
+            <p role="alert" className="mt-4 rounded-lg border border-ui-red/25 bg-ui-red/10 p-3 text-sm text-ui-red">
               {displayError}
             </p>
           )}
           {session && profile?.role === "user" && (
-            <Link href="/account" className="mt-4 inline-flex text-sm font-medium text-emerald-200 hover:text-white">
+            <Link href="/account" className="mt-4 inline-flex text-sm font-medium text-ui-green hover:text-ui-ink">
               Return to your customer account
             </Link>
           )}
-          <p className="mt-4 text-xs leading-relaxed text-slate-500">
+          <p className="mt-4 text-xs leading-relaxed text-ui-muted">
             Only active administrator accounts can enter this portal. Contact the account owner if you need access.
           </p>
         </section>

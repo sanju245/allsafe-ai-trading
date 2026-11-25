@@ -125,10 +125,10 @@ function WhatWeDonePage({
   const initialEpochMs = Number.isFinite(parsedEpoch) ? parsedEpoch : undefined;
 
   return (
-    <div className="as-page selection:bg-emerald-500/30 selection:text-emerald-200">
+    <div className="as-page selection:bg-ui-green/30 selection:text-ui-green">
       <a
         href="#what-we-done-main"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-emerald-400 focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-slate-950"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-emerald-400 focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-ui-ink"
       >
         Skip to how-it-works content
       </a>
@@ -144,32 +144,32 @@ function WhatWeDonePage({
           <div className="hidden items-center gap-1 md:flex lg:gap-2">
             <Link
               href="/"
-              className="rounded-lg px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.06] hover:text-white lg:text-sm"
+              className="rounded-lg px-3 py-2 text-xs font-medium text-ui-muted transition hover:bg-ui-inset hover:text-ui-ink lg:text-sm"
             >
               Home
             </Link>
             <Link
               href="/what-we-done"
               aria-current="page"
-              className="rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-300 transition lg:text-sm"
+              className="rounded-lg border border-ui-green/25 bg-ui-green/15 px-3 py-2 text-xs font-semibold text-ui-green transition lg:text-sm"
             >
               How It Works
             </Link>
             <Link
               href="/#ai-intelligence"
-              className="rounded-lg px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.06] hover:text-white lg:text-sm"
+              className="rounded-lg px-3 py-2 text-xs font-medium text-ui-muted transition hover:bg-ui-inset hover:text-ui-ink lg:text-sm"
             >
               AI Intelligence
             </Link>
             <Link
               href="/#features"
-              className="rounded-lg px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.06] hover:text-white lg:text-sm"
+              className="rounded-lg px-3 py-2 text-xs font-medium text-ui-muted transition hover:bg-ui-inset hover:text-ui-ink lg:text-sm"
             >
               Features
             </Link>
             <Link
               href="/#about"
-              className="rounded-lg px-3 py-2 text-xs font-medium text-slate-300 transition hover:bg-white/[0.06] hover:text-white lg:text-sm"
+              className="rounded-lg px-3 py-2 text-xs font-medium text-ui-muted transition hover:bg-ui-inset hover:text-ui-ink lg:text-sm"
             >
               About
             </Link>
@@ -188,7 +188,7 @@ function WhatWeDonePage({
             {session && (
               <Link
                 href="/terminal"
-                className="hidden min-h-[40px] items-center justify-center rounded-xl border border-white/15 bg-white/[0.05] px-3.5 py-2 text-xs font-semibold text-slate-100 transition hover:bg-white/10 sm:inline-flex"
+                className="hidden min-h-[40px] items-center justify-center rounded-xl border border-ui-line bg-ui-inset px-3.5 py-2 text-xs font-semibold text-ui-ink transition hover:bg-ui-inset sm:inline-flex"
               >
                 Open Live Terminal
               </Link>
@@ -196,7 +196,7 @@ function WhatWeDonePage({
 
             <Link
               href="/login"
-              className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-emerald-400/50 bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.3)] transition hover:bg-emerald-400 sm:text-sm"
+              className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-ui-green/25 bg-emerald-500 px-4 py-2 text-xs font-bold text-ui-ink shadow-[0_0_20px_rgba(16,185,129,0.3)] transition hover:bg-emerald-400 sm:text-sm"
             >
               <span>Customer Sign In</span>
               <span aria-hidden="true" className="font-mono text-xs">
@@ -209,7 +209,7 @@ function WhatWeDonePage({
               onClick={() => setMobileMenuOpen((prev) => !prev)}
               aria-expanded={mobileMenuOpen}
               aria-label="Toggle navigation menu"
-              className="inline-flex min-h-[40px] min-w-[40px] items-center justify-center rounded-xl border border-white/15 bg-white/[0.04] p-2 text-slate-200 md:hidden"
+              className="inline-flex min-h-[40px] min-w-[40px] items-center justify-center rounded-xl border border-ui-line bg-ui-inset p-2 text-ui-ink md:hidden"
             >
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
@@ -219,15 +219,15 @@ function WhatWeDonePage({
         </nav>
 
         {mobileMenuOpen && (
-          <div className="border-t border-white/10 bg-[#080d16] px-4 py-4 md:hidden">
+          <div className="border-t border-ui-line bg-ui-card px-4 py-4 md:hidden">
             <div className="flex flex-col gap-1.5">
-              <Link href="/" className="flex min-h-[44px] items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-200">
+              <Link href="/" className="flex min-h-[44px] items-center rounded-lg px-3 py-2 text-sm font-medium text-ui-ink">
                 Home
               </Link>
-              <Link href="/what-we-done" className="flex min-h-[44px] items-center rounded-lg bg-emerald-500/15 px-3 py-2 text-sm font-bold text-emerald-300">
+              <Link href="/what-we-done" className="flex min-h-[44px] items-center rounded-lg bg-ui-green/15 px-3 py-2 text-sm font-bold text-ui-green">
                 How It Works
               </Link>
-              <Link href="/login" className="mt-2 flex min-h-[44px] items-center justify-center rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-slate-950">
+              <Link href="/login" className="mt-2 flex min-h-[44px] items-center justify-center rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-ui-ink">
                 Customer Sign In &rarr;
               </Link>
             </div>
@@ -253,8 +253,8 @@ function WhatWeDonePage({
         </div>
 
         {/* Page hero: how the five-check signal engine works */}
-        <ScrollReveal className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#0b131e] via-[#080d15] to-[#110b15] p-6 shadow-2xl sm:p-10">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1 font-mono text-xs font-semibold text-emerald-300">
+        <ScrollReveal className="rounded-3xl border border-ui-line bg-gradient-to-br from-[#0b131e] via-[#080d15] to-[#110b15] p-6 shadow-2xl sm:p-10">
+          <div className="inline-flex items-center gap-2 rounded-full border border-ui-green/25 bg-ui-green/10 px-3.5 py-1 font-mono text-xs font-semibold text-ui-green">
             <span>HOW IT WORKS</span>
             <span aria-hidden="true">&middot;</span>
             <span>ONE DETERMINISTIC RULE ENGINE · FIVE CHECKS</span>
@@ -262,15 +262,15 @@ function WhatWeDonePage({
 
           <h1
             data-testid="what-we-done-title"
-            className="mt-4 text-3xl font-extrabold tracking-tight text-white sm:text-5xl"
+            className="mt-4 text-3xl font-extrabold tracking-tight text-ui-ink sm:text-5xl"
           >
             How the Five Signal Checks Work
           </h1>
 
-          <p className="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300 sm:text-base lg:text-lg">
+          <p className="mt-4 max-w-3xl text-sm leading-relaxed text-ui-muted sm:text-base lg:text-lg">
             AllSafe evaluates confirmed 15-minute candles for{" "}
-            <strong className="text-white">NIFTY 50</strong> and{" "}
-            <strong className="text-white">BANK NIFTY</strong> through one
+            <strong className="text-ui-ink">NIFTY 50</strong> and{" "}
+            <strong className="text-ui-ink">BANK NIFTY</strong> through one
             deterministic signal engine. A candidate direction needs agreement from
             four checks; otherwise the result is WAIT or DATA_UNAVAILABLE. The five
             cards below explain the checks and are not independent AI agents. No
@@ -278,40 +278,40 @@ function WhatWeDonePage({
           </p>
 
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-              <div className="font-mono text-xs font-bold uppercase text-emerald-300">
+            <div className="rounded-xl border border-ui-green/25 bg-ui-green/10 p-4">
+              <div className="font-mono text-xs font-bold uppercase text-ui-green">
                 When to BUY
               </div>
-              <div className="mt-1 text-sm font-bold text-white">
+              <div className="mt-1 text-sm font-bold text-ui-ink">
                 Trigger + 4 checks agree
               </div>
-              <p className="mt-1 text-xs text-slate-300">
+              <p className="mt-1 text-xs text-ui-muted">
                 The engine returns BUY only when the primary trigger and all four
                 confirmation checks agree on a confirmed candle.
               </p>
             </div>
 
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
-              <div className="font-mono text-xs font-bold uppercase text-rose-300">
+            <div className="rounded-xl border border-ui-red/25 bg-ui-red/10 p-4">
+              <div className="font-mono text-xs font-bold uppercase text-ui-red">
                 When to SELL
               </div>
-              <div className="mt-1 text-sm font-bold text-white">
+              <div className="mt-1 text-sm font-bold text-ui-ink">
                 Trigger + 4 checks agree
               </div>
-              <p className="mt-1 text-xs text-slate-300">
+              <p className="mt-1 text-xs text-ui-muted">
                 The engine returns SELL only when the primary trigger and all four
                 confirmation checks agree on a confirmed candle.
               </p>
             </div>
 
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-              <div className="font-mono text-xs font-bold uppercase text-amber-300">
+            <div className="rounded-xl border border-ui-amber/25 bg-ui-amber/10 p-4">
+              <div className="font-mono text-xs font-bold uppercase text-ui-amber">
                 When to WAIT
               </div>
-              <div className="mt-1 text-sm font-bold text-white">
+              <div className="mt-1 text-sm font-bold text-ui-ink">
                 A check disagrees
               </div>
-              <p className="mt-1 text-xs text-slate-300">
+              <p className="mt-1 text-xs text-ui-muted">
                 If a check disagrees or candle history is incomplete, the engine
                 returns WAIT or DATA_UNAVAILABLE. The API also marks results as not
                 current when the feed is stale or disconnected.
@@ -324,13 +324,13 @@ function WhatWeDonePage({
         <section className="mt-12">
           <ScrollReveal className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
-              <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">
+              <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-ui-green">
                 Interactive Signal-Check Explanation
               </p>
-              <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">
+              <h2 className="mt-2 text-2xl font-bold text-ui-ink sm:text-3xl">
                 How the Rule Engine Decides BUY, SELL, or WAIT
               </h2>
-              <p className="mt-1 text-xs text-slate-300 sm:text-sm">
+              <p className="mt-1 text-xs text-ui-muted sm:text-sm">
                 Select an example state to see how each check contributes. This
                 interactive explanation is illustrative; it does not compute a live
                 signal.
@@ -340,7 +340,7 @@ function WhatWeDonePage({
             <div
               role="group"
               aria-label="Select an illustrative signal state"
-              className="inline-flex rounded-xl border border-white/10 bg-[#0b1018] p-1"
+              className="inline-flex rounded-xl border border-ui-line bg-ui-card p-1"
             >
               {(["BUY", "SELL", "WAIT"] as const).map((mode) => (
                 <button
@@ -351,11 +351,11 @@ function WhatWeDonePage({
                   className={`min-h-[38px] rounded-lg px-4 py-1.5 font-mono text-xs font-bold transition ${
                     consensusMode === mode
                       ? mode === "BUY"
-                        ? "bg-emerald-500 text-slate-950"
+                        ? "bg-emerald-500 text-ui-ink"
                         : mode === "SELL"
-                          ? "bg-rose-500 text-white"
-                          : "bg-amber-400 text-slate-950"
-                      : "text-slate-300 hover:text-white"
+                          ? "bg-rose-500 text-ui-ink"
+                          : "bg-amber-400 text-ui-ink"
+                      : "text-ui-muted hover:text-ui-ink"
                   }`}
                 >
                   {mode === "BUY"
@@ -380,35 +380,35 @@ function WhatWeDonePage({
 
               const statusColor =
                 consensusMode === "BUY"
-                  ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-300"
+                  ? "border-ui-green/25 bg-ui-green/10 text-ui-green"
                   : consensusMode === "SELL"
-                    ? "border-rose-500/35 bg-rose-500/10 text-rose-300"
-                    : "border-amber-500/35 bg-amber-500/10 text-amber-300";
+                    ? "border-ui-red/25 bg-ui-red/10 text-ui-red"
+                    : "border-ui-amber/25 bg-ui-amber/10 text-ui-amber";
 
               return (
                 <ScrollReveal
                   key={agent.id}
                   delayMs={idx * 60}
-                  className="flex flex-col justify-between rounded-2xl border border-white/10 bg-[#0b1018] p-5"
+                  className="flex flex-col justify-between rounded-2xl border border-ui-line bg-ui-card p-5"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-mono text-[11px] font-bold text-emerald-300">
+                      <span className="rounded-lg border border-ui-green/25 bg-ui-green/10 px-2.5 py-1 font-mono text-[11px] font-bold text-ui-green">
                         {agent.badge}
                       </span>
-                      <span className="font-mono text-[11px] text-slate-400">
+                      <span className="font-mono text-[11px] text-ui-muted">
                         Signal check #{idx + 1}
                       </span>
                     </div>
 
-                    <h3 className="mt-3 text-lg font-bold text-white">
+                    <h3 className="mt-3 text-lg font-bold text-ui-ink">
                       {agent.name}
                     </h3>
-                    <div className="mt-1 font-mono text-[11px] text-slate-400">
+                    <div className="mt-1 font-mono text-[11px] text-ui-muted">
                       Checks: {agent.marketCheckDimension}
                     </div>
 
-                    <p className="mt-3 text-xs leading-relaxed text-slate-300 sm:text-sm">
+                    <p className="mt-3 text-xs leading-relaxed text-ui-muted sm:text-sm">
                       {agent.whatItChecks}
                     </p>
                   </div>
@@ -423,22 +423,22 @@ function WhatWeDonePage({
             {/* Final card: the current decision rule */}
             <ScrollReveal
               delayMs={300}
-              className="flex flex-col justify-between rounded-2xl border border-emerald-500/35 bg-gradient-to-br from-[#0c1824] to-[#0b1018] p-5"
+              className="flex flex-col justify-between rounded-2xl border border-ui-green/25 bg-gradient-to-br from-[#0c1824] to-[#0b1018] p-5"
             >
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-2.5 py-1 font-mono text-[11px] font-bold text-emerald-200">
+                  <span className="rounded-lg border border-ui-green/25 bg-ui-green/20 px-2.5 py-1 font-mono text-[11px] font-bold text-ui-green">
                     DECISION RULE
                   </span>
-                  <span className="font-mono text-[11px] text-emerald-300">
+                  <span className="font-mono text-[11px] text-ui-green">
                     Five checks on 15-minute candles
                   </span>
                 </div>
 
-                <h3 className="mt-3 text-lg font-bold text-white">
+                <h3 className="mt-3 text-lg font-bold text-ui-ink">
                   BUY / SELL Requirements
                 </h3>
-                <p className="mt-2 text-xs leading-relaxed text-slate-300 sm:text-sm">
+                <p className="mt-2 text-xs leading-relaxed text-ui-muted sm:text-sm">
                   BUY or SELL requires a primary trigger plus agreement from all four
                   confirmation checks. Otherwise the engine returns WAIT or
                   DATA_UNAVAILABLE. This output is not an order and does not include
@@ -446,17 +446,17 @@ function WhatWeDonePage({
                 </p>
               </div>
 
-              <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
+              <div className="mt-4 flex items-center justify-between border-t border-ui-line pt-3">
                 <Link
                   href="/login"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3.5 py-2 text-xs font-bold text-slate-950 transition hover:bg-emerald-400"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3.5 py-2 text-xs font-bold text-ui-ink transition hover:bg-emerald-400"
                 >
                   <span>Customer Sign In</span>
                   <span aria-hidden="true">&rarr;</span>
                 </Link>
                 <Link
                   href="/"
-                  className="text-xs font-semibold text-slate-300 hover:text-white"
+                  className="text-xs font-semibold text-ui-muted hover:text-ui-ink"
                 >
                   &larr; Landing Page
                 </Link>
@@ -467,23 +467,23 @@ function WhatWeDonePage({
       </main>
 
       {/* Footer */}
-      <footer className="mt-12 border-t border-white/10 bg-[#05080d] py-8 text-xs text-slate-400">
+      <footer className="as-footer mt-12 py-8 text-xs text-ui-muted">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6 lg:px-8">
           <div>
-            <strong className="text-white">AllSafe AI Trading</strong> &middot; Rule-based
+            <strong className="text-ui-ink">AllSafe AI Trading</strong> &middot; Rule-based
             signal analysis for NSE index data (read-only)
           </div>
           <div className="flex flex-wrap items-center gap-4">
-            <Link href="/" className="hover:text-white">
+            <Link href="/" className="hover:text-ui-ink">
               Home
             </Link>
-            <Link href="/what-we-done" className="text-emerald-300">
+            <Link href="/what-we-done" className="text-ui-green">
               How It Works
             </Link>
-            <Link href="/login" className="hover:text-white">
+            <Link href="/login" className="hover:text-ui-ink">
               Customer Sign In
             </Link>
-            <span className="font-mono text-[11px] text-slate-500">
+            <span className="font-mono text-[11px] text-ui-muted">
               Account service: {backendOnline ? "Reachable" : "Currently unavailable"}
             </span>
           </div>

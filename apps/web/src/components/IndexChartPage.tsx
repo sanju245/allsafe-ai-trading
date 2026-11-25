@@ -69,8 +69,8 @@ function Workspace({ symbol, provider, days, token, signOut }: {
   const firstBreakout = seriesError ? null : decision?.first_breakout;
   const options = [...new Set([1, 7, 14, 30, days])].sort((a,b) => a - b);
   return <main className="index-workspace">
-    <nav className="chart-top"><Link href="/terminal"><span aria-hidden="true">←</span> Market dashboard</Link>
-      <span className="chart-identity">AllSafe <b>/</b> Market terminal</span></nav>
+    <nav className="chart-top" aria-label="Chart navigation"><Link href="/terminal"><span aria-hidden="true">←</span> Market dashboard</Link>
+      <span className="chart-identity">Index chart</span></nav>
     <header className="chart-heading">
       <div><div className="chart-exchange">NSE <span> / </span> INDEX</div>
         <div className="chart-title-row"><h1>{instruments[symbol]}</h1><span className={`chart-state ${live ? "live" : ""}`}>{feedText}</span></div>

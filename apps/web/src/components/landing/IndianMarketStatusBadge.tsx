@@ -65,16 +65,16 @@ function IndianMarketStatusBadge({
   const isClosed = status.state === "CLOSED";
 
   const borderTone = isLive
-    ? "border-emerald-500/40 bg-emerald-950/25"
+    ? "border-ui-green/25 bg-ui-green/10"
     : isClosed
-      ? "border-rose-500/35 bg-rose-950/20"
-      : "border-amber-500/35 bg-amber-950/20";
+      ? "border-ui-red/25 bg-ui-red/10"
+      : "border-ui-amber/25 bg-ui-amber/10";
 
   const badgeTone = isLive
-    ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
+    ? "border-ui-green/25 bg-ui-green/15 text-ui-green"
     : isClosed
-      ? "border-rose-500/30 bg-rose-500/15 text-rose-300"
-      : "border-amber-500/30 bg-amber-500/15 text-amber-300";
+      ? "border-ui-red/25 bg-ui-red/15 text-ui-red"
+      : "border-ui-amber/25 bg-ui-amber/15 text-ui-amber";
 
   if (variant === "compact") {
     return (
@@ -109,10 +109,10 @@ function IndianMarketStatusBadge({
       className={`flex flex-col justify-between rounded-xl border px-4 py-3 shadow-inner backdrop-blur-md transition-colors ${borderTone} ${className}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ui-muted">
           Scheduled NSE Equity Session
         </span>
-        <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-300">
+        <span className="rounded border border-ui-line bg-ui-inset px-1.5 py-0.5 font-mono text-[10px] font-medium text-ui-muted">
           {status.scheduleSummary}
         </span>
       </div>
@@ -140,10 +140,10 @@ function IndianMarketStatusBadge({
           data-testid="market-status-label"
           className={`font-mono text-base font-bold tracking-wider sm:text-lg ${
             isLive
-              ? "text-emerald-300"
+              ? "text-ui-green"
               : isClosed
-                ? "text-rose-300"
-                : "text-amber-200"
+                ? "text-ui-red"
+                : "text-ui-amber"
           }`}
         >
           {isLive ? "NSE SESSION OPEN" : status.label}
@@ -152,7 +152,7 @@ function IndianMarketStatusBadge({
         {isLive && (
           <span
             aria-hidden="true"
-            className="ml-auto inline-flex items-end gap-0.5 rounded border border-emerald-500/25 bg-emerald-500/10 px-2 py-1"
+            className="ml-auto inline-flex items-end gap-0.5 rounded border border-ui-green/25 bg-ui-green/10 px-2 py-1"
           >
             <span className="live-eq-bar h-2 w-0.5 bg-emerald-400" />
             <span className="live-eq-bar h-3 w-0.5 bg-emerald-300 [animation-delay:180ms]" />
@@ -162,18 +162,18 @@ function IndianMarketStatusBadge({
         )}
       </div>
 
-      <div aria-live="off" className="mt-1 flex flex-col gap-0.5 text-[11px] text-slate-300 tabular-nums">
+      <div aria-live="off" className="mt-1 flex flex-col gap-0.5 text-[11px] text-ui-muted tabular-nums">
         {showCountdown && status.countdown ? (
-          <span data-testid="market-status-countdown" className="font-mono font-medium text-slate-200">
+          <span data-testid="market-status-countdown" className="font-mono font-medium text-ui-ink">
             {status.countdown.summaryText}
           </span>
         ) : (
-          <span data-testid="market-status-reason" className="text-slate-300">
+          <span data-testid="market-status-reason" className="text-ui-muted">
             {status.reason}
           </span>
         )}
         {status.holidayName && (
-          <span className="text-[10px] text-amber-300">
+          <span className="text-[10px] text-ui-amber">
             Holiday: {status.holidayName}
           </span>
         )}

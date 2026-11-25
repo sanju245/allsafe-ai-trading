@@ -1,6 +1,6 @@
 .index-workspace {
-  --line: #2c3b51; --muted: #a6b5c9; --ink: #f0f5fb;
-  min-height: 100dvh; background: radial-gradient(55rem 20rem at 88% 0, #18283e, transparent 90%), var(--as-background);
+  --line: var(--as-line); --muted: var(--as-muted); --ink: var(--as-ink);
+  min-height: 100dvh; background: var(--as-background);
   color: var(--ink); padding: 0 clamp(12px, 3.5vw, 48px) 28px;
   font-variant-numeric: tabular-nums;
 }
@@ -20,16 +20,16 @@
 .chart-exchange span { margin: 0 3px; color: #84919a; }
 .chart-title-row { gap: 12px; flex-wrap: wrap; }
 .chart-title-row h1 { font-size: clamp(24px, 2.25vw, 34px); font-weight: 700; line-height: 1.22; letter-spacing: -.045em; }
-.chart-state { color: #c5d4e8; background: #213249; border: 1px solid #3a4b64; border-radius: 12px; padding: 4px 9px; font-size: 11px; }
+.chart-state { color: #3d5854; background: #eaf0ee; border: 1px solid #ccd9d4; border-radius: 12px; padding: 4px 9px; font-size: 11px; }
 .chart-state::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #788593; margin-right: 5px; }
-.chart-state.live { color: #b2efb7; background: #19312b; border-color: #3b644b; }
-.chart-state.live::before { background: #a1eca5; }
+.chart-state.live { color: #21563f; background: #dcefe1; border-color: #b3d1bd; }
+.chart-state.live::before { background: #3f8054; }
 .chart-quote { border-left: 1px solid var(--line); padding-left: clamp(12px, 2vw, 32px); }
 .chart-quote strong { display: block; font-size: clamp(19px, 1.8vw, 26px); line-height: 1.25; letter-spacing: -.03em; }
 .chart-quote small { font-size: 10px; color: var(--muted); }
 .chart-filters { margin-left: auto; gap: 10px; }
-.chart-filters select { display: block; border: 1px solid #3a4d65; background: #111e30; color: var(--ink); border-radius: 9px; padding: 6px 10px; min-height: 44px; font-size: 13px; margin-top: 3px; cursor: pointer; }
-.chart-notice { font-size: 13px; color: #ffd99a; background: #2b241f; padding: 10px 13px; border: 1px solid #654d34; border-radius: .6rem; margin: 0 0 8px; }
+.chart-filters select { display: block; border: 1px solid #b4c7b7; background: var(--as-panel); color: var(--ink); border-radius: 9px; padding: 6px 10px; min-height: 44px; font-size: 13px; margin-top: 3px; cursor: pointer; }
+.chart-notice { font-size: 13px; color: #815316; background: #fff2dc; padding: 10px 13px; border: 1px solid #dfc499; border-radius: .6rem; margin: 0 0 8px; }
 .chart-board, .chart-loading { border: 1px solid #cbd2d9; background: white; color: #1c2634; border-radius: 16px; overflow: hidden; color-scheme: light; }
 .chart-board:fullscreen { display: flex; flex-direction: column; border-radius: 0; font-family: Inter, Arial, sans-serif; }
 .chart-board:fullscreen .chart-plot { height: auto; flex: 1; }
@@ -65,8 +65,8 @@
 .chart-decision-strip > div { padding: 10px 14px; border-right: 1px solid var(--line); }
 .chart-decision-strip > div:last-child { border: 0; }
 .chart-decision-strip strong { display: block; margin-top: 3px; font-size: 14px; line-height: 1.4; }
-.chart-decision-strip .chart-up { color: #98eab3; }
-.chart-decision-strip .chart-down { color: #ffabaf; }
+.chart-decision-strip .chart-up { color: var(--as-accent); }
+.chart-decision-strip .chart-down { color: var(--as-danger); }
 .chart-levels { display: grid; gap: 6px; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: .85rem; background: var(--as-panel); font-size: 13px; }
 .chart-levels label, .chart-levels dl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
 .chart-levels select { max-width: 100%; min-height: 44px; background: var(--as-inset); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; }
