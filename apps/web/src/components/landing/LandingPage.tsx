@@ -95,7 +95,7 @@ function LandingPage({
           <BrandLink />
           <nav aria-label="Primary navigation" className="as-nav-group landing-navigation">
             <Link href="/what-we-done" className="as-nav-link">How It Works</Link>
-            <a href="#dashboard-preview" className="as-nav-link">Preview</a>
+            <a href="#market-preview" className="as-nav-link">Preview</a>
             <a href="#contribute" className="as-nav-link">Contribute</a>
           </nav>
           <Link href={session ? "/terminal" : "/login"} className="as-button as-button--quiet">
@@ -112,25 +112,36 @@ function LandingPage({
                 <p className="as-kicker">NIFTY 50 · BANK NIFTY</p>
                 <h1>NSE index charts. <span>Every 15 minutes.</span></h1>
               </div>
-              <div className="landing-intro-side">
+              <div>
                 <p className="landing-hero-copy">Review completed candles, see where Buy and Sell signals appeared, and check when the feed last updated.</p>
-                <div className="mt-5 flex flex-wrap gap-2.5">
-                  <AccountRequestButton />
-                  <Link href="/what-we-done" className="as-button as-button--quiet">Explore how the analysis works</Link>
-                </div>
-                <p className="mt-4 text-xs leading-relaxed text-ui-muted">Account access starts after administrator approval.</p>
+                <Link href="/what-we-done" className="as-link mt-3 inline-flex min-h-11 items-center text-sm font-semibold">Explore how the analysis works <span className="ml-2" aria-hidden="true">↗</span></Link>
               </div>
             </div>
-            <LandingChartPreview />
-          </div>
-
-          <div className="as-container landing-health">
-            <LiveIstClock initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
-            <IndianMarketStatusBadge calendar={marketCalendar} initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
-            <div className="as-panel px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ui-muted">Account service</p>
-              <p className={`mt-2 font-mono text-lg font-semibold ${backendOnline ? "text-ui-green" : "text-ui-amber"}`}>{backendOnline ? "Reachable" : "Currently unavailable"}</p>
-              <p className="mt-1 text-xs leading-relaxed text-ui-muted">Sign-in and application service</p>
+            <div id="market-preview" className="landing-preview-grid">
+              <aside className="landing-access" aria-labelledby="landing-access-title">
+                <h2 id="landing-access-title">Get access to AllSafe</h2>
+                <ol>
+                  <li>Choose your email and password.</li>
+                  <li>Verify your email address.</li>
+                  <li>Sign in once your account is approved.</li>
+                </ol>
+                <div className="landing-access-actions">
+                  <AccountRequestButton />
+                  <Link href={session ? "/terminal" : "/login"} className="as-link">
+                    {session ? "Open your terminal" : "Already approved? Sign in"}
+                  </Link>
+                </div>
+              </aside>
+              <LandingChartPreview />
+            </div>
+            <div className="landing-health">
+              <LiveIstClock initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
+              <IndianMarketStatusBadge calendar={marketCalendar} initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
+              <div className="landing-account-service">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ui-muted">Account service</p>
+                <p className={`as-pill mt-2 ${backendOnline ? "as-pill--green" : "as-pill--amber"}`}>{backendOnline ? "Reachable" : "Currently unavailable"}</p>
+                <p className="mt-1 text-xs leading-relaxed text-ui-muted">Sign-in and application service</p>
+              </div>
             </div>
           </div>
         </section>
@@ -186,7 +197,7 @@ function LandingPage({
         <section id="access" className="as-container landing-section grid gap-8 lg:grid-cols-2">
           <div>
             <h2>Sign in to AllSafe</h2>
-            <p className="mt-4 text-sm leading-relaxed text-ui-muted">Customers sign in with an active account provided by the administrator and can access it from any network.</p>
+            <p className="mt-4 text-sm leading-relaxed text-ui-muted">After approval, sign in with the email and password you chose when applying. Customers can access their account from any network.</p>
             <p className="mt-3 text-sm leading-relaxed text-ui-muted">Administrator tools remain available only to accounts assigned the admin role.</p>
             <div className="mt-6 flex flex-wrap gap-4">
               <Link href="/login" className="as-button as-button--primary">Customer Sign In</Link>

@@ -156,10 +156,10 @@ function WhatWeDonePage({
               How It Works
             </Link>
             <Link
-              href="/#ai-intelligence"
+              href="/#market-preview"
               className="rounded-lg px-3 py-2 text-xs font-medium text-ui-muted transition hover:bg-ui-inset hover:text-ui-ink lg:text-sm"
             >
-              AI Intelligence
+              Chart Preview
             </Link>
             <Link
               href="/#features"
@@ -168,10 +168,10 @@ function WhatWeDonePage({
               Features
             </Link>
             <Link
-              href="/#about"
+              href="/#access"
               className="rounded-lg px-3 py-2 text-xs font-medium text-ui-muted transition hover:bg-ui-inset hover:text-ui-ink lg:text-sm"
             >
-              About
+              Account Access
             </Link>
           </div>
 
@@ -253,7 +253,7 @@ function WhatWeDonePage({
         </div>
 
         {/* Page hero: how the five-check signal engine works */}
-        <ScrollReveal className="rounded-3xl border border-ui-line bg-gradient-to-br from-[#0b131e] via-[#080d15] to-[#110b15] p-6 shadow-2xl sm:p-10">
+        <ScrollReveal className="as-panel p-6 sm:p-10">
           <div className="inline-flex items-center gap-2 rounded-full border border-ui-green/25 bg-ui-green/10 px-3.5 py-1 font-mono text-xs font-semibold text-ui-green">
             <span>HOW IT WORKS</span>
             <span aria-hidden="true">&middot;</span>
@@ -423,7 +423,7 @@ function WhatWeDonePage({
             {/* Final card: the current decision rule */}
             <ScrollReveal
               delayMs={300}
-              className="flex flex-col justify-between rounded-2xl border border-ui-green/25 bg-gradient-to-br from-[#0c1824] to-[#0b1018] p-5"
+              className="as-panel flex flex-col justify-between border-ui-green/25 bg-ui-inset p-5"
             >
               <div>
                 <div className="flex items-center justify-between gap-2">

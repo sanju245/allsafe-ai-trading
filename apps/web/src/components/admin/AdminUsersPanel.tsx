@@ -550,6 +550,11 @@ export default function AdminUsersPanel({ brand }: { brand?: ReactNode } = {}) {
     : undefined;
   const activeMessage = messageAction?.token === accessToken ? messageAction?.action : undefined;
   const customers = directoryToken === accessToken ? users.filter(isCustomer) : null;
+  const directoryFilters = [
+    { status: "all", label: "Total customers", count: customers?.length },
+    { status: "active", label: "Active logins", count: customers?.filter((user) => user.status === "active").length },
+    { status: "paused", label: "Paused logins", count: customers?.filter((user) => user.status === "paused").length },
+  ] as const;
   const showCustomers = area === "customers";
 
   return (
@@ -586,11 +591,21 @@ export default function AdminUsersPanel({ brand }: { brand?: ReactNode } = {}) {
         </header>
         <div className="as-container pb-12 pt-6">
           {showCustomers ? (
-            <dl className="as-admin-metrics" aria-label="Customer account totals">
-              <div className="as-panel"><dt>Total customers</dt><dd>{customers?.length ?? "—"}</dd></div>
-              <div className="as-panel"><dt>Active logins</dt><dd className="text-ui-green">{customers?.filter((user) => user.status === "active").length ?? "—"}</dd></div>
-              <div className="as-panel"><dt>Paused logins</dt><dd className="text-ui-amber">{customers?.filter((user) => user.status === "paused").length ?? "—"}</dd></div>
-            </dl>
+            <div className="as-admin-metrics" role="group" aria-label="Filter customer directory">
+              {directoryFilters.map(({ status, label, count }) => (
+                <button
+                  key={status}
+                  type="button"
+                  className="as-panel as-metric-filter"
+                  aria-pressed={statusFilter === status}
+                  aria-controls="account-directory"
+                  onClick={() => setStatusFilter(status)}
+                >
+                  <span>{label}</span>
+                  <strong>{count ?? "—"}</strong>
+                </button>
+              ))}
+            </div>
           ) : accessToken && <AccountRequestsPanel accessToken={accessToken} onApproved={refreshUsers} />}
 
       {showCustomers && createOpen && (
@@ -632,14 +647,14 @@ export default function AdminUsersPanel({ brand }: { brand?: ReactNode } = {}) {
               Search accounts
               <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Email" className="as-field mt-1 w-full" />
             </label>
-            <label className="text-xs font-medium text-ui-muted">
-              Status
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="as-field mt-1 w-full">
+            <div>
+              <label htmlFor="customer-status-filter" className="block text-xs font-medium text-ui-muted">Status</label>
+              <select id="customer-status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="as-field mt-1 w-full">
                 <option value="all">All statuses</option>
                 <option value="active">Active</option>
                 <option value="paused">Paused</option>
               </select>
-            </label>
+            </div>
           </div>
         </div>
 

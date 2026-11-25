@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
 import type { Signal } from "@/lib/indexChart";
@@ -125,10 +125,13 @@ function formatPrice(value: number | null | undefined): string {
   }).format(value);
 }
 
-function CandlestickChart({ candles, signals, label }: { candles: Candle[]; signals: Signal[]; label: string }) {
-  const width = 720;
-  const height = 260;
-  const inset = 20;
+const chartTime = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
+
+function CandlestickChart({ candles, signals, label, width }: { candles: Candle[]; signals: Signal[]; label: string; width: number }) {
+  const height = 320;
+  const inset = 28;
 
   if (candles.length === 0) {
     return (
@@ -138,20 +141,24 @@ function CandlestickChart({ candles, signals, label }: { candles: Candle[]; sign
     );
   }
 
-  const visible = candles.slice(-60);
+  const plotRight = width - 83;
+  const bars = Math.max(12, Math.min(60, Math.floor((plotRight - inset) / 10)));
+  const visible = candles.slice(-bars);
   const min = Math.min(...visible.map((candle) => candle.low));
   const max = Math.max(...visible.map((candle) => candle.high));
   const range = Math.max(max - min, Math.abs(max) * 0.0001, 1);
-  const plotHeight = height - inset * 2;
-  const plotRight = width - 92;
+  const plotHeight = height - inset * 2 - 14;
   const slotWidth = (plotRight - inset) / visible.length;
   const slotX = (index: number) => inset + (index + 0.5) * slotWidth;
   const y = (price: number) => inset + ((max - price) / range) * plotHeight;
+  const timeTicks = visible.length > 1
+    ? [{ index: 0, x: inset, anchor: "start" }, { index: visible.length - 1, x: plotRight, anchor: "end" }] as const
+    : [{ index: 0, x: inset, anchor: "start" }] as const;
 
   return (
     <div className="overflow-hidden rounded-lg border border-ui-line bg-[#102820]">
       <svg
-        className="block h-64 w-full"
+        className="market-focused-svg block w-full"
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-label={`${label} 15-minute candlestick chart`}
@@ -162,8 +169,8 @@ function CandlestickChart({ candles, signals, label }: { candles: Candle[]; sign
           const value = max - fraction * range;
           return (
             <g key={fraction}>
-              <line x1={inset} x2={plotRight} y1={gridY} y2={gridY} stroke="#243142" strokeDasharray="3 5" />
-              <text x={width - 12} y={gridY + 4} textAnchor="end" fill="#adbed2" fontSize="13">
+              <line x1={inset} x2={plotRight} y1={gridY} y2={gridY} stroke="#37564a" strokeDasharray="3 5" />
+              <text x={width - 12} y={gridY + 4} textAnchor="end" fill="#b9cdc4" fontSize="12">
                 {formatPrice(value)}
               </text>
             </g>
@@ -193,32 +200,70 @@ function CandlestickChart({ candles, signals, label }: { candles: Candle[]; sign
           );
         })}
         <CandleSignalLabels candles={visible} signals={signals} x={slotX} y={y} />
+        {timeTicks.map(({ index, x, anchor }) => {
+          const time = Date.parse(visible[index].timestamp);
+          if (!Number.isFinite(time)) return null;
+          return (
+            <text key={index} x={x} y={height - 9} textAnchor={anchor} fill="#b9cdc4" fontSize="11">
+              {chartTime.format(time)}
+            </text>
+          );
+        })}
       </svg>
     </div>
   );
 }
 
-function MarketCard({
+function readPrice(snapshot: MarketSnapshot) {
+  const forming = snapshot.candles.find((candle) => candle.is_forming);
+  const latestConfirmed = snapshot.candles.slice().reverse().find((candle) => !candle.is_forming);
+  return { forming, price: snapshot.quote?.ltp ?? forming?.close ?? latestConfirmed?.close };
+}
+
+function priceLabel(snapshot: MarketSnapshot) {
+  return snapshot.error ? "Price unavailable" : snapshot.current ? "Latest validated price" : "Last recorded price · not current";
+}
+
+function signalStyle(snapshot: MarketSnapshot) {
+  if (!snapshot.current || !snapshot.decision?.is_current_signal) return "";
+  const side = snapshot.decision.decision;
+  return side === "BUY" ? "as-pill--green" : side === "SELL" ? "as-pill--red" : "";
+}
+
+function signalText(snapshot: MarketSnapshot) {
+  const side = snapshot.decision?.decision;
+  switch (side) {
+    case "BUY":
+      return "Buy";
+    case "SELL":
+      return "Sell";
+    case "WAIT":
+      return "Wait";
+    case "DATA_UNAVAILABLE":
+      return "Data unavailable";
+    default:
+      return snapshot.error ? "Signal unavailable" : "Signal pending";
+  }
+}
+
+function FocusedMarketChart({
   chartHref,
   title,
   snapshot,
   feedState,
+  plotRef,
+  width,
 }: {
   chartHref: string;
   title: string;
   snapshot: MarketSnapshot;
   feedState: string;
+  plotRef: RefObject<HTMLDivElement | null>;
+  width: number;
 }) {
-  const forming = snapshot.candles.find((candle) => candle.is_forming);
-  const latestConfirmed = [...snapshot.candles].reverse().find((candle) => !candle.is_forming);
-  const price = snapshot.quote?.ltp ?? forming?.close ?? latestConfirmed?.close;
+  const { forming, price } = readPrice(snapshot);
   const stateLabel = (snapshot.error ? "unavailable" : snapshot.feedState || feedState).replaceAll("_", " ");
   const decision = snapshot.decision;
-  const signalStyle = decision?.decision === "BUY"
-    ? "as-pill--green"
-    : decision?.decision === "SELL"
-      ? "as-pill--red"
-      : "";
   const signalLabel = snapshot.current && decision?.is_current_signal
     ? "Current confirmed signal"
     : decision?.decision === "BUY" || decision?.decision === "SELL"
@@ -226,64 +271,47 @@ function MarketCard({
       : "Signal from confirmed candles";
 
   return (
-    <section className="as-panel market-index-card p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section id="focused-market-chart" aria-labelledby="focused-market-title" className="as-panel market-focus">
+      <header className="market-focus-header">
         <div>
-          <h2 className="as-section-title">
-            <Link href={chartHref} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-ui-green hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
-              {title}<span className="ml-2 text-xs text-ui-green" aria-label="opens chart in a new tab">↗</span>
-            </Link>
-          </h2>
-          <p className="as-pill mt-2 capitalize">
-            Feed: {stateLabel || "checking"}
-          </p>
+          <p className="as-kicker">15-minute candles</p>
+          <h2 id="focused-market-title" className="as-section-title mt-1">{title}</h2>
         </div>
-        <div className="text-right">
-          <p className="text-xs uppercase tracking-wide text-ui-muted">
-            {snapshot.error ? "Price unavailable" : snapshot.current ? "Latest validated price" : "Last recorded price · not current"}
-          </p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">{formatPrice(price)}</p>
-          {snapshot.quote?.timestamp && (
-            <p className="mt-1 text-xs text-ui-muted">
-              Recorded {new Date(snapshot.quote.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <CandlestickChart candles={snapshot.candles} signals={snapshot.signals} label={title} />
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`as-pill ${signalStyle}`}>
-            {decision?.decision ?? "SIGNAL PENDING"}
-          </span>
-          <span className="text-xs text-ui-muted">
-            {signalLabel}
-          </span>
-        </div>
-        <Link
-          href={chartHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="as-button as-button--quiet"
-        >
-          Open full chart <span aria-hidden="true" className="ml-2">↗</span>
+        <Link href={chartHref} target="_blank" rel="noopener noreferrer" className="as-button as-button--primary">
+          Open full chart <span aria-hidden="true">↗</span>
         </Link>
+      </header>
+      <div className="market-focus-grid">
+        <div>
+          <div ref={plotRef}>
+            <CandlestickChart candles={snapshot.candles} signals={snapshot.signals} label={title} width={width} />
+          </div>
+          {forming && <p className="mt-2 text-xs text-ui-amber">The latest candle is still forming.</p>}
+        </div>
+        <aside className="market-focus-details" aria-label="Index price and signal">
+          <span className="as-pill capitalize">Feed · {stateLabel || "checking"}</span>
+          <div>
+            <p className="text-xs font-medium text-ui-muted">{priceLabel(snapshot)}</p>
+            <p className="market-focus-price tabular-nums">{formatPrice(price)}</p>
+            {snapshot.quote?.timestamp && (
+              <p className="mt-1 text-xs text-ui-muted">
+                Recorded {new Date(snapshot.quote.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST
+              </p>
+            )}
+          </div>
+          <div className="market-focus-decision">
+            <p className="text-xs font-medium text-ui-muted">{signalLabel}</p>
+            <span className={`as-pill mt-2 ${signalStyle(snapshot)}`}>{signalText(snapshot)}</span>
+            {decision && <p className="mt-2 text-xs leading-relaxed text-ui-muted">{decision.reason}</p>}
+          </div>
+          {snapshot.error && <p className="text-sm text-ui-red" role="alert">{snapshot.error}</p>}
+          {snapshot.message && !snapshot.error && <p className="text-sm text-ui-muted">{snapshot.message}</p>}
+          {snapshot.loading && <p className="text-xs text-ui-muted">Loading market data…</p>}
+          {!snapshot.loading && !snapshot.current && !snapshot.error && snapshot.candles.length > 0 && (
+            <p className="text-xs text-ui-amber">Historical candles are shown. This feed is not current.</p>
+          )}
+        </aside>
       </div>
-      {decision && <p className="mt-2 text-xs text-ui-muted">{decision.reason}</p>}
-
-      {snapshot.error && <p className="mt-3 text-sm text-ui-red">{snapshot.error}</p>}
-      {snapshot.message && !snapshot.error && (
-        <p className="mt-3 text-sm text-ui-muted">{snapshot.message}</p>
-      )}
-      {snapshot.loading && <p className="mt-3 text-xs text-ui-muted">Loading market data…</p>}
-      {!snapshot.loading && !snapshot.current && !snapshot.error && snapshot.candles.length > 0 && (
-        <p className="mt-2 text-xs text-ui-amber">Historical candles are shown. This feed is not current.</p>
-      )}
-      {forming && <p className="mt-2 text-xs text-ui-amber">The latest candle is still forming.</p>}
     </section>
   );
 }
@@ -299,9 +327,22 @@ export default function LiveMarketDashboard() {
     BANKNIFTY: emptyMarket,
   });
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+  const [focusedSymbol, setFocusedSymbol] = useState<MarketSymbol>("NIFTY50");
+  const [plotWidth, setPlotWidth] = useState(720);
+  const plotRef = useRef<HTMLDivElement>(null);
   const activeRefresh = useRef<AbortSignal | null>(null);
   const refreshController = useRef<AbortController | null>(null);
   const hasProviderPreference = useRef(false);
+
+  useEffect(() => {
+    const plot = plotRef.current;
+    if (!plot) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) setPlotWidth(Math.max(240, Math.round(entry.contentRect.width)));
+    });
+    observer.observe(plot);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     try {
@@ -472,17 +513,43 @@ export default function LiveMarketDashboard() {
           </p>
         </div>
       </div>
-      <div className="market-index-grid">
-        {markets.map(({ symbol, title }) => (
-          <MarketCard
-            key={symbol}
-            chartHref={`/chart/${symbol}?provider=${selectedProvider}`}
-            title={title}
-            snapshot={marketsState[symbol]}
-            feedState={status?.instruments?.[symbol]?.feed_state ?? status?.feed_state ?? "checking"}
-          />
-        ))}
+      <div className="market-watchlist" aria-label="Index overview">
+        {markets.map(({ symbol, title }) => {
+          const snapshot = marketsState[symbol];
+          const { price } = readPrice(snapshot);
+          const selected = focusedSymbol === symbol;
+          const previousSignal = (snapshot.decision?.decision === "BUY" || snapshot.decision?.decision === "SELL")
+            && (!snapshot.current || !snapshot.decision.is_current_signal);
+          return (
+            <article key={symbol} className={`as-panel market-watch-tile${selected ? " market-watch-tile--selected" : ""}`}>
+              <div className="min-w-0">
+                <h2 className="font-semibold">
+                  <Link href={`/chart/${symbol}?provider=${selectedProvider}`} target="_blank" rel="noopener noreferrer" className="as-link">
+                    {title} <span aria-label="opens a new tab">↗</span>
+                  </Link>
+                </h2>
+                <p className="market-watch-price tabular-nums">{formatPrice(price)}</p>
+                <p className="text-xs text-ui-muted">{priceLabel(snapshot)}</p>
+              </div>
+              <div className="market-watch-actions">
+                <span className={`as-pill ${signalStyle(snapshot)}`}>{previousSignal ? "Earlier " : ""}{signalText(snapshot)}</span>
+                <button type="button" aria-pressed={selected} aria-controls="focused-market-chart"
+                  aria-label={`Focus ${title} chart`} onClick={() => setFocusedSymbol(symbol)} className="as-button as-button--quiet">
+                  {selected ? "In focus" : "Focus chart"}
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
+      <FocusedMarketChart
+        chartHref={`/chart/${focusedSymbol}?provider=${selectedProvider}`}
+        title={focusedSymbol === "NIFTY50" ? "NIFTY 50" : "BANK NIFTY"}
+        snapshot={marketsState[focusedSymbol]}
+        feedState={status?.instruments?.[focusedSymbol]?.feed_state ?? status?.feed_state ?? "checking"}
+        plotRef={plotRef}
+        width={plotWidth}
+      />
     </div>
   );
 }

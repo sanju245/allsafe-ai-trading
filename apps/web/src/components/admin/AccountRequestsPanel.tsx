@@ -95,6 +95,17 @@ export default function AccountRequestsPanel({ accessToken, onApproved }: { acce
     };
   }, [refresh]);
 
+  function selectHistory(history: boolean) {
+    if (showHistory === history) return;
+    ++refreshSequence.current;
+    setLoading(true);
+    setRequests([]);
+    setHasMore(false);
+    setError(null);
+    setOffset(0);
+    setShowHistory(history);
+  }
+
   async function decide(request: AccountRequest, action: "approve" | "decline" | "retry-email" | "delete") {
     if (action === "delete" && !window.confirm("Permanently remove this application and its stored personal information?")) return;
     setBusyId(request.id);
@@ -122,43 +133,44 @@ export default function AccountRequestsPanel({ accessToken, onApproved }: { acce
   }
 
   return (
-    <section id="account-requests" aria-labelledby="request-queue-title" className="as-panel mt-3 scroll-mt-6 p-4 sm:p-6">
+    <section id="account-requests" aria-labelledby="request-queue-title" className="scroll-mt-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="request-queue-title" className="as-section-title">Account requests</h2>
           <p className="mt-1 text-sm text-ui-muted">Accounts are created only after you approve a request.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={busyId !== null} onClick={() => { setOffset(0); setShowHistory(value => !value); }} className="as-button as-button--quiet">{showHistory ? "Hide history" : "Show history"}</button>
-          <button type="button" onClick={() => void refresh()} disabled={loading || busyId !== null} className="as-button as-button--quiet">{loading ? "Refreshing…" : "Refresh requests"}</button>
-        </div>
+        <button type="button" onClick={() => void refresh()} disabled={loading || busyId !== null} className="as-button as-button--quiet">{loading ? "Refreshing…" : "Refresh requests"}</button>
+      </div>
+      <div className="as-view-switcher mt-4" role="group" aria-label="Application view">
+        <button type="button" aria-pressed={!showHistory} aria-controls="application-list" disabled={busyId !== null} onClick={() => selectHistory(false)}>To review</button>
+        <button type="button" aria-pressed={showHistory} aria-controls="application-list" disabled={busyId !== null} onClick={() => selectHistory(true)}>All applications</button>
       </div>
       {error && <p role="alert" className="mt-4 rounded-lg border border-ui-red/25 bg-ui-red/10 p-3 text-sm text-ui-red">{error}</p>}
       {notice && <p role="status" className="mt-4 rounded-lg border border-ui-green/25 bg-ui-green/10 p-3 text-sm text-ui-green">{notice}</p>}
-      <div className="mt-5 grid gap-3">
+      <div id="application-list" aria-busy={loading} className="mt-3 grid gap-3">
         {requests.map((request) => (
-          <article key={request.id} className="as-inset p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
+          <article key={request.id} className="as-panel request-card">
+            <header className="request-card-header">
+              <div className="min-w-0">
                 <h3 className="font-semibold text-ui-ink">{request.full_name}</h3>
                 <p className="mt-1 break-all text-sm text-ui-green">{request.email}</p>
               </div>
               <span className={`as-pill capitalize ${request.status === "pending" || request.status === "processing" ? "as-pill--amber" : request.status === "approved" ? "as-pill--green" : ""}`}>{request.status}</span>
-            </div>
-            <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
+            </header>
+            <dl className="request-card-fields">
               <div><dt className="text-ui-muted">Date of birth</dt><dd className="mt-1 text-ui-ink">{request.date_of_birth}</dd></div>
               <div><dt className="text-ui-muted">Phone</dt><dd className="mt-1 text-ui-ink">{request.phone_number}</dd></div>
               <div><dt className="text-ui-muted">WhatsApp</dt><dd className="mt-1 text-ui-ink">{request.whatsapp_number}</dd></div>
               <div><dt className="text-ui-muted">Received</dt><dd className="mt-1 text-ui-ink">{formatDate(request.created_at)}</dd></div>
               <div><dt className="text-ui-muted">Decision email</dt><dd className="mt-1 text-ui-ink">{["pending", "processing"].includes(request.status) ? "Waiting for decision" : request.notification_status}</dd></div>
             </dl>
-            {(request.status === "pending" || request.status === "processing") && (
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-ui-line pt-4">
-                <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "approve")} className="as-button as-button--primary">{busyId === request.id ? "Working…" : request.status === "processing" ? "Resume approval" : "Approve and create account"}</button>
-                <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "decline")} className="as-button as-button--danger">Decline</button>
-              </div>
-            )}
-            <div className="mt-4 flex flex-wrap gap-2">
+            <footer className="request-card-actions">
+              {(request.status === "pending" || request.status === "processing") && (
+                <>
+                  <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "approve")} className="as-button as-button--primary">{busyId === request.id ? "Working…" : request.status === "processing" ? "Resume approval" : "Approve and create account"}</button>
+                  <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "decline")} className="as-button as-button--danger">Decline</button>
+                </>
+              )}
               {(request.status === "approved" || (request.status === "declined" && request.notification_status !== "sent")) && (
                 <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "retry-email")}
                   className="as-button as-button--amber">
@@ -166,13 +178,14 @@ export default function AccountRequestsPanel({ accessToken, onApproved }: { acce
                 </button>
               )}
               <button type="button" disabled={busyId !== null} onClick={() => void decide(request, "delete")}
-                className="as-button as-button--danger">
+                className="as-button as-button--danger request-remove">
                 Remove application
               </button>
-            </div>
+            </footer>
           </article>
         ))}
-        {!loading && requests.length === 0 && <p className="rounded-xl border border-ui-line p-5 text-center text-sm text-ui-muted">No account requests to review.</p>}
+        {loading && requests.length === 0 && <p className="as-panel p-5 text-center text-sm text-ui-muted" role="status">Loading applications…</p>}
+        {!error && !loading && requests.length === 0 && <p className="as-panel p-5 text-center text-sm text-ui-muted">{showHistory ? "No applications yet." : "No account requests to review."}</p>}
       </div>
       {(offset > 0 || hasMore) && <nav aria-label="Account request pages" className="mt-4 flex items-center gap-4 text-sm text-ui-muted">
         <button type="button" disabled={offset === 0 || loading || busyId !== null} onClick={() => setOffset(value => value - PAGE_SIZE)}
