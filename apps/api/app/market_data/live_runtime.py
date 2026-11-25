@@ -137,6 +137,10 @@ class LiveMarketDataRuntime:
         }
         self._history_locks = {inst: Lock() for inst in InstrumentId}
         self._history_refresh = {inst: _HistoryRefresh() for inst in InstrumentId}
+        self._decision_locks = {inst: Lock() for inst in InstrumentId}
+        self._decision_cache: dict[
+            InstrumentId, tuple[datetime, tuple[Candle, ...], tuple[DecisionPoint, ...], int]
+        ] = {}
 
     def seed_historical_candles(self, instrument: InstrumentId, candles: list[Candle]) -> None:
         """Seed validated historical closed 15m candles for indicator warm-up."""
@@ -284,7 +288,7 @@ class LiveMarketDataRuntime:
         as_of: datetime, incomplete_tail: datetime | None = None,
     ) -> tuple[LiveDecisionSummary, list[DecisionPoint]]:
         status = self.stream_manager.evaluate_instrument_state(instrument, as_of=as_of)
-        points, confirmed_count = validated_decisions(candles, instrument=instrument, as_of=as_of)
+        points, confirmed_count = self._decisions_for_closed_series(instrument, candles, as_of)
         last = candles[-1] if candles else None
         point = points[-1] if points and last and points[-1].timestamp == last.timestamp else None
         stamp = last.timestamp if last else None
@@ -325,6 +329,24 @@ class LiveMarketDataRuntime:
             first_breakout=diagnostic.first_breakout if diagnostic else None,
         )
         return summary, points
+
+    def _decisions_for_closed_series(
+        self, instrument: InstrumentId, candles: list[Candle], as_of: datetime,
+    ) -> tuple[list[DecisionPoint], int]:
+        # Chart and publisher both use the sorted, confirmed series from this runtime.
+        # Recalculate on backfills or corrections, even within the same candle slot.
+        if not candles or candles[-1].timestamp.tzinfo is None or not candles[-1].is_closed(as_of):
+            return validated_decisions(candles, instrument=instrument, as_of=as_of)
+        series = tuple(candles)
+        with self._decision_locks[instrument]:
+            cached = self._decision_cache.get(instrument)
+            if cached is not None:
+                evaluated_at, previous_series, previous_points, previous_count = cached
+                if as_of >= evaluated_at and series == previous_series:
+                    return list(previous_points), previous_count
+            points, count = validated_decisions(candles, instrument=instrument, as_of=as_of)
+            self._decision_cache[instrument] = (as_of, series, tuple(points), count)
+            return points, count
 
     def evaluate_decision_for_instrument(
         self, instrument: InstrumentId, *, as_of: datetime | None = None,

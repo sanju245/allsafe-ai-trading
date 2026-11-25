@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     public_site_url: str = "http://localhost:3000"
     account_request_limit_per_hour: int = Field(default=5, gt=0, le=100)
 
+    # The API uses the public bot username. Only the separate worker needs the token.
+    telegram_alerts_enabled: bool = False
+    telegram_bot_username: str = ""
+    telegram_bot_token: SecretStr = SecretStr("")
+
     # Live Groww market-data streaming (disabled by default for safety).
     live_stream_enabled: bool = False
     market_data_provider: str = "groww"

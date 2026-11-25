@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CustomerWarnings from "@/components/auth/CustomerWarnings";
+import TelegramAlerts from "@/components/auth/TelegramAlerts";
 
 export default function AccountPage() {
   const router = useRouter();
@@ -88,6 +89,7 @@ export default function AccountPage() {
       </header>
 
       <CustomerWarnings />
+      {profile.status === "active" && <TelegramAlerts key={session.user.id} token={session.access_token} />}
       <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
