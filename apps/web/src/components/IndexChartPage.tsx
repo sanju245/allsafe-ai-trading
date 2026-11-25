@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useMemo, useSyncExternalStore } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useIndexChart } from "./useIndexChart";
-import { chartHistory, currentSignal, epoch, formatPrice, formatStamp, formingBar, freshQuote } from "@/lib/indexChart";
+import { chartHistory, currentSignal, decisionChecks, epoch, formatPrice, formatStamp, formingBar, freshQuote } from "@/lib/indexChart";
 import "./indexChart.css";
 
 const ChartCanvas = dynamic(() => import("./IndexChartCanvas"), { ssr: false, loading: () => <div className="chart-loading" role="status">Opening chart…</div> });
@@ -61,7 +61,7 @@ function Workspace({ symbol, provider, days, token, signOut }: {
     direction === "WAIT" ? "Wait" : decision?.reason.toLowerCase().includes("warm") ? "Warming up" :
     decision ? "Waiting for candles" : "Loading";
   const count = decision?.confirmed_candle_count;
-  const votes = [decision?.ema_bullish, decision?.rsi_bullish, decision?.macd_bullish, decision?.supertrend_bullish];
+  const checks = decisionChecks(seriesError ? undefined : decision);
   const options = [...new Set([1, 7, 14, 30, days])].sort((a,b) => a - b);
   return <main className="index-workspace">
     <nav className="chart-top"><Link href="/terminal"><span aria-hidden="true">←</span> Market dashboard</Link>
@@ -91,8 +91,8 @@ function Workspace({ symbol, provider, days, token, signOut }: {
     </div>
     <details className="chart-checks"><summary>Signal confirmation checks</summary>
       <p>{seriesError ? "Waiting for the latest signal calculation." : decision?.reason || "Waiting for completed candles."}</p>
-      <dl>{["Primary trigger", "Trend check A", "Momentum check A", "Momentum check B", "Trend check B"].map((name, i) =>
-        <div key={name}><dt>{name}</dt><dd>{i === 0 ? decision?.ut_bot_signal || "No reading" : votes[i-1] == null ? "No reading" : votes[i-1] ? "Bullish" : "Bearish"}</dd></div>)}</dl>
+      <dl>{checks.map(([name, reading]) =>
+        <div key={name}><dt>{name}</dt><dd>{reading}</dd></div>)}</dl>
     </details>
     <footer className="chart-credit"><span>Heikin Ashi shows averaged prices. Signals use completed 15-minute market candles.</span>
       <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView Lightweight Charts™ © 2025 TradingView, Inc.</a></footer>
