@@ -33,6 +33,8 @@ export default function IndexChartCanvas({ bars, marks, forming, realPrice, pric
   const [full, setFull] = useState(false);
   const last = forming ?? bars.at(-1);
   const selected = hovered ?? last;
+  const buyCount = marks.filter(mark => mark.side === "BUY").length;
+  const sellCount = marks.length - buyCount;
 
   useEffect(() => {
     if (!host.current || !overlay.current) return;
@@ -199,6 +201,6 @@ export default function IndexChartCanvas({ bars, marks, forming, realPrice, pric
           aria-label={`${m.side === "BUY" ? "Buy" : "Sell"} signal on ${formatStamp(m.time)} IST`}>{m.side === "BUY" ? "Buy" : "Sell"}</span>)}</div>
       {!last && <div className="chart-empty" role="status">{loading ? "Loading candles…" : "No completed candles in this range"}</div>}
     </div>
-    <div className="chart-caption"><span>{bars.length} closed candles · {marks.length} confirmed {marks.length === 1 ? "signal" : "signals"} in history</span><span>NSE · IST (UTC+5:30)</span></div>
+    <div className="chart-caption"><span>{bars.length} closed candles · {buyCount} BUY · {sellCount} SELL</span><span>NSE · IST (UTC+5:30)</span></div>
   </div>;
 }

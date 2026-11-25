@@ -345,6 +345,7 @@ function dashboardHarness() {
         jsxs: (type, props) => typeof type === "function" ? type(props) : ({ type, props }),
       };
       if (name === "next/link") return { default: "a" };
+      if (name === "./CandleSignalLabels") return { default: "g" };
       if (name === "@/components/auth/AuthProvider") return {
         useAuth: () => ({
           session: { access_token: "test-token" },

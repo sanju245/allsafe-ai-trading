@@ -84,7 +84,15 @@ def test_chart_repairs_one_partial_live_bar_and_replays_the_next_close(monkeypat
         assert len(calls) == 2 and calls[-1].start.date() == partial.date()
         assert all(pair in [(p["timestamp"], p["decision"]) for p in after["indicator_history"]] for pair in marks)
         assert after["indicator_decision"]["confirmed_candle_count"] == 103
-        assert not after["indicator_decision"]["is_current_signal"]
+        # The next complete live candle closes at the low 18,765 tick. A prior
+        # BUY permits this reversal, while a prior SELL suppresses a duplicate.
+        expected_next = "SELL" if direction > 0 else "WAIT"
+        assert after["indicator_decision"]["decision"] == expected_next
+        assert after["indicator_decision"]["is_current_signal"] == (expected_next == "SELL")
+        if expected_next == "SELL":
+            latest = after["indicator_history"][-1]
+            assert latest["timestamp"] == (partial + timedelta(minutes=15)).isoformat()
+            assert latest["decision"] == "SELL" and latest["levels"]["entry"] == 18765
     finally:
         live.set_live_runtime(app, None)
         runtime.stop(as_of=clock[0])
@@ -100,6 +108,35 @@ def test_unresolved_gap_preserves_earlier_events_and_restarts_the_warmup():
     assert points[:107] == before and count == len(bars) - 108
     assert all(p.decision == TradeDecision.DATA_UNAVAILABLE for p in points[107:])
     assert latest_closed_slot(ist(2026, 11, 24, 11)) is None
+
+
+@pytest.mark.parametrize(("symbol", "direction"), [(InstrumentId.NIFTY50, 1), (InstrumentId.BANKNIFTY, -1)])
+def test_intraday_reversal_confirms_each_side_once_on_its_own_close(symbol, direction):
+    bars = market_bars(symbol, direction)
+    opening = ist(2026, 11, 18, 9, 15)
+    for index, candle in enumerate(bars):
+        if candle.timestamp >= opening + timedelta(minutes=45):
+            slots = (candle.timestamp - opening) // timedelta(minutes=15)
+            price = bars[index - 1].close
+            close = price - direction * (70 if slots <= 11 else -85)
+            bars[index] = make_candle(candle.timestamp, o=price, h=max(price, close) + 3,
+                                      low=min(price, close) - 3, c=close, instrument=symbol,
+                                      timeframe=Timeframe.M15, source=HISTORICAL_TEST_SOURCE)
+
+    points, _ = validated_decisions(bars, instrument=symbol, as_of=bars[-1].close_time)
+    events = [p for p in points if p.timestamp >= opening and p.decision in (TradeDecision.BUY, TradeDecision.SELL)]
+    expected = [TradeDecision.BUY, TradeDecision.SELL] if direction == 1 else [TradeDecision.SELL, TradeDecision.BUY]
+    assert [p.decision for p in events] == expected
+    assert events[1].first_breakout == events[0].first_breakout
+    for event in events:
+        index = next(i for i, bar in enumerate(bars) if bar.timestamp == event.timestamp)
+        at_close, _ = validated_decisions(bars[:index + 1], instrument=symbol, as_of=bars[index].close_time)
+        assert at_close == points[:index + 1]
+        assert event.levels.entry == bars[index].close
+        if event.decision == TradeDecision.SELL:
+            assert event.levels.target < event.levels.entry < event.levels.stop_loss
+        else:
+            assert event.levels.stop_loss < event.levels.entry < event.levels.target
 
 
 def test_health_and_account_requests_can_run_during_broker_startup(monkeypatch, active_account_override):

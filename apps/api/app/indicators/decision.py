@@ -104,7 +104,7 @@ def calculate_decisions(
 ) -> list[DecisionPoint]:
     """Evaluate confirmed candles; no orders are placed.
 
-    Fifteen-minute candles use one opening-range breakout attempt per NSE session.
+    Fifteen-minute candles can confirm once per direction in each NSE session.
     Other timeframes retain the UT Bot crossover trigger and require all four
     confirmations to point in the same direction.
     """
@@ -125,14 +125,10 @@ def calculate_decisions(
     )
 
     is_15m = candles[0].timeframe is Timeframe.M15
-    opening_ranges: dict[date, tuple[int, float, float]] = {}
-    if is_15m:
-        for index, candle in enumerate(candles):
-            local = to_ist(candle.timestamp)
-            if local.time() == time(9, 15):
-                opening_ranges[local.date()] = (index, candle.high, candle.low)
-
-    attempted_sessions: dict[date, OpeningRangeAttempt] = {}
+    session: date | None = None
+    opening_high = opening_low = None
+    first_breakout: OpeningRangeAttempt | None = None
+    confirmed_sides: set[TradeDecision] = set()
     decisions: list[DecisionPoint] = []
 
     for index, candle in enumerate(candles):
@@ -142,47 +138,49 @@ def calculate_decisions(
         macd = macd_points[index]
         supertrend = supertrend_points[index]
         filters = (ema.bullish, rsi.bullish, macd.bullish, supertrend.bullish)
-        local = to_ist(candle.timestamp)
-
-        opening_reason = "Waiting for the first confirmed close outside the 09:15 opening range."
-        opening_direction = 0
+        opening_reason = "Waiting for a confirmed close outside the 09:15 opening range."
+        candidate = None
         opening_range_state = None
-        opening_high = opening_low = None
-        session = local.date()
         if is_15m:
-            opening = opening_ranges.get(session)
-            if opening is None:
+            local = to_ist(candle.timestamp)
+            if session != local.date():
+                session = local.date()
+                opening_high = opening_low = None
+                first_breakout = None
+                confirmed_sides.clear()
+
+            if local.time() == time(9, 15):
+                opening_high, opening_low = candle.high, candle.low
+                opening_range_state = OpeningRangeState.SET
+            elif opening_high is None or opening_low is None:
                 opening_range_state = OpeningRangeState.MISSING
                 opening_reason = "No 09:15 opening candle; opening-range signals are disabled for this session."
-            elif index <= opening[0]:
-                opening_range_state = OpeningRangeState.SET
-                if index == opening[0]:
-                    _, opening_high, opening_low = opening
             else:
-                opening_high, opening_low = opening[1], opening[2]
                 if candle.close > opening_high:
                     opening_range_state = OpeningRangeState.ABOVE_HIGH
+                    candidate = TradeDecision.BUY
                 elif candle.close < opening_low:
                     opening_range_state = OpeningRangeState.BELOW_LOW
+                    candidate = TradeDecision.SELL
                 else:
                     opening_range_state = OpeningRangeState.INSIDE
 
                 if local.time() > time(14, 15):
                     opening_reason = "This candle opened after the last eligible slot at 14:15 IST."
-                elif session in attempted_sessions:
-                    opening_reason = "The first opening-range breakout for this session was already evaluated."
-                elif opening_range_state is not OpeningRangeState.INSIDE:
-                    opening_direction = 1 if opening_range_state is OpeningRangeState.ABOVE_HIGH else -1
+                    candidate = None
+                elif candidate in confirmed_sides:
+                    opening_reason = f"The opening-range {candidate} already confirmed this session."
+                    candidate = None
 
         if _has_warmup(ut, ema, rsi, macd, supertrend):
             decision = TradeDecision.DATA_UNAVAILABLE
             reason = "Signal checks are warming up: insufficient candle history."
         elif is_15m:
-            if not opening_direction:
+            if candidate is None:
                 decision = TradeDecision.WAIT
                 reason = opening_reason
             else:
-                side = TradeDecision.BUY if opening_direction == 1 else TradeDecision.SELL
+                opening_direction = 1 if candidate is TradeDecision.BUY else -1
                 momentum_aligned = (
                     _directional_confirmation(rsi, opening_direction)
                     or _directional_confirmation(macd, opening_direction)
@@ -196,10 +194,10 @@ def calculate_decisions(
                 blocked_by = [name for name, aligned in checks if not aligned]
                 if blocked_by:
                     decision = TradeDecision.WAIT
-                    reason = f"Opening-range {side} breakout filtered. {', '.join(blocked_by)} did not confirm."
+                    reason = f"Opening-range {candidate} breakout filtered. {', '.join(blocked_by)} did not confirm."
                 else:
-                    decision = side
-                    reason = f"15-minute opening-range {side}; trend and momentum checks confirm."
+                    decision = candidate
+                    reason = f"Trend and momentum confirm the 15-minute opening-range {candidate}."
         elif ut.signal == UTBotSignal.BUY and all(value is True for value in filters):
             decision = TradeDecision.BUY
             reason = "BUY signal confirmed by all required trend and momentum checks."
@@ -211,12 +209,12 @@ def calculate_decisions(
             reason = "No confirmed trigger with all directional checks aligned."
 
         levels = None
-        if opening_direction:
-            side = TradeDecision.BUY if opening_direction == 1 else TradeDecision.SELL
-            # Keep the original outcome visible after this session's one attempt.
-            attempted_sessions[session] = OpeningRangeAttempt(candle.timestamp, side, decision, reason)
-            if decision is side and opening_high is not None and opening_low is not None:
-                levels = opening_range_levels(candle.close, side, opening_high, opening_low)
+        if candidate is not None:
+            if first_breakout is None:
+                first_breakout = OpeningRangeAttempt(candle.timestamp, candidate, decision, reason)
+            if decision is candidate:
+                confirmed_sides.add(candidate)
+                levels = opening_range_levels(candle.close, candidate, opening_high, opening_low)
 
         decisions.append(
             DecisionPoint(
@@ -232,7 +230,7 @@ def calculate_decisions(
                 ut_bot_position=ut.position if ut.trailing_stop is not None else None,
                 opening_range_high=opening_high,
                 opening_range_low=opening_low,
-                first_breakout=attempted_sessions.get(session),
+                first_breakout=first_breakout,
                 levels=levels,
             )
         )

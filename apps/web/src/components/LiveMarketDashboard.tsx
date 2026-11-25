@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
+import type { Signal } from "@/lib/indexChart";
+import CandleSignalLabels from "./CandleSignalLabels";
 
 type MarketSymbol = "NIFTY50" | "BANKNIFTY";
 type Candle = {
@@ -19,7 +21,7 @@ type CandleResponse = {
   feed_state: string;
   message: string;
   indicator_decision: IndicatorDecision;
-  indicator_history?: IndicatorHistoryPoint[];
+  indicator_history?: Signal[];
 };
 type IndicatorDecision = {
   decision: "BUY" | "SELL" | "WAIT" | "DATA_UNAVAILABLE";
@@ -31,10 +33,6 @@ type IndicatorDecision = {
   rsi_bullish: boolean | null;
   macd_bullish: boolean | null;
   supertrend_bullish: boolean | null;
-};
-type IndicatorHistoryPoint = {
-  timestamp: string;
-  decision: "BUY" | "SELL" | "WAIT" | "DATA_UNAVAILABLE";
 };
 type QuoteResponse = {
   available: boolean;
@@ -67,6 +65,7 @@ type ProviderOption = {
 type ProviderResponse = { providers: ProviderOption[] };
 type MarketSnapshot = {
   candles: Candle[];
+  signals: Signal[];
   decision: IndicatorDecision | null;
   quote: QuoteResponse["quote"];
   message: string;
@@ -92,6 +91,7 @@ const API_BASE_URL = (
 
 const emptyMarket: MarketSnapshot = {
   candles: [],
+  signals: [],
   decision: null,
   quote: null,
   message: "",
@@ -125,7 +125,7 @@ function formatPrice(value: number | null | undefined): string {
   }).format(value);
 }
 
-function CandlestickChart({ candles, label }: { candles: Candle[]; label: string }) {
+function CandlestickChart({ candles, signals, label }: { candles: Candle[]; signals: Signal[]; label: string }) {
   const width = 720;
   const height = 260;
   const inset = 20;
@@ -144,6 +144,7 @@ function CandlestickChart({ candles, label }: { candles: Candle[]; label: string
   const range = Math.max(max - min, Math.abs(max) * 0.0001, 1);
   const plotHeight = height - inset * 2;
   const slotWidth = (width - inset * 2) / visible.length;
+  const slotX = (index: number) => inset + (index + 0.5) * slotWidth;
   const y = (price: number) => inset + ((max - price) / range) * plotHeight;
 
   return (
@@ -168,7 +169,7 @@ function CandlestickChart({ candles, label }: { candles: Candle[]; label: string
           );
         })}
         {visible.map((candle, index) => {
-          const x = inset + index * slotWidth + slotWidth / 2;
+          const x = slotX(index);
           const bullish = candle.close >= candle.open;
           const color = bullish ? "#34d399" : "#fb7185";
           const bodyTop = Math.min(y(candle.open), y(candle.close));
@@ -190,6 +191,7 @@ function CandlestickChart({ candles, label }: { candles: Candle[]; label: string
             </g>
           );
         })}
+        <CandleSignalLabels candles={visible} signals={signals} x={slotX} y={y} />
       </svg>
     </div>
   );
@@ -250,7 +252,7 @@ function MarketCard({
       </div>
 
       <div className="mt-5">
-        <CandlestickChart candles={snapshot.candles} label={title} />
+        <CandlestickChart candles={snapshot.candles} signals={snapshot.signals} label={title} />
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -365,7 +367,7 @@ export default function LiveMarketDashboard() {
       const query = `?symbol=${symbol}&provider=${selectedProvider}`;
       try {
         const [candleResponse, quoteResponse, formingResponse] = await Promise.all([
-          getJson<CandleResponse>(`/api/v1/live/candles${query}&timeframe=15m&limit=500&history_days=7`, accessToken, signal),
+          getJson<CandleResponse>(`/api/v1/live/candles${query}&timeframe=15m&limit=500&history_days=7&include_indicator_history=true`, accessToken, signal),
           getJson<QuoteResponse>(`/api/v1/live/quote${query}`, accessToken, signal),
           getJson<FormingResponse>(`/api/v1/live/forming-candle${query}`, accessToken, signal),
         ]);
@@ -382,6 +384,7 @@ export default function LiveMarketDashboard() {
           ...current,
           [symbol]: {
             candles: uniqueCandles,
+            signals: candleResponse.indicator_history ?? [],
             decision: candleResponse.indicator_decision,
             quote: quoteResponse.quote,
             message: candleResponse.message,
@@ -402,6 +405,7 @@ export default function LiveMarketDashboard() {
           [symbol]: {
             ...current[symbol],
             candles: [],
+            signals: [],
             decision: null,
             quote: null,
             message: "",
