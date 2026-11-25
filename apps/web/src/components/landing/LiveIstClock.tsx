@@ -64,7 +64,7 @@ function LiveIstClock({
     <div
       role="timer"
       aria-label="Live Indian Standard Time (IST - Asia/Kolkata)"
-      className={`flex flex-col justify-between rounded-xl border border-white/10 bg-[#0b1018]/90 px-4 py-3 shadow-inner backdrop-blur-md ${className}`}
+      className={`as-panel flex flex-col justify-between px-4 py-3 ${className}`}
     >
       <div className="flex items-center justify-between gap-3">
         <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">

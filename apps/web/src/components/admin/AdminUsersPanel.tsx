@@ -102,7 +102,7 @@ function isCustomer(user: AdminUser): boolean {
 
 function formatDate(value: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-IN", { dateStyle: "medium", timeZone: "Asia/Kolkata" });
 }
 
 type UserActionsProps = {
@@ -124,14 +124,14 @@ function UserActions({ user, busy, onStatusChange, onDelete, onViewSignIns, onWa
   return (
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" onClick={() => onWarn(user)} disabled={busy} aria-haspopup="dialog"
-        className="rounded-lg border border-amber-300/20 px-3 py-2 text-xs font-medium text-amber-200 hover:bg-amber-300/10 disabled:opacity-50">
+        className="as-button as-button--amber text-xs">
         Warning
       </button>
       <button
         type="button"
         onClick={() => onViewSignIns(user)}
         aria-haspopup="dialog"
-        className="rounded-lg border border-white/15 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-white/5"
+        className="as-button as-button--quiet text-xs"
       >
         Sign-in history
       </button>
@@ -141,7 +141,7 @@ function UserActions({ user, busy, onStatusChange, onDelete, onViewSignIns, onWa
           disabled={busy}
           onClick={() => onStatusChange(user)}
           aria-haspopup={user.status === "active" ? "dialog" : undefined}
-          className="rounded-lg border border-amber-300/20 px-3 py-2 text-xs font-medium text-amber-200 hover:bg-amber-300/10 disabled:opacity-50"
+          className="as-button as-button--amber text-xs"
         >
           {user.status === "active" ? "Pause login" : "Resume login"}
         </button>
@@ -150,7 +150,7 @@ function UserActions({ user, busy, onStatusChange, onDelete, onViewSignIns, onWa
         type="button"
         disabled={busy}
         onClick={() => onDelete(user)}
-        className="rounded-lg border border-rose-400/25 px-3 py-2 text-xs font-medium text-rose-200 hover:bg-rose-400/10 disabled:opacity-50"
+        className="as-button as-button--danger"
       >
         Delete
       </button>
@@ -487,11 +487,11 @@ export default function AdminUsersPanel() {
 
   if (!session || !profile) {
     return (
-      <section className="mx-auto mt-10 max-w-xl rounded-2xl border border-white/10 bg-white/[0.025] p-6 sm:p-8">
+      <section className="as-panel mx-auto mt-10 max-w-xl p-6 sm:p-8">
         <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">Sign in required</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white">Admin access</h1>
         <p className="mt-3 text-sm leading-relaxed text-slate-300">Sign in with an administrator account to manage customer access.</p>
-        <Link href="/admin/login" className="mt-5 inline-flex rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
+        <Link href="/admin/login" className="as-button as-button--primary mt-5">
           Go to admin sign in
         </Link>
       </section>
@@ -540,49 +540,59 @@ export default function AdminUsersPanel() {
     ? users.find((user) => user.id === historyTarget.userId)
     : undefined;
   const activeMessage = messageAction?.token === accessToken ? messageAction?.action : undefined;
+  const customers = directoryToken === accessToken ? users.filter(isCustomer) : null;
 
   return (
-    <div className="pb-12 pt-8">
+    <div className="pb-12 pt-7 sm:pt-10">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">User management</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">Customers</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">Create customer logins and manage account access.</p>
+          <h1 className="as-title">Customers</h1>
+          <p className="as-subtitle mt-2 text-sm">Review applications, manage access, and check sign-in history.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => openMessage({ kind: "warning", user: null })} aria-haspopup="dialog" disabled={busyUserId !== null}
-            className="rounded-lg border border-amber-300/25 px-4 py-2.5 text-sm font-medium text-amber-200 hover:bg-amber-300/10 disabled:opacity-50">
+            className="as-button as-button--amber">
             Warn all customers
           </button>
-          <button type="button" onClick={() => void refreshUsers()} disabled={loadingUsers} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50">
+          <button type="button" onClick={() => void refreshUsers()} disabled={loadingUsers} className="as-button as-button--quiet">
             {loadingUsers ? "Refreshing…" : "Refresh list"}
           </button>
-          <button ref={createCustomerButtonRef} type="button" onClick={() => { clearNotices(); setCreateOpen((open) => !open); }} className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
+          <button ref={createCustomerButtonRef} type="button" aria-expanded={createOpen} onClick={() => { clearNotices(); setCreateOpen((open) => !open); }} className="as-button as-button--primary">
             {createOpen ? "Close form" : "Create customer"}
           </button>
-          <button type="button" onClick={() => void signOut()} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5">
+          <button type="button" onClick={() => void signOut()} className="as-button as-button--quiet">
             Sign out
           </button>
         </div>
       </div>
 
+      <dl className="as-admin-metrics mt-6" aria-label="Customer account totals">
+        <div className="as-panel"><dt>Total customers</dt><dd>{customers?.length ?? "—"}</dd></div>
+        <div className="as-panel"><dt>Active logins</dt><dd className="text-emerald-200">{customers?.filter((user) => user.status === "active").length ?? "—"}</dd></div>
+        <div className="as-panel"><dt>Paused logins</dt><dd className="text-amber-200">{customers?.filter((user) => user.status === "paused").length ?? "—"}</dd></div>
+      </dl>
+      <nav aria-label="Admin sections" className="as-nav-group mt-3">
+        <a href="#account-requests" className="as-nav-link">Account requests</a>
+        <a href="#account-directory" className="as-nav-link">Account directory</a>
+      </nav>
+
       {accessToken && <AccountRequestsPanel accessToken={accessToken} onApproved={refreshUsers} />}
 
       {createOpen && (
-        <section aria-labelledby="create-customer-title" className="mt-7 rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.035] p-5 sm:p-6">
-          <h2 id="create-customer-title" className="text-lg font-semibold text-white">Create a customer login</h2>
+        <section aria-labelledby="create-customer-title" className="as-panel mt-5 p-5 sm:p-6">
+          <h2 id="create-customer-title" className="as-section-title">Create a customer login</h2>
           <p className="mt-1 text-sm text-slate-400">The email is the customer’s sign-in username. Share the initial password with them securely.</p>
           <form onSubmit={createUser} className="mt-5 grid gap-4 md:grid-cols-3">
             <label className="text-sm text-slate-300">
               Email / username
-              <input type="email" required autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-400 focus:outline-none" placeholder="customer@example.com" />
+              <input type="email" required autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} className="as-field mt-1 w-full" placeholder="customer@example.com" />
             </label>
             <label className="text-sm text-slate-300">
               Initial password
-              <input type="password" required minLength={8} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-400 focus:outline-none" placeholder="At least 8 characters" />
+              <input type="password" required minLength={8} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="as-field mt-1 w-full" placeholder="At least 8 characters" />
             </label>
             <div className="flex flex-wrap items-center gap-3 md:col-span-3">
-              <button type="submit" disabled={creating} className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-50">
+              <button type="submit" disabled={creating} className="as-button as-button--primary">
                 {creating ? "Creating account…" : "Create customer"}
               </button>
               <span className="text-xs text-slate-500">Passwords are sent only to the API and are cleared after success.</span>
@@ -594,10 +604,10 @@ export default function AdminUsersPanel() {
       {error && <p role="alert" className="mt-5 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">{error}</p>}
       {success && <p role="status" className="mt-5 rounded-lg border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-emerald-100">{success}</p>}
 
-      <section aria-labelledby="directory-title" className="mt-7 rounded-2xl border border-white/10 bg-white/[0.025] p-4 sm:p-6">
+      <section id="account-directory" aria-labelledby="directory-title" className="as-panel mt-5 scroll-mt-6 p-4 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 id="directory-title" className="text-lg font-semibold text-white">Account directory</h2>
+            <h2 id="directory-title" className="as-section-title">Account directory</h2>
             <p className="mt-1 text-sm text-slate-400" aria-live="polite">
               {loadingUsers ? "Loading accounts…" : `${visibleUsers.length} ${visibleUsers.length === 1 ? "account" : "accounts"}`}
             </p>
@@ -605,11 +615,11 @@ export default function AdminUsersPanel() {
           <div className="grid gap-3 sm:grid-cols-[minmax(14rem,1fr)_10rem]">
             <label className="text-xs font-medium text-slate-400">
               Search accounts
-              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Email" className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-emerald-400 focus:outline-none" />
+              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Email" className="as-field mt-1 w-full" />
             </label>
             <label className="text-xs font-medium text-slate-400">
               Status
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-emerald-400 focus:outline-none">
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="as-field mt-1 w-full">
                 <option value="all">All statuses</option>
                 <option value="active">Active</option>
                 <option value="paused">Paused</option>
@@ -618,9 +628,9 @@ export default function AdminUsersPanel() {
           </div>
         </div>
 
-        <div className="mt-5 hidden overflow-x-auto rounded-xl border border-white/10 md:block">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-white/5 text-xs uppercase tracking-wide text-slate-400">
+        <div className="as-inset mt-5 hidden overflow-x-auto lg:block">
+          <table className="as-table w-full min-w-[760px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide">
               <tr>
                 <th scope="col" className="px-4 py-3">Customer</th>
                 <th scope="col" className="px-4 py-3">Role</th>
@@ -634,11 +644,11 @@ export default function AdminUsersPanel() {
                 <tr key={user.id} className="border-t border-white/5 align-top text-slate-200">
                   <td className="px-4 py-4">
                     <span className="font-medium text-white">{user.email}</span>
-                    <span className="mt-1 block break-all font-mono text-[10px] text-slate-600">{user.id}</span>
+                    <span className="mt-1 block break-all font-mono text-[10px] text-slate-400">{user.id}</span>
                   </td>
-                  <td className="px-4 py-4 capitalize">{user.role}</td>
+                  <td className="px-4 py-4 capitalize">{isCustomer(user) ? "Customer" : user.role}</td>
                   <td className="px-4 py-4">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${user.status === "paused" ? "bg-amber-400/10 text-amber-200" : "bg-emerald-400/10 text-emerald-200"}`}>
+                    <span className={`as-pill capitalize ${user.status === "paused" ? "as-pill--amber" : "as-pill--green"}`}>
                       {user.status}
                     </span>
                     {user.status === "paused" && user.pause_reason && (
@@ -659,21 +669,21 @@ export default function AdminUsersPanel() {
           </table>
         </div>
 
-        <div className="mt-5 grid gap-3 md:hidden">
+        <div className="mt-5 grid gap-3 lg:hidden">
           {visibleUsers.map((user) => (
-            <article key={user.id} className="rounded-xl border border-white/10 bg-slate-950/60 p-4">
+            <article key={user.id} className="as-inset p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h3 className="break-all font-medium text-white">{user.email}</h3>
-                  <p className="mt-1 break-all font-mono text-[10px] text-slate-600">{user.id}</p>
+                  <p className="mt-1 break-all font-mono text-[10px] text-slate-400">{user.id}</p>
                 </div>
-                <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${user.status === "paused" ? "bg-amber-400/10 text-amber-200" : "bg-emerald-400/10 text-emerald-200"}`}>
+                <span className={`as-pill capitalize ${user.status === "paused" ? "as-pill--amber" : "as-pill--green"}`}>
                   {user.status}
                 </span>
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                <div><dt className="text-slate-500">Role</dt><dd className="mt-1 capitalize text-slate-200">{user.role}</dd></div>
-                <div><dt className="text-slate-500">Created</dt><dd className="mt-1 text-slate-200">{formatDate(user.created_at)}</dd></div>
+                <div><dt className="text-slate-400">Role</dt><dd className="mt-1 capitalize text-slate-200">{isCustomer(user) ? "Customer" : user.role}</dd></div>
+                <div><dt className="text-slate-400">Created</dt><dd className="mt-1 text-slate-200">{formatDate(user.created_at)}</dd></div>
               </dl>
               {user.status === "paused" && user.pause_reason && (
                 <p className="mt-3 whitespace-pre-wrap break-words text-xs text-amber-200">{user.pause_reason}</p>

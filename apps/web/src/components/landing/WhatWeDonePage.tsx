@@ -2,6 +2,7 @@
 
 import { memo, useState } from "react";
 import Link from "next/link";
+import BrandLink from "@/components/BrandLink";
 import { useAuth } from "@/components/auth/AuthProvider";
 import type { MarketCalendar } from "@/lib/indianMarketStatus";
 import IndianMarketStatusBadge from "@/components/landing/IndianMarketStatusBadge";
@@ -124,7 +125,7 @@ function WhatWeDonePage({
   const initialEpochMs = Number.isFinite(parsedEpoch) ? parsedEpoch : undefined;
 
   return (
-    <div className="min-h-screen bg-[#06090f] text-slate-100 selection:bg-emerald-500/30 selection:text-emerald-200">
+    <div className="as-page selection:bg-emerald-500/30 selection:text-emerald-200">
       <a
         href="#what-we-done-main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-emerald-400 focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-slate-950"
@@ -133,29 +134,12 @@ function WhatWeDonePage({
       </a>
 
       {/* Navigation Bar */}
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#06090f]/90 backdrop-blur-xl">
+      <header className="as-topbar sticky top-0 z-40">
         <nav
           aria-label="Primary navigation"
-          className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3.5 sm:px-6 lg:px-8"
+          className="as-container flex min-h-18 items-center justify-between gap-3 py-3"
         >
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="group flex items-center gap-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-400"
-            >
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-500/40 bg-emerald-500/15 font-mono text-sm font-bold text-emerald-300 shadow-[0_0_16px_rgba(16,185,129,0.25)]">
-                AS
-              </span>
-              <div>
-                <span className="block text-base font-bold tracking-tight text-white sm:text-lg">
-                  AllSafe <span className="text-emerald-400">AI Trading</span>
-                </span>
-                <span className="block font-mono text-[10px] uppercase tracking-[0.16em] text-slate-400">
-                  Five-Check Market Analysis
-                </span>
-              </div>
-            </Link>
-          </div>
+          <BrandLink />
 
           <div className="hidden items-center gap-1 md:flex lg:gap-2">
             <Link
@@ -251,7 +235,7 @@ function WhatWeDonePage({
         )}
       </header>
 
-      <main id="what-we-done-main" className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+      <main id="what-we-done-main" className="as-container py-8 sm:py-12">
         {/* Live IST Clock & NSE Market Status Strip */}
         <div className="mb-8 grid grid-cols-1 gap-3.5 md:grid-cols-2">
           <LiveIstClock

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import BrandLink from "@/components/BrandLink";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -36,80 +37,78 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-4 py-10 sm:px-6">
-      <header className="mb-6 flex items-center justify-between gap-3">
-        <Link href="/" className="text-sm font-semibold text-slate-200 hover:text-white">
-          AllSafe <span className="text-emerald-400">AI Trading</span>
-        </Link>
-        <Link href="/" className="text-sm text-slate-400 hover:text-white">
-          Back to AllSafe home
-        </Link>
-      </header>
+    <main className="as-page">
+      <div className="as-auth">
+        <header className="flex flex-wrap items-center justify-between gap-2">
+          <BrandLink />
+          <Link href="/" className="as-nav-link">Back to AllSafe home</Link>
+        </header>
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:p-8">
-        <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">Customer access</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Sign in</h1>
-        <p className="mt-2 text-sm leading-relaxed text-slate-300">
-          Sign in with the email and password for your approved AllSafe account. You can sign in from any network.
-        </p>
+        <section className="as-panel as-auth-card">
+          <p className="as-kicker">Customer access</p>
+          <h1 className="mt-2">Sign in</h1>
+          <p className="mt-2 text-sm leading-relaxed text-slate-300">
+            Sign in with the email and password for your approved AllSafe account. You can sign in from any network.
+          </p>
 
-        {!SUPABASE_CONFIGURED ? (
-          <div className="mt-5 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-            <p className="font-semibold">Sign-in is not configured yet.</p>
-            <p className="mt-1 leading-relaxed">
-              Account access is temporarily unavailable. Contact the administrator to finish setting up sign-in.
+          {!SUPABASE_CONFIGURED ? (
+            <div className="mt-5 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+              <p className="font-semibold">Sign-in is not configured yet.</p>
+              <p className="mt-1 leading-relaxed">
+                Account access is temporarily unavailable. Contact the administrator to finish setting up sign-in.
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={submit} className="mt-5 grid gap-4">
+              <label className="text-sm text-slate-300">
+                Email
+                <input
+                  type="email"
+                  autoComplete="username"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="as-field mt-1 w-full"
+                />
+              </label>
+              <label className="text-sm text-slate-300">
+                Password
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="as-field mt-1 w-full"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={loading}
+                className="as-button as-button--primary"
+              >
+                {loading ? "Verifying account…" : "Sign in"}
+              </button>
+            </form>
+          )}
+
+          <Link href="/forgot-password" className="mt-4 inline-flex text-sm text-emerald-300 underline">Forgot password?</Link>
+
+          {loading && !session && (
+            <p role="status" className="mt-4 text-sm text-slate-400">
+              Checking your account. After inactivity, the account service may take about a minute to start. Keep this page open.
             </p>
-          </div>
-        ) : (
-          <form onSubmit={submit} className="mt-5 grid gap-4">
-            <label className="text-sm text-slate-300">
-              Email
-              <input
-                type="email"
-                autoComplete="username"
-                required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/60"
-              />
-            </label>
-            <label className="text-sm text-slate-300">
-              Password
-              <input
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400/60"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60"
-            >
-              {loading ? "Verifying account…" : "Sign in"}
-            </button>
-          </form>
-        )}
-
-        <Link href="/forgot-password" className="mt-4 inline-flex text-sm text-emerald-300 underline">Forgot password?</Link>
-
-        {loading && !session && (
-          <p role="status" className="mt-4 text-sm text-slate-400">
-            Checking your account. After inactivity, the account service may take about a minute to start. Keep this page open.
+          )}
+          {(error || pauseMessage) && (
+            <p role="alert" className="mt-4 whitespace-pre-wrap break-words rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
+              {error ?? pauseMessage}
+            </p>
+          )}
+          <p className="mt-4 text-xs leading-relaxed text-slate-500">
+            Need access? <Link href="/" className="text-emerald-300 underline">Request an account</Link> from the home page. Charts opened from the terminal use your active browser session.
           </p>
-        )}
-        {(error || pauseMessage) && (
-          <p role="alert" className="mt-4 whitespace-pre-wrap break-words rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
-            {error ?? pauseMessage}
-          </p>
-        )}
-        <p className="mt-4 text-xs leading-relaxed text-slate-500">
-          Need access? <Link href="/" className="text-emerald-300 underline">Request an account</Link> from the home page. Charts opened from the terminal use your active browser session.
-        </p>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }

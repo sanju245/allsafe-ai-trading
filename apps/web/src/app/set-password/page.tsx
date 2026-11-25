@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import BrandLink from "@/components/BrandLink";
 import { useEffect, useState, type FormEvent } from "react";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -68,11 +69,11 @@ export default function SetPasswordPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-4 py-10">
-      <Link href="/" className="mb-6 text-sm font-semibold text-slate-200 hover:text-white">AllSafe <span className="text-emerald-400">AI Trading</span></Link>
-      <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-6 sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-widest text-emerald-300">Account setup</p>
-        <h1 className="mt-2 text-3xl font-semibold text-white">Set your password</h1>
+    <main className="as-page"><div className="as-auth">
+      <BrandLink />
+      <section className="as-panel as-auth-card">
+        <p className="as-kicker">Account setup</p>
+        <h1 className="mt-2">Set your password</h1>
         {done ? (
           <div role="status" className="mt-5 text-sm leading-6 text-slate-300">
             Your password is ready. <Link href="/login" className="font-semibold text-emerald-300 underline">Sign in</Link> from any network.
@@ -80,19 +81,19 @@ export default function SetPasswordPage() {
         ) : proof ? (
           <form onSubmit={submit} className="mt-5 grid gap-4">
             <label className="text-sm text-slate-300">New password
-              <input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-white outline-none focus:border-emerald-400" />
+              <input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} className="as-field mt-1 w-full" />
             </label>
             <label className="text-sm text-slate-300">Confirm password
-              <input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-white outline-none focus:border-emerald-400" />
+              <input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="as-field mt-1 w-full" />
             </label>
             {error && <p role="alert" className="text-sm text-rose-200">{error}</p>}
-            <button type="submit" disabled={busy} className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:opacity-50">{busy ? "Saving…" : "Set password"}</button>
+            <button type="submit" disabled={busy} className="as-button as-button--primary">{busy ? "Saving…" : "Set password"}</button>
           </form>
         ) : (
           <p role="alert" className="mt-5 text-sm leading-6 text-rose-200">{error || "Checking your setup link…"}</p>
         )}
         {!done && <Link href="/forgot-password" className="mt-5 inline-block text-sm text-emerald-300 underline">Request a new password link</Link>}
       </section>
-    </main>
+    </div></main>
   );
 }

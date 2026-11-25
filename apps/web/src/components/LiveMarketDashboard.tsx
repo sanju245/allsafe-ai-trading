@@ -143,7 +143,8 @@ function CandlestickChart({ candles, signals, label }: { candles: Candle[]; sign
   const max = Math.max(...visible.map((candle) => candle.high));
   const range = Math.max(max - min, Math.abs(max) * 0.0001, 1);
   const plotHeight = height - inset * 2;
-  const slotWidth = (width - inset * 2) / visible.length;
+  const plotRight = width - 92;
+  const slotWidth = (plotRight - inset) / visible.length;
   const slotX = (index: number) => inset + (index + 0.5) * slotWidth;
   const y = (price: number) => inset + ((max - price) / range) * plotHeight;
 
@@ -161,8 +162,8 @@ function CandlestickChart({ candles, signals, label }: { candles: Candle[]; sign
           const value = max - fraction * range;
           return (
             <g key={fraction}>
-              <line x1={inset} x2={width - inset} y1={gridY} y2={gridY} stroke="#243142" strokeDasharray="3 5" />
-              <text x={width - inset} y={gridY - 4} textAnchor="end" fill="#94a3b8" fontSize="10">
+              <line x1={inset} x2={plotRight} y1={gridY} y2={gridY} stroke="#243142" strokeDasharray="3 5" />
+              <text x={width - 12} y={gridY + 4} textAnchor="end" fill="#adbed2" fontSize="13">
                 {formatPrice(value)}
               </text>
             </g>
@@ -225,18 +226,17 @@ function MarketCard({
       : "Signal from confirmed candles";
 
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
+    <section className="as-panel p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">
+          <h2 className="as-section-title">
             <Link href={chartHref} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
               {title}<span className="ml-2 text-xs text-emerald-300" aria-label="opens chart in a new tab">↗</span>
             </Link>
           </h2>
-          <p className="mt-1 text-xs capitalize text-slate-400">
+          <p className="as-pill mt-2 capitalize">
             Feed: {stateLabel || "checking"}
           </p>
-          <p className="mt-1 text-xs text-slate-500">15-minute candles · NSE session</p>
         </div>
         <div className="text-right">
           <p className="text-xs uppercase tracking-wide text-slate-400">
@@ -244,7 +244,7 @@ function MarketCard({
           </p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">{formatPrice(price)}</p>
           {snapshot.quote?.timestamp && (
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-400">
               Recorded {new Date(snapshot.quote.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST
             </p>
           )}
@@ -268,12 +268,12 @@ function MarketCard({
           href={chartHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-10 items-center rounded-md border border-emerald-400/30 px-3 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          className="as-button as-button--quiet"
         >
           Open full chart <span aria-hidden="true" className="ml-2">↗</span>
         </Link>
       </div>
-      {decision && <p className="mt-2 text-xs text-slate-500">{decision.reason}</p>}
+      {decision && <p className="mt-2 text-xs text-slate-400">{decision.reason}</p>}
 
       {snapshot.error && <p className="mt-3 text-sm text-rose-300">{snapshot.error}</p>}
       {snapshot.message && !snapshot.error && (
@@ -447,8 +447,8 @@ export default function LiveMarketDashboard() {
             : `The live feed is ${status.feed_state.replaceAll("_", " ")}. Displayed history is not current.`;
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
+    <div className="space-y-4">
+      <div className="as-panel px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-3">
             <label htmlFor="market-data-provider" className="text-sm text-slate-300">Market data</label>
@@ -456,7 +456,7 @@ export default function LiveMarketDashboard() {
               id="market-data-provider"
               value={selectedProvider}
               onChange={(event) => selectProvider(event.target.value as "groww" | "upstox")}
-              className="rounded-md border border-white/15 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              className="as-field"
             >
               {(["groww", "upstox"] as const).map((id) => {
                 const option = providers.find((item) => item.id === id);
@@ -467,12 +467,12 @@ export default function LiveMarketDashboard() {
             </select>
             <p className="text-sm text-slate-300">{backendMessage}</p>
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-400">
             {checkedAt ? `Checked ${checkedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} IST · refreshes every 15 seconds` : "Connecting…"}
           </p>
         </div>
       </div>
-      <div className="grid gap-4">
+      <div className="grid gap-4 lg:grid-cols-2">
         {markets.map(({ symbol, title }) => (
           <MarketCard
             key={symbol}
@@ -483,10 +483,6 @@ export default function LiveMarketDashboard() {
           />
         ))}
       </div>
-      <p className="text-xs text-slate-500">
-        Charts use the selected provider and show 15-minute candles. Educational analysis only;
-        no orders are placed by this site.
-      </p>
     </div>
   );
 }

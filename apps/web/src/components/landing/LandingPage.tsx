@@ -2,8 +2,9 @@
 
 import { memo, useState } from "react";
 import Link from "next/link";
+import BrandLink from "@/components/BrandLink";
 import { useAuth } from "@/components/auth/AuthProvider";
-import BullBearHeroArena from "@/components/landing/BullBearHeroArena";
+import LandingChartPreview from "@/components/landing/LandingChartPreview";
 import type { MarketCalendar } from "@/lib/indianMarketStatus";
 import IndianMarketStatusBadge from "@/components/landing/IndianMarketStatusBadge";
 import LiveIstClock from "@/components/landing/LiveIstClock";
@@ -46,7 +47,7 @@ const EXAMPLES: Record<ExampleMode, { summary: string; checks: string[] }> = {
     checks: ["SELL candidate", "Confirms SELL", "Confirms SELL", "Confirms SELL", "Confirms SELL"],
   },
   WAIT: {
-    summary: "When the required checks disagree, the analysis output is WAIT. Missing history is reported separately as DATA_UNAVAILABLE.",
+    summary: "When the required checks disagree, the result is Wait. If there is too little history to run the checks, the terminal shows Data unavailable.",
     checks: ["BUY candidate", "Confirms BUY", "No agreement", "Confirms BUY", "No agreement"],
   },
 };
@@ -58,7 +59,7 @@ const FEATURES = [
   },
   {
     title: "A clear decision state",
-    text: "One rule engine checks a candidate direction against four confirmations and reports BUY, SELL, WAIT, or DATA_UNAVAILABLE.",
+    text: "See Buy, Sell, or Wait once the checks have run. The terminal also tells you when there is too little data for a decision.",
   },
   {
     title: "Visible feed status",
@@ -81,7 +82,7 @@ function LandingPage({
   const example = EXAMPLES[exampleMode];
 
   return (
-    <div className="min-h-screen bg-[#06090f] text-slate-100 selection:bg-emerald-500/30">
+    <div className="landing-page selection:bg-emerald-500/30">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-emerald-400 focus:px-4 focus:py-3 focus:text-slate-950"
@@ -89,115 +90,106 @@ function LandingPage({
         Skip to main content
       </a>
 
-      <header className="border-b border-white/10 bg-[#06090f]/95">
-        <nav aria-label="Primary navigation" className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8">
-          <Link href="/" aria-label="AllSafe AI Trading home" className="flex items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-400">
-            <span aria-hidden="true" className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 font-mono font-bold text-emerald-300">AS</span>
-            <span className="text-lg font-bold tracking-tight">AllSafe <span className="text-emerald-400">AI Trading</span></span>
+      <header className="as-topbar">
+        <div className="as-container as-topbar-inner">
+          <BrandLink />
+          <nav aria-label="Primary navigation" className="as-nav-group landing-navigation">
+            <Link href="/what-we-done" className="as-nav-link">How It Works</Link>
+            <a href="#dashboard-preview" className="as-nav-link">Preview</a>
+            <a href="#contribute" className="as-nav-link">Contribute</a>
+          </nav>
+          <Link href={session ? "/terminal" : "/login"} className="as-button as-button--quiet">
+            {session ? "Open Terminal" : "Customer Sign In"}
           </Link>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-3 text-sm">
-            <Link href="/what-we-done" className="rounded py-2 text-slate-300 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">How It Works</Link>
-            <a href="#dashboard-preview" className="rounded py-2 text-slate-300 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">Preview</a>
-            <a href="#contribute" className="rounded py-2 text-slate-300 hover:text-white focus-visible:outline-2 focus-visible:outline-emerald-400">Contribute</a>
-            <Link href={session ? "/terminal" : "/login"} className="rounded-lg bg-emerald-400 px-4 py-2.5 font-semibold text-slate-950 hover:bg-emerald-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-300">
-              {session ? "Open Terminal" : "Customer Sign In"}
-            </Link>
-          </div>
-        </nav>
+        </div>
       </header>
 
       <main id="main-content">
-        <section className="relative overflow-hidden border-b border-white/10">
-          <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(16,185,129,0.12),transparent_60%)]" />
-          <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+        <section className="landing-hero">
+          <div className="as-container landing-hero-inner">
             <div>
-              <p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">NIFTY 50 · BANK NIFTY</p>
-              <h1 className="mt-5 max-w-2xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl">A clearer view of the market. <span className="text-emerald-400">One confirmed candle at a time.</span></h1>
-              <p className="mt-6 max-w-xl text-base leading-relaxed text-slate-300">Review index candles, feed freshness, and rule-based analysis in one terminal. Every output remains under your supervision. No broker orders are placed.</p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Link href={session ? "/terminal" : "/login"} className="rounded-xl bg-emerald-400 px-6 py-3.5 text-sm font-bold text-slate-950 hover:bg-emerald-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-300">{session ? "Open Terminal" : "Customer Sign In"}</Link>
+              <p className="as-pill as-pill--green">NSE · 15-minute analysis</p>
+              <h1>A clearer view of <span>the market.</span></h1>
+              <p className="landing-hero-copy mt-5">Follow NIFTY 50 and BANK NIFTY with confirmed candles, clear Buy and Sell labels, and visible feed status.</p>
+              <div className="mt-7 flex flex-wrap gap-2.5">
                 <AccountRequestButton />
-                <Link href="/what-we-done" className="rounded-xl border border-white/20 px-6 py-3.5 text-sm font-semibold text-white hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-emerald-400">Explore how the analysis works</Link>
+                <Link href="/what-we-done" className="as-button as-button--quiet">Explore how the analysis works</Link>
               </div>
-              <p className="mt-5 text-xs leading-relaxed text-slate-500">Account requests are reviewed by an administrator. Market analysis is informational and can be wrong or delayed.</p>
+              <p className="mt-4 max-w-sm text-xs leading-relaxed text-slate-400">Account access starts after administrator approval.</p>
             </div>
-            <BullBearHeroArena />
+            <LandingChartPreview />
           </div>
 
-          <div className="mx-auto grid max-w-7xl gap-3 px-4 pb-10 sm:px-6 md:grid-cols-3 lg:px-8">
+          <div className="as-container grid gap-3 pb-7 md:grid-cols-3 sm:pb-9">
             <LiveIstClock initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
             <IndianMarketStatusBadge calendar={marketCalendar} initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
-            <div className="rounded-xl border border-white/10 bg-[#0b1018]/90 px-4 py-3">
+            <div className="as-panel px-4 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Account service</p>
               <p className={`mt-2 font-mono text-lg font-semibold ${backendOnline ? "text-emerald-300" : "text-amber-200"}`}>{backendOnline ? "Reachable" : "Currently unavailable"}</p>
-              <p className="mt-1 text-xs leading-relaxed text-slate-400">The session schedule above is a calendar estimate. Provider connectivity is shown separately in the terminal.</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">Sign-in and application service</p>
             </div>
           </div>
         </section>
 
-        <section id="features" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
-          <p className="font-mono text-xs uppercase tracking-[0.2em] text-emerald-300">A focused analysis workspace</p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight">Know what each result is based on.</h2>
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {FEATURES.map((feature, index) => (
-              <article key={feature.title} className="rounded-2xl border border-white/10 bg-[#0b1018] p-6">
-                <p aria-hidden="true" className="font-mono text-sm text-emerald-400">0{index + 1}</p>
-                <h3 className="mt-5 text-lg font-semibold">{feature.title}</h3>
+        <section id="features" className="as-container landing-section">
+          <h2>What you’ll see in the terminal</h2>
+          <div className="landing-features mt-6">
+            {FEATURES.map((feature) => (
+              <article key={feature.title} className="as-panel landing-feature">
+                <h3 className="text-lg font-semibold">{feature.title}</h3>
                 <p className="mt-3 text-sm leading-relaxed text-slate-400">{feature.text}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section id="dashboard-preview" className="border-y border-white/10 bg-[#080c14]">
-          <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
+        <section id="dashboard-preview" className="landing-example scroll-mt-6">
+          <div className="as-container landing-section">
             <div className="max-w-2xl">
-              <p className="font-mono text-xs uppercase tracking-[0.16em] text-emerald-300">ILLUSTRATIVE TERMINAL SIMULATION</p>
-              <h2 className="mt-3 text-3xl font-bold tracking-tight">Explore a decision, step by step.</h2>
-              <p className="mt-4 text-sm leading-relaxed text-slate-400">Select a static example to see how five checks contribute to the result. This preview contains no current market quote or trading instruction.</p>
-              <p className="mt-3 inline-block rounded border border-amber-500/25 bg-amber-500/10 px-3 py-1.5 font-mono text-[11px] text-amber-200">NOT LIVE MARKET PRICES</p>
+              <h2>How a signal is confirmed</h2>
+              <p className="mt-3 text-sm leading-relaxed text-slate-400">Choose a sample decision to see how its checks work.</p>
+              <p className="as-pill as-pill--amber mt-3" aria-label="ILLUSTRATIVE TERMINAL SIMULATION">NOT LIVE MARKET PRICES</p>
             </div>
-            <div className="mt-8 grid gap-6 rounded-2xl border border-white/10 bg-[#06090f] p-5 sm:p-8 lg:grid-cols-[0.7fr_1.3fr]">
+            <div className="as-panel mt-6 grid gap-6 p-5 sm:p-7 lg:grid-cols-[0.7fr_1.3fr]">
               <div>
                 <fieldset>
                   <legend className="text-sm font-semibold text-slate-300">Choose an example</legend>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {(["WAIT", "BUY", "SELL"] as const).map((mode) => (
-                      <button type="button" key={mode} aria-pressed={exampleMode === mode} onClick={() => setExampleMode(mode)} className={`min-h-11 rounded-lg border px-4 py-2 font-mono text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 ${exampleMode === mode ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-200" : "border-white/15 text-slate-400 hover:bg-white/5"}`}>{mode}</button>
+                      <button type="button" key={mode} aria-pressed={exampleMode === mode} onClick={() => setExampleMode(mode)} className={`as-button ${exampleMode === mode ? "as-button--primary" : "as-button--quiet"}`}>{mode}</button>
                     ))}
                   </div>
                 </fieldset>
                 <div aria-live="polite" aria-atomic="true" className="mt-6">
-                  <p className="text-xs uppercase tracking-wider text-slate-500">Example result</p>
+                  <p className="as-kicker">Example result</p>
                   <p className="mt-2 font-mono text-3xl font-bold text-white">{exampleMode}</p>
                   <p className="mt-3 text-sm leading-relaxed text-slate-400">{example.summary}</p>
                 </div>
               </div>
               <ol aria-label="Five example signal checks" className="space-y-2">
                 {CHECK_NAMES.map((name, index) => (
-                  <li key={name} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0b1018] p-4 text-sm">
-                    <span><span aria-hidden="true" className="mr-3 font-mono text-xs text-emerald-400">0{index + 1}</span>{name}</span>
+                  <li key={name} className="as-inset flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+                    <span>{name}</span>
                     <span className="font-mono text-xs text-slate-400">{example.checks[index]}</span>
                   </li>
                 ))}
               </ol>
             </div>
-            <p className="mt-5 text-xs leading-relaxed text-slate-500">The terminal evaluates actual available candle history. This example does not calculate account-specific position size, entry prices, stop losses, or profit targets.</p>
+            <p className="mt-5 text-xs leading-relaxed text-slate-400">The terminal evaluates actual available candle history. This example does not calculate account-specific position size, entry prices, stop losses, or profit targets.</p>
           </div>
         </section>
 
-        <section id="access" className="mx-auto grid max-w-7xl gap-8 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-2 lg:px-8">
+        <section id="access" className="as-container landing-section grid gap-8 lg:grid-cols-2">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-emerald-300">Your account, your workspace</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight">Access for customers and administrators.</h2>
+            <h2>Sign in to AllSafe</h2>
             <p className="mt-4 text-sm leading-relaxed text-slate-400">Customers sign in with an active account provided by the administrator and can access it from any network.</p>
             <p className="mt-3 text-sm leading-relaxed text-slate-400">Administrator tools remain available only to accounts assigned the admin role.</p>
             <div className="mt-6 flex flex-wrap gap-4">
-              <Link href="/login" className="rounded-lg border border-emerald-400/30 px-5 py-3 text-sm font-semibold text-emerald-300 hover:bg-emerald-400/5 focus-visible:outline-2 focus-visible:outline-emerald-400">Customer Sign In</Link>
-              <Link href="/admin/login" className="rounded-lg border border-white/15 px-5 py-3 text-sm font-semibold text-slate-300 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-emerald-400">Administrator Sign In</Link>
+              <Link href="/login" className="as-button as-button--primary">Customer Sign In</Link>
+              <Link href="/admin/login" className="as-button as-button--quiet">Administrator Sign In</Link>
             </div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-[#0b1018] p-6">
+          <div className="as-panel p-6">
             <h3 className="text-lg font-semibold">Before using the analysis</h3>
             <div className="mt-5 space-y-3 text-sm leading-relaxed text-slate-400">
               <p>Check the feed status and timestamp. A scheduled market session does not confirm that your data feed is connected.</p>
@@ -207,8 +199,8 @@ function LandingPage({
           </div>
         </section>
 
-        <section id="contribute" aria-labelledby="contribute-title" className="mx-auto max-w-7xl scroll-mt-6 px-4 pb-14 sm:px-6 sm:pb-20 lg:px-8">
-          <div className="flex flex-col gap-6 rounded-2xl border border-emerald-400/20 bg-[#0b1018] p-6 sm:p-8 md:flex-row md:items-center md:justify-between">
+        <section id="contribute" aria-labelledby="contribute-title" className="as-container scroll-mt-6 pb-12 sm:pb-16">
+          <div className="as-panel flex flex-col gap-6 p-6 sm:p-8 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 id="contribute-title" className="text-2xl font-bold tracking-tight">Buy me a beer</h2>
               <p id="contribution-amount" className="mt-2 max-w-lg text-sm leading-relaxed text-slate-300">
@@ -222,7 +214,7 @@ function LandingPage({
               <a
                 href={`upi://pay?${CONTRIBUTION_QUERY}`}
                 aria-describedby="contribution-amount"
-                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-400 px-6 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-300"
+                className="as-button as-button--primary"
               >
                 Pay now
               </a>
@@ -238,8 +230,8 @@ function LandingPage({
         </section>
       </main>
 
-      <footer className="border-t border-white/10 bg-[#05080d]">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-5 px-4 py-8 text-xs text-slate-500 sm:px-6 lg:px-8">
+      <footer className="as-footer">
+        <div className="as-container flex flex-wrap items-center justify-between gap-5 py-7 text-xs text-slate-400">
           <div>
             <p>AllSafe AI Trading · Supervised, read-only market analysis</p>
             <p className="mt-2 font-medium text-slate-300">Made by {CREATOR_NAME}</p>

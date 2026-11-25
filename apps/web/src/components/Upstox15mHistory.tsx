@@ -227,11 +227,11 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
   }
 
   return (
-    <section aria-labelledby="upstox-history-title" className="rounded-2xl border border-sky-400/15 bg-sky-400/[0.025] p-4 sm:p-6">
+    <section aria-labelledby="upstox-history-title" className="as-panel p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-widest text-sky-300">Upstox historical data</p>
-          <h2 id="upstox-history-title" className="mt-2 text-2xl font-bold text-white">15-minute candle charts</h2>
+          <p className="as-kicker">Upstox history</p>
+          <h2 id="upstox-history-title" className="as-section-title mt-1">15-minute candle charts</h2>
           <p className="mt-2 max-w-2xl text-sm text-slate-400">Review completed candles from earlier sessions. Scroll the chart horizontally to see older dates.</p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -240,7 +240,7 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
             <select
               value={days}
               onChange={(event) => chooseDays(Number(event.target.value))}
-              className="mt-1 block rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white focus:border-sky-300 focus:outline-none"
+              className="as-field mt-1"
             >
               {ranges.map((range) => <option key={range.days} value={range.days}>{range.label}</option>)}
             </select>
@@ -255,7 +255,7 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
               setRefreshKey((value) => value + 1);
             }}
             disabled={marketsState.NIFTY50.loading || marketsState.BANKNIFTY.loading}
-            className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50"
+            className="as-button as-button--quiet"
           >
             Refresh candles
           </button>
@@ -268,7 +268,7 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
         {markets.map(({ symbol, label }) => {
           const snapshot = marketsState[symbol];
           return (
-            <article key={symbol} aria-labelledby={`upstox-${symbol}-title`} className="rounded-xl border border-white/10 bg-slate-950/30 p-3 sm:p-4">
+            <article key={symbol} aria-labelledby={`upstox-${symbol}-title`} className="as-inset min-w-0 p-3 sm:p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 id={`upstox-${symbol}-title`} className="font-semibold text-white">
                   <Link href={`/chart/${symbol}?provider=upstox&days=${days}`} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">

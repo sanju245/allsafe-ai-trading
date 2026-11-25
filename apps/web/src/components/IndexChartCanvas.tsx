@@ -151,15 +151,23 @@ export default function IndexChartCanvas({ bars, marks, forming, realPrice, pric
   useEffect(() => {
     const candles = series.current;
     if (!candles || !showSignals || entry === undefined || stop === undefined || target === undefined) return;
+    const plot = host.current;
+    // The details panel lists all three values when the narrow price scale cannot fit them.
+    const showAxisLabels = () => (plot?.clientWidth ?? 600) >= 540;
     const prices = [
       { price: entry, title: "Entry", color: "#385ab4" },
       { price: stop, title: "Stop", color: "#ad3047" },
       { price: target, title: "Target", color: "#187255" },
     ];
     const lines = prices.map(p => candles.createPriceLine({
-      ...p, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true,
+      ...p, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: showAxisLabels(),
     }));
+    const observer = new ResizeObserver(() => {
+      for (const line of lines) line.applyOptions({ axisLabelVisible: showAxisLabels() });
+    });
+    if (plot) observer.observe(plot);
     return () => {
+      observer.disconnect();
       if (candles === series.current) for (const item of lines) candles.removePriceLine(item);
     };
   }, [entry, stop, target, showSignals]);

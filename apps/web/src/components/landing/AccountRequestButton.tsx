@@ -138,23 +138,23 @@ export default function AccountRequestButton() {
     }
   }
 
-  const inputClass = "mt-1 block w-full rounded-lg border border-white/15 bg-[#0b1118] px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400";
+  const inputClass = "as-field mt-1 w-full";
   return (
     <>
-      <button ref={trigger} type="button" onClick={() => { setSubmitted(false); setError(null); setOpen(true); }} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-300/10 px-6 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-300/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300">
+      <button ref={trigger} type="button" onClick={() => { setSubmitted(false); setError(null); setOpen(true); }} className="as-button as-button--primary">
         Create account with us
       </button>
       {open && (
         <dialog ref={dialog} aria-labelledby="account-request-title" onCancel={(event) => {
           event.preventDefault();
           if (!busy) close();
-        }} className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-2xl overflow-y-auto rounded-2xl border border-white/15 bg-[#101820] p-5 shadow-2xl backdrop:bg-black/80 sm:p-8">
+        }} className="as-panel fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-2xl overflow-y-auto p-5 shadow-2xl backdrop:bg-black/80 sm:p-8">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-widest text-emerald-300">Customer access</p>
+                <p className="as-kicker">Customer access</p>
                 <h2 id="account-request-title" className="mt-2 text-2xl font-semibold text-white">Request an account</h2>
               </div>
-              <button type="button" aria-label="Close request form" disabled={busy} onClick={close} className="rounded-lg border border-white/15 px-3 py-1.5 text-slate-300 hover:text-white disabled:opacity-50">✕</button>
+              <button type="button" aria-label="Close request form" disabled={busy} onClick={close} className="as-button as-button--quiet">✕</button>
             </div>
             {submitted ? (
               <div role="status" className="mt-6 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-5 text-sm leading-6 text-emerald-100">
@@ -195,13 +195,13 @@ export default function AccountRequestButton() {
                         <label className="min-w-40 flex-1 text-sm text-slate-300">Email verification code
                           <input className={inputClass} name="email-code" type="text" autoComplete="one-time-code" autoCapitalize="characters" spellCheck={false} required pattern="[A-Z2-7]{8}" maxLength={8} value={emailCode} onChange={(event) => setEmailCode(event.target.value.trim().toUpperCase())} />
                         </label>
-                        <button type="button" disabled={busy} onClick={() => void resendCode()} className="rounded-lg border border-white/15 px-3 py-2.5 text-sm text-emerald-300 hover:bg-white/5 disabled:opacity-50">Resend code</button>
+                        <button type="button" disabled={busy} onClick={() => void resendCode()} className="as-button as-button--quiet">Resend code</button>
                       </div>
                     </div>
                   )}
                   {error && <p role="alert" className="rounded-lg border border-rose-400/25 bg-rose-400/10 p-3 text-sm text-rose-100 sm:col-span-2">{error}</p>}
                   <p className="text-xs leading-5 text-slate-500 sm:col-span-2">We use these details to review your request and email a decision. See our <Link href="/privacy" className="text-emerald-300 underline">Privacy Policy</Link>.</p>
-                  <button type="submit" disabled={busy} className="rounded-lg bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60 sm:col-span-2">{busy ? "Please wait…" : awaitingCode ? "Verify email and submit request" : "Send email verification code"}</button>
+                  <button type="submit" disabled={busy} className="as-button as-button--primary sm:col-span-2">{busy ? "Please wait…" : awaitingCode ? "Verify email and submit request" : "Send email verification code"}</button>
                 </form>
               </>
             )}
