@@ -12,6 +12,7 @@ import asyncio
 import inspect
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from threading import Event, Thread
 from typing import Any, cast
 
 from fastapi import FastAPI, Request
@@ -22,8 +23,9 @@ from fastapi.responses import JSONResponse
 from app import __version__
 from app.config import get_settings
 from app.market_data.sessions import NSE_HOLIDAYS, VERIFIED_CALENDAR_YEARS
-from app.routers import account_requests, admin, auth, live, market_data, upstox_history
+from app.routers import account_requests, admin, auth, live, market_data, telegram, upstox_history
 from app.routers.live import build_runtimes_from_settings, set_live_runtimes
+from app.telegram_alerts import configured_bot, publish_signals
 
 settings = get_settings()
 
@@ -38,7 +40,8 @@ def _register_live_runtimes(application: FastAPI):
 
 def startup_live_runtime(application: FastAPI) -> None:
     """Initialize configured read-only Groww and Upstox market-data runtimes."""
-    for runtime in _register_live_runtimes(application).values():
+    runtimes = _register_live_runtimes(application)
+    for runtime in runtimes.values():
         if runtime.stream_manager.streaming_enabled:
             runtime.start(run_warmup=True)
         elif runtime.historical_provider is not None:
@@ -48,10 +51,23 @@ def startup_live_runtime(application: FastAPI) -> None:
                 runtime.stream_manager._record_error(
                     f"Historical warm-up warning: {exc}", permanent=False
                 )
+    config = get_settings()
+    if configured_bot(config):
+        stop = Event()
+        publisher = Thread(target=publish_signals, args=(config, runtimes, stop),
+                           name="telegram-alert-publisher", daemon=True)
+        application.state.telegram_publisher = (stop, publisher)
+        publisher.start()
 
 
 def shutdown_live_runtime(application: FastAPI) -> None:
     """Cleanly stop configured provider feed connections on application shutdown."""
+    publisher = getattr(application.state, "telegram_publisher", None)
+    if publisher is not None:
+        stop, thread = publisher
+        stop.set()
+        thread.join(timeout=12)
+        application.state.telegram_publisher = None
     runtimes = getattr(application.state, "live_runtimes", None)
     if isinstance(runtimes, dict):
         for runtime in runtimes.values():
@@ -119,6 +135,7 @@ app.include_router(market_data.router)
 app.include_router(upstox_history.router)
 app.include_router(live.router)
 app.include_router(auth.router)
+app.include_router(telegram.router)
 app.include_router(admin.router)
 app.include_router(account_requests.public_router)
 app.include_router(account_requests.admin_router)

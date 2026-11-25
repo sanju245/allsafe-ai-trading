@@ -1,0 +1,32 @@
+services:
+  - type: worker
+    name: allsafe-telegram-worker
+    runtime: python
+    region: singapore
+    plan: 0.5c-512mb
+    numInstances: 1
+    rootDir: apps/api
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.telegram_worker
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: APP_ENV
+        value: 'production'
+      - key: PUBLIC_SITE_URL
+        value: 'https://allsafe-ai-trading.vercel.app'
+      - key: TELEGRAM_ALERTS_ENABLED
+        value: 'true'
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: SUPABASE_URL
+        fromService:
+          name: allsafe-ai-api
+          type: web
+          envVarKey: SUPABASE_URL
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromService:
+          name: allsafe-ai-api
+          type: web
+          envVarKey: SUPABASE_SERVICE_ROLE_KEY

@@ -45,6 +45,19 @@ The public account form still uses the trusted `CF-Connecting-IP` value for requ
 
 The app restores sessions through a same-origin HttpOnly refresh cookie. **Account → Change password** requires the current password. After the change succeeds, AllSafe sends a confirmation to the account’s registered email using the configured Gmail sender. Sign-in also offers email recovery for active accounts. The API screens new passwords set through AllSafe against the padded Pwned Passwords database before updating an account.
 
+## Telegram chart alerts
+
+Signed-in customers can connect a private Telegram chat from **Account → Telegram alerts**. AllSafe sends the same neutral message for any new confirmed signal and links to the matching chart after login. Customers can disconnect in AllSafe or send `/stop` in Telegram.
+
+To enable the feature on an existing deployment:
+
+1. Create a bot in Telegram with [BotFather](https://t.me/BotFather). Apply the `telegram_signal_alerts` Supabase migration.
+2. On the API, set `TELEGRAM_ALERTS_ENABLED=true` and `TELEGRAM_BOT_USERNAME`. Set `MARKET_DATA_PROVIDER` to the existing enabled live feed that should drive alerts.
+3. Run one background worker from `apps/api` using the same Python build as the API and start it with `python -m app.telegram_worker`. Set `TELEGRAM_ALERTS_ENABLED=true`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and the HTTPS `PUBLIC_SITE_URL` on the worker. Keep the bot token in the worker's private environment. This bot uses long polling, so it needs a single poller and no webhook.
+4. Sign in with a pilot AllSafe account, connect Telegram, and tap **Start**. Check that a fresh signal generates a neutral message and that the link opens the chart after login. The API live feed and delivery worker both need to stay running during market hours.
+
+The API and chart share the confirmed-candle analysis. An outbox and separate worker handle Telegram delivery. Jobs expire two minutes after the candle closes. The worker retries explicit Telegram rate limits while the alert is current and avoids retrying ambiguous deliveries that may have reached Telegram.
+
 ## Trading safety
 
 The reviewed API is read-only and does not place broker orders. Local checks do not start production feeds. Keep both feed flags false for local tests. Do not add execution or autonomous-order behavior without a separately reviewed change and explicit approval.
