@@ -96,3 +96,19 @@ def test_profile_lookup_by_email_normalizes_email(monkeypatch):
         "rest/v1/profiles",
         {"select": supabase_admin.PROFILE_COLUMNS, "email": "eq.sanjay200123@gmail.com", "limit": "1"},
     )]
+
+
+def test_sign_in_history_requests_only_the_customers_ten_latest_entries(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        supabase_admin,
+        "_request_json",
+        lambda method, endpoint, **kwargs: calls.append((method, endpoint, kwargs["query"])) or [],
+    )
+    assert supabase_admin.list_customer_sign_ins("customer-id") == []
+    assert calls == [("GET", "rest/v1/customer_sign_ins", {
+        "select": "signed_in_at,ip_address",
+        "customer_id": "eq.customer-id",
+        "order": "signed_in_at.desc,session_id.desc",
+        "limit": "10",
+    })]

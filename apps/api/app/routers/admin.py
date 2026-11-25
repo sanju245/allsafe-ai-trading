@@ -6,7 +6,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, IPvAnyAddress, SecretStr, ValidationError, field_validator
 
 from app.security import AccountPrincipal, require_admin_account
 from app.password_policy import require_safe_password
@@ -16,6 +16,7 @@ from app.supabase_admin import (
     delete_auth_user,
     get_profile,
     list_customer_profiles,
+    list_customer_sign_ins,
     sanitized_admin_error,
     set_auth_user_ban,
     update_profile,
@@ -65,6 +66,15 @@ class UserResponse(BaseModel):
 
 class UserListResponse(BaseModel):
     users: list[UserResponse]
+
+
+class CustomerSignIn(BaseModel):
+    signed_in_at: AwareDatetime
+    ip_address: IPvAnyAddress | None
+
+
+class CustomerSignInHistory(BaseModel):
+    sign_ins: list[CustomerSignIn] = Field(max_length=10)
 
 
 def _user_response(profile: dict[str, object]) -> UserResponse:
@@ -143,6 +153,24 @@ def create_user(
             detail="Supabase returned an invalid user id.",
         ) from None
     return _user_response(profile)
+
+
+@router.get("/users/{user_id}/sign-ins", response_model=CustomerSignInHistory)
+def get_customer_sign_ins(
+    user_id: UUID,
+    response: Response,
+    _: AccountPrincipal = Depends(require_admin_account),
+) -> CustomerSignInHistory:
+    _customer_profile(user_id)
+    try:
+        rows = list_customer_sign_ins(str(user_id))
+        history = CustomerSignInHistory(sign_ins=rows)
+    except SupabaseAdminAPIError:
+        raise HTTPException(status_code=503, detail="Sign-in history is temporarily unavailable.") from None
+    except ValidationError:
+        raise HTTPException(status_code=502, detail="The account service returned invalid sign-in history.") from None
+    response.headers["Cache-Control"] = "private, no-store"
+    return history
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)

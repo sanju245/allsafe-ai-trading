@@ -1,14 +1,45 @@
 """Signed-in account route tests."""
 
+from uuid import uuid4
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app import security
 from app.main import app
 from app.routers import auth as auth_router
-from app.security import AccountPrincipal, require_active_account
+from app.security import AccountPrincipal, require_sign_in_account
+from tests.test_security import _hs256_token, _settings
 
 
 client = TestClient(app)
+
+
+@pytest.mark.parametrize(("method", "session_id", "capture"), [
+    ("password", "00000000-0000-4000-8000-000000000100", True),
+    ("password", "invalid-session-id", False),
+    ("recovery", "00000000-0000-4000-8000-000000000100", False),
+])
+def test_portal_profile_lookup_uses_the_signed_password_session(monkeypatch, method, session_id, capture):
+    user_id = str(uuid4())
+    profile = {"id": user_id, "email": "customer@example.test", "role": "user", "status": "active"}
+    captures = []
+    monkeypatch.setattr(security, "get_settings", _settings)
+    monkeypatch.setattr(security, "get_profile", lambda *args, **kwargs: profile)
+    monkeypatch.setattr(
+        security, "get_profile_for_sign_in",
+        lambda customer, session, ip, **kwargs: captures.append((customer, session, ip)) or profile,
+    )
+    token = _hs256_token(user_id=user_id, session_id=session_id, amr=[{"method": method}])
+    response = client.get("/api/v1/auth/me", headers={
+        "Authorization": f"Bearer {token}",
+        "CF-Connecting-IP": "2001:db8:0:0::12",
+        "X-Forwarded-For": "192.0.2.22",
+    })
+
+    assert response.status_code == 200
+    assert response.json() == profile
+    assert captures == ([(user_id, session_id, "2001:db8::12")] if capture else [])
 
 
 def test_current_admin_profile_has_only_account_access_fields():
@@ -19,17 +50,17 @@ def test_current_admin_profile_has_only_account_access_fields():
         status="active",
     )
     missing = object()
-    previous = app.dependency_overrides.get(require_active_account, missing)
-    app.dependency_overrides[require_active_account] = lambda: principal
+    previous = app.dependency_overrides.get(require_sign_in_account, missing)
+    app.dependency_overrides[require_sign_in_account] = lambda: principal
     try:
         response = client.get(
             "/api/v1/auth/me", headers={"Authorization": "Bearer test-token"}
         )
     finally:
         if previous is missing:
-            app.dependency_overrides.pop(require_active_account, None)
+            app.dependency_overrides.pop(require_sign_in_account, None)
         else:
-            app.dependency_overrides[require_active_account] = previous
+            app.dependency_overrides[require_sign_in_account] = previous
 
     assert response.status_code == 200
     assert response.json()["role"] == "admin"

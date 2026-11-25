@@ -97,6 +97,7 @@ function harness() {
       if (name === "next/link") return { default: "a" };
       if (name === "@/components/auth/AuthProvider") return { useAuth: () => auth };
       if (name === "@/components/admin/AccountRequestsPanel") return { default: "AccountRequestsPanel" };
+      if (name === "@/components/admin/CustomerSignInHistory") return { default: "CustomerSignInHistory" };
       throw new Error("Unexpected import: " + name);
     },
   };
@@ -182,6 +183,26 @@ test("A denied customer mutation clears the directory and rechecks the role", as
   assert.equal(app.calls.refreshProfile, 1);
   assert.equal(app.calls.signOut, 0);
   assert.ok(app.auth.session);
+});
+
+test("A denied sign-in history request closes the dialog and clears the customer directory", async () => {
+  const app = harness();
+  app.render();
+  await app.flushEffects();
+  app.render();
+  const actions = find(app.tree, (node) => typeof node.props?.onViewSignIns === "function");
+  actions.props.onViewSignIns(actions.props.user);
+  app.render();
+  const history = find(app.tree, (node) => node.type === "CustomerSignInHistory");
+  assert.ok(history);
+  assert.equal(history.props.email, "private-customer@example.com");
+  app.setStatus(403);
+  await assert.rejects(history.props.load(new AbortController().signal), /access was denied/);
+  app.render();
+
+  assert.equal(find(app.tree, (node) => node.type === "CustomerSignInHistory"), null);
+  assert.doesNotMatch(JSON.stringify(app.tree), /private-customer@example.com/);
+  assert.equal(app.calls.refreshProfile, 1);
 });
 
 for (const status of [200, 401, 403]) {

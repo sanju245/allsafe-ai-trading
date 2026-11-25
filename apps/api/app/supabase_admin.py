@@ -146,6 +146,20 @@ def get_profile(user_id: str, *, settings: Settings | None = None) -> dict[str, 
     return rows[0] if rows else None
 
 
+def get_profile_for_sign_in(
+    user_id: str, session_id: str, client_ip: str | None, *, settings: Settings | None = None,
+) -> dict[str, Any] | None:
+    rows = _request_json(
+        "POST",
+        "rest/v1/rpc/get_profile_for_sign_in",
+        payload={"p_user_id": user_id, "p_session_id": session_id, "p_client_ip": client_ip},
+        settings=settings,
+    )
+    if not isinstance(rows, list):
+        raise SupabaseAdminAPIError(502)
+    return rows[0] if rows else None
+
+
 def get_profile_by_email(email: str, *, settings: Settings | None = None) -> dict[str, Any] | None:
     """Return an existing profile for a normalized email, if one exists."""
     rows = _request_json(
@@ -168,6 +182,23 @@ def list_customer_profiles(*, settings: Settings | None = None) -> list[dict[str
             "role": "eq.user",
             "order": "created_at.desc",
             "limit": "1000",
+        },
+        settings=settings,
+    )
+    if not isinstance(rows, list):
+        raise SupabaseAdminAPIError(502)
+    return rows
+
+
+def list_customer_sign_ins(user_id: str, *, settings: Settings | None = None) -> list[dict[str, Any]]:
+    rows = _request_json(
+        "GET",
+        "rest/v1/customer_sign_ins",
+        query={
+            "select": "signed_in_at,ip_address",
+            "customer_id": f"eq.{user_id}",
+            "order": "signed_in_at.desc,session_id.desc",
+            "limit": "10",
         },
         settings=settings,
     )

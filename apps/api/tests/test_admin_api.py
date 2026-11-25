@@ -7,7 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.routers.admin as admin_router
+import app.security as security
 from app.main import app
+from tests.test_security import _hs256_token, _settings
 
 
 pytestmark = pytest.mark.usefixtures("admin_account_override")
@@ -22,6 +24,48 @@ def _profile(*, user_id, email="customer@example.com", status="active", role="us
         "status": status,
         "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat(),
     }
+
+
+def test_admin_sees_a_paused_customer_sign_in_history_without_internal_fields(monkeypatch):
+    user_id = uuid4()
+    calls = []
+    monkeypatch.setattr(admin_router, "get_profile", lambda account_id: _profile(user_id=account_id, status="paused"))
+    monkeypatch.setattr(admin_router, "list_customer_sign_ins", lambda account_id: calls.append(account_id) or [
+        {"signed_in_at": "2026-11-25T03:45:00Z", "ip_address": "2001:db8::12", "session_id": "not-public"},
+        {"signed_in_at": "2026-11-24T03:45:00Z", "ip_address": "192.0.2.15"},
+        {"signed_in_at": "2026-11-23T03:45:00Z", "ip_address": None},
+    ])
+    response = client.get(f"/api/v1/admin/users/{user_id}/sign-ins")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert calls == [str(user_id)]
+    assert response.json()["sign_ins"] == [
+        {"signed_in_at": "2026-11-25T03:45:00Z", "ip_address": "2001:db8::12"},
+        {"signed_in_at": "2026-11-24T03:45:00Z", "ip_address": "192.0.2.15"},
+        {"signed_in_at": "2026-11-23T03:45:00Z", "ip_address": None},
+    ]
+
+
+@pytest.mark.parametrize(("role", "expected"), [(None, 404), ("admin", 409)])
+def test_sign_in_history_is_only_for_existing_customers(monkeypatch, role, expected):
+    user_id = uuid4()
+    monkeypatch.setattr(admin_router, "get_profile", lambda _: _profile(user_id=user_id, role=role) if role else None)
+    monkeypatch.setattr(admin_router, "list_customer_sign_ins", lambda _: pytest.fail("History lookup ran"))
+    assert client.get(f"/api/v1/admin/users/{user_id}/sign-ins").status_code == expected
+
+
+@pytest.mark.parametrize(("role", "status", "expected"), [
+    (None, None, 401), ("user", "active", 403), ("admin", "paused", 403),
+])
+def test_sign_in_history_requires_a_current_active_admin(monkeypatch, role, status, expected):
+    monkeypatch.delitem(app.dependency_overrides, security.require_admin_account)
+    monkeypatch.setattr(security, "get_settings", _settings)
+    monkeypatch.setattr(security, "get_profile", lambda user_id, **_: _profile(user_id=user_id, role=role, status=status))
+    monkeypatch.setattr(admin_router, "list_customer_sign_ins", lambda _: pytest.fail("History lookup ran"))
+    headers = {"Authorization": f"Bearer {_hs256_token()}"} if role else {}
+    response = client.get(f"/api/v1/admin/users/{uuid4()}/sign-ins", headers=headers)
+    assert response.status_code == expected
 
 
 def test_admin_creates_email_login_without_ip_requirement(monkeypatch):

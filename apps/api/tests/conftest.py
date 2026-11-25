@@ -3,11 +3,11 @@
 import pytest
 
 from app.main import app
-from app.security import AccountPrincipal, require_active_account, require_admin_account
+from app.security import AccountPrincipal, require_active_account, require_admin_account, require_sign_in_account
 
 
 @pytest.fixture
-def active_account_override():
+def active_account_override(monkeypatch):
     """Model an active customer without depending on Supabase."""
     principal = AccountPrincipal(
         id="00000000-0000-4000-8000-000000000001",
@@ -15,16 +15,9 @@ def active_account_override():
         role="user",
         status="active",
     )
-    missing = object()
-    previous = app.dependency_overrides.get(require_active_account, missing)
-    app.dependency_overrides[require_active_account] = lambda: principal
-    try:
-        yield principal
-    finally:
-        if previous is missing:
-            app.dependency_overrides.pop(require_active_account, None)
-        else:
-            app.dependency_overrides[require_active_account] = previous
+    monkeypatch.setitem(app.dependency_overrides, require_active_account, lambda: principal)
+    monkeypatch.setitem(app.dependency_overrides, require_sign_in_account, lambda: principal)
+    return principal
 
 
 @pytest.fixture

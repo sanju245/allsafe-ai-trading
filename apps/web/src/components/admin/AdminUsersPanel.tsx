@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AccountRequestsPanel from "@/components/admin/AccountRequestsPanel";
+import CustomerSignInHistory, { type SignInEntry } from "@/components/admin/CustomerSignInHistory";
 
 type UserStatus = "active" | "paused" | string;
 type UserRole = "admin" | "customer" | "user" | string;
@@ -62,7 +63,7 @@ async function responseMessage(response: Response): Promise<string> {
 async function adminRequest<T>(
   accessToken: string,
   path: string,
-  options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown } = {},
+  options: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
   const hasBody = options.body !== undefined;
   let response: Response;
@@ -77,7 +78,7 @@ async function adminRequest<T>(
       ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
       cache: "no-store",
       credentials: "omit",
-      signal: AbortSignal.timeout(20000),
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000),
     });
   } catch {
     throw new Error(
@@ -106,9 +107,10 @@ type UserActionsProps = {
   busy: boolean;
   onStatusChange: (user: AdminUser) => void;
   onDelete: (user: AdminUser) => void;
+  onViewSignIns: (user: AdminUser) => void;
 };
 
-function UserActions({ user, busy, onStatusChange, onDelete }: UserActionsProps) {
+function UserActions({ user, busy, onStatusChange, onDelete, onViewSignIns }: UserActionsProps) {
   const customer = isCustomer(user);
 
   if (!customer) {
@@ -117,6 +119,14 @@ function UserActions({ user, busy, onStatusChange, onDelete }: UserActionsProps)
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => onViewSignIns(user)}
+        aria-haspopup="dialog"
+        className="rounded-lg border border-white/15 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-white/5"
+      >
+        Sign-in history
+      </button>
       {user.status === "active" || user.status === "paused" ? (
         <button
           type="button"
@@ -158,6 +168,7 @@ export default function AdminUsersPanel() {
   const [password, setPassword] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [historyTarget, setHistoryTarget] = useState<{ userId: string; token: string } | null>(null);
   const [deniedToken, setDeniedToken] = useState<string | null>(null);
   const deniedTokenRef = useRef<string | null>(null);
   const deleteDialogRef = useRef<HTMLElement | null>(null);
@@ -174,7 +185,7 @@ export default function AdminUsersPanel() {
       currentTokenRef.current = undefined;
       requestGenerationRef.current += 1;
     };
-  }, [accessToken]);
+  }, [accessToken, isAdmin]);
 
   const isCurrentRequest = useCallback((generation: number) => (
     Boolean(accessToken) && currentTokenRef.current === accessToken && requestGenerationRef.current === generation
@@ -197,6 +208,7 @@ export default function AdminUsersPanel() {
       setPassword("");
       setDeleteTarget(null);
       setDeleteConfirmation("");
+      setHistoryTarget(null);
       try {
         if (cause.status === 401) await signOut();
         else await refreshProfile();
@@ -208,6 +220,26 @@ export default function AdminUsersPanel() {
       setError(cause instanceof Error ? cause.message : fallback);
     }
   }, [accessToken, isCurrentRequest, refreshProfile, signOut]);
+
+  const loadSignIns = useCallback(async (signal: AbortSignal): Promise<SignInEntry[]> => {
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || historyTarget?.token !== accessToken || deniedTokenRef.current === accessToken) {
+      throw new Error("Administrator access is required.");
+    }
+    try {
+      const reply = await adminRequest<{ sign_ins: SignInEntry[] }>(
+        accessToken,
+        `/api/v1/admin/users/${encodeURIComponent(historyTarget.userId)}/sign-ins`,
+        { signal },
+      );
+      return reply.sign_ins;
+    } catch (cause) {
+      if (!signal.aborted && cause instanceof AdminRequestError && (cause.status === 401 || cause.status === 403)) {
+        await handleAdminFailure(cause, "Could not load sign-in history.", generation);
+      }
+      throw cause;
+    }
+  }, [accessToken, isAdmin, historyTarget, handleAdminFailure]);
 
   useEffect(() => {
     const targetId = deleteTarget?.id;
@@ -293,6 +325,7 @@ export default function AdminUsersPanel() {
       setPassword("");
       setDeleteTarget(null);
       setDeleteConfirmation("");
+      setHistoryTarget(null);
       if (accessToken && isAdmin) {
         void refreshUsers();
       } else {
@@ -437,6 +470,9 @@ export default function AdminUsersPanel() {
       user={user}
       busy={busyUserId !== null}
       onStatusChange={changeStatus}
+      onViewSignIns={(target) => {
+        if (accessToken) setHistoryTarget({ userId: target.id, token: accessToken });
+      }}
       onDelete={(target) => {
         clearNotices();
         deleteTriggerRef.current = document.activeElement instanceof HTMLElement
@@ -447,6 +483,10 @@ export default function AdminUsersPanel() {
       }}
     />
   );
+
+  const historyCustomer = historyTarget && historyTarget.token === accessToken && directoryToken === accessToken
+    ? users.find((user) => user.id === historyTarget.userId)
+    : undefined;
 
   return (
     <div className="pb-12 pt-8">
@@ -580,6 +620,15 @@ export default function AdminUsersPanel() {
           )}
         </div>
       </section>
+
+      {historyCustomer && (
+        <CustomerSignInHistory
+          key={historyCustomer.id}
+          email={historyCustomer.email}
+          load={loadSignIns}
+          onClose={() => setHistoryTarget(null)}
+        />
+      )}
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDeleteDialog(); }}>

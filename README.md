@@ -37,6 +37,8 @@ For Gmail setup, enable the Gmail API in a Google Cloud project and create a Des
 
 The API verifies the Supabase token, profile, role, and active account status. Customers can sign in from any network. Legacy `profiles.allowed_ip` and request IP values remain in the database for historical reference and auditing; account authorization does not read or enforce them.
 
+In **Admin → Customers → Sign-in history**, an active administrator can review up to ten successful portal sign-ins per customer, newest first in IST. The API links the new Supabase password session to the client IP observed by Render on the browser's account verification request. The history survives sign-out, keeps at most ten entries, and is deleted with the customer profile. Apply the sign-in history migrations before deploying the API.
+
 The public account form still uses the trusted `CF-Connecting-IP` value for request rate limiting and audit metadata. This check is independent of customer authentication. Source tests cover missing, malformed, comma-separated, and duplicate proxy headers.
 
 The app restores sessions through a same-origin HttpOnly refresh cookie. Changing a password from the account page requires the current password. Sign-in also offers email recovery for active accounts. The API screens new passwords set through AllSafe against the padded Pwned Passwords database before updating an account.

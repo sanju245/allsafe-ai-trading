@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
 import math
 import os
 import re
@@ -25,7 +26,7 @@ from fastapi import Header, HTTPException, Request
 from pydantic import SecretStr
 
 from app.config import get_settings
-from app.supabase_admin import SupabaseAdminAPIError, get_profile
+from app.supabase_admin import SupabaseAdminAPIError, get_profile, get_profile_for_sign_in
 
 _BASE64URL = re.compile(r"^[A-Za-z0-9_-]+$")
 _TOKEN_MAX_LENGTH = 8192
@@ -36,6 +37,7 @@ _JWKS_MAX_KEYS = 50
 _ASYMMETRIC_ALGORITHMS = {"ES256", "RS256"}
 _JWKS_CACHE: dict[str, tuple[float, list[dict[str, object]]]] = {}
 _JWKS_LOCK = threading.Lock()
+_LOGGER = logging.getLogger(__name__)
 
 
 class _RejectJwksRedirects(HTTPRedirectHandler):
@@ -85,14 +87,39 @@ def require_active_account(
     authorization: str | None = Header(default=None),
 ) -> AccountPrincipal:
     """Verify the sign-in token and current account status, without network pinning."""
+    return _require_account(authorization)
+
+
+def require_sign_in_account(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> AccountPrincipal:
+    """Verify the current profile and record a customer's password-authenticated session."""
+    try:
+        client_ip = request_client_ip(request)
+    except HTTPException:
+        client_ip = None
+    return _require_account(authorization, capture_sign_in=True, client_ip=client_ip)
+
+
+def _require_account(
+    authorization: str | None, *, capture_sign_in: bool = False, client_ip: str | None = None,
+) -> AccountPrincipal:
     settings = get_settings()
-    user_id = verify_supabase_access_token(
+    user_id, password_session_id = _verified_supabase_identity(
         authorization,
         supabase_url=settings.supabase_url,
         jwt_secret=settings.supabase_jwt_secret,
     )
     try:
-        profile = get_profile(user_id, settings=settings)
+        if capture_sign_in and password_session_id is not None:
+            try:
+                profile = get_profile_for_sign_in(user_id, password_session_id, client_ip, settings=settings)
+            except SupabaseAdminAPIError:
+                _LOGGER.warning("Customer sign-in history could not be checked. Trying the account lookup directly.")
+                profile = get_profile(user_id, settings=settings)
+        else:
+            profile = get_profile(user_id, settings=settings)
     except SupabaseAdminAPIError:
         raise HTTPException(
             status_code=503,
@@ -178,6 +205,20 @@ def verify_supabase_access_token(
     RS256 tokens use the project's public JWKS endpoint. Every algorithm is pinned;
     key selection, issuer, audience, and required claims are validated.
     """
+    user_id, _ = _verified_supabase_identity(
+        authorization, supabase_url=supabase_url, jwt_secret=jwt_secret,
+        require_recent_email=require_recent_email,
+    )
+    return user_id
+
+
+def _verified_supabase_identity(
+    authorization: str | None,
+    *,
+    supabase_url: str | None,
+    jwt_secret: SecretStr | None,
+    require_recent_email: bool = False,
+) -> tuple[str, str | None]:
     if not supabase_url:
         raise HTTPException(
             status_code=503,
@@ -272,8 +313,8 @@ def verify_supabase_access_token(
     if claims.get("role") != "authenticated" or not isinstance(subject, str):
         _invalid_token()
 
+    methods = claims.get("amr")
     if require_recent_email:
-        methods = claims.get("amr")
         now = time.time()
         if not isinstance(methods, list) or not any(
             isinstance(method, dict) and method.get("method") in ("otp", "invite", "recovery")
@@ -284,9 +325,19 @@ def verify_supabase_access_token(
             raise HTTPException(status_code=401, detail="This setup link has expired. Request a new one.")
 
     try:
-        return str(UUID(subject))
+        user_id = str(UUID(subject))
     except ValueError:
         _invalid_token()
+
+    session = claims.get("session_id")
+    if isinstance(session, str) and isinstance(methods, list) and any(
+        isinstance(method, dict) and method.get("method") == "password" for method in methods
+    ):
+        try:
+            return user_id, str(UUID(session))
+        except ValueError:
+            pass
+    return user_id, None
 
 
 def _validated_supabase_url(value: str) -> str:

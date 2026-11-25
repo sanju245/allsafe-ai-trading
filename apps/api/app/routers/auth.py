@@ -14,7 +14,7 @@ from app.email_notifications import (
 from app.password_policy import require_safe_password
 from app.security import (
     AccountPrincipal, SlidingWindowRateLimiter, request_client_ip, require_active_account,
-    verify_supabase_access_token,
+    require_sign_in_account, verify_supabase_access_token,
 )
 from app.supabase_admin import (
     SupabaseAdminAPIError, check_current_password, generate_account_link, get_profile_by_email,
@@ -75,7 +75,7 @@ class RecoveryRequest(BaseModel):
 @router.get("/me", response_model=CurrentAccountResponse)
 def get_current_account(
     response: Response,
-    account: AccountPrincipal = Depends(require_active_account),
+    account: AccountPrincipal = Depends(require_sign_in_account),
 ) -> CurrentAccountResponse:
     response.headers["Cache-Control"] = "no-store"
     return CurrentAccountResponse(
