@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import CustomerWarnings from "@/components/auth/CustomerWarnings";
 
 export default function DashboardAccessGate({
   children,
@@ -13,7 +14,7 @@ export default function DashboardAccessGate({
   signInDestination?: string;
 }) {
   const router = useRouter();
-  const { session, profile, loading, signOut } = useAuth();
+  const { session, profile, loading, signOut, pauseMessage } = useAuth();
 
   async function leaveProject() {
     await signOut();
@@ -35,10 +36,14 @@ export default function DashboardAccessGate({
       <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-4 py-10 sm:px-6">
         <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-6 sm:p-8">
           <p className="text-xs font-medium uppercase tracking-widest text-emerald-400">Customer access</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Sign in to use AllSafe</h1>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
-            Your administrator creates your account. Sign in with your email and password from any network.
-          </p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">{pauseMessage ? "Account paused" : "Sign in to use AllSafe"}</h1>
+          {pauseMessage ? (
+            <p role="alert" className="mt-3 max-w-xl whitespace-pre-wrap break-words text-sm leading-relaxed text-amber-100">{pauseMessage}</p>
+          ) : (
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
+              Your administrator creates your account. Sign in with your email and password from any network.
+            </p>
+          )}
           <Link href={`/login?${new URLSearchParams({ next: signInDestination })}`} className="mt-5 inline-flex rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300">
             Go to sign in
           </Link>
@@ -64,6 +69,7 @@ export default function DashboardAccessGate({
           </button>
         </div>
       </nav>
+      <div className="mx-auto max-w-5xl px-4 sm:px-6"><CustomerWarnings /></div>
       {children}
     </>
   );

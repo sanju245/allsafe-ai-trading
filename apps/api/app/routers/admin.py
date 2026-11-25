@@ -2,11 +2,11 @@
 
 import re
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, IPvAnyAddress, SecretStr, ValidationError, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, IPvAnyAddress, SecretStr, StringConstraints, ValidationError, field_validator
 
 from app.security import AccountPrincipal, require_admin_account
 from app.password_policy import require_safe_password
@@ -18,12 +18,14 @@ from app.supabase_admin import (
     list_customer_profiles,
     list_customer_sign_ins,
     sanitized_admin_error,
+    send_customer_warning,
     set_auth_user_ban,
     update_profile,
 )
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 AccountStatus = Literal["active", "paused"]
+NoticeText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
@@ -53,7 +55,20 @@ class CreateUserRequest(BaseModel):
 class UpdateUserRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: AccountStatus | None = None
+    status: AccountStatus
+    pause_reason: NoticeText | None = None
+
+
+class SendWarningRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    warning_id: UUID
+    target_id: UUID | None
+    message: NoticeText
+
+
+class SendWarningResponse(BaseModel):
+    recipient_count: int
 
 
 class UserResponse(BaseModel):
@@ -62,6 +77,7 @@ class UserResponse(BaseModel):
     role: Literal["user", "admin"]
     status: AccountStatus
     created_at: datetime
+    pause_reason: str | None = None
 
 
 class UserListResponse(BaseModel):
@@ -173,30 +189,42 @@ def get_customer_sign_ins(
     return history
 
 
+@router.post("/warnings", response_model=SendWarningResponse)
+def post_customer_warning(
+    body: SendWarningRequest,
+    _: AccountPrincipal = Depends(require_admin_account),
+) -> SendWarningResponse:
+    try:
+        count = send_customer_warning(
+            str(body.warning_id), str(body.target_id) if body.target_id else None, body.message,
+        )
+    except SupabaseAdminAPIError:
+        raise HTTPException(status_code=503, detail="Could not confirm that the warning was sent. Try again.") from None
+    if count == -1:
+        raise HTTPException(status_code=409, detail="This send was already used for a different warning.")
+    if count == 0:
+        raise HTTPException(status_code=404, detail="There are no matching customer accounts.")
+    return SendWarningResponse(recipient_count=count)
+
+
 @router.patch("/users/{user_id}", response_model=UserResponse)
 def update_user(
     user_id: UUID,
     body: UpdateUserRequest,
     _: AccountPrincipal = Depends(require_admin_account),
 ) -> UserResponse:
-    changes = body.model_dump(exclude_unset=True)
-    if not changes:
-        raise HTTPException(status_code=422, detail="Set a new account status.")
-    if "status" in changes and changes["status"] is None:
-        raise HTTPException(status_code=422, detail="status cannot be null.")
-
+    if body.status == "paused" and not body.pause_reason:
+        raise HTTPException(status_code=422, detail="Enter a reason for pausing this account.")
+    if body.status == "active" and body.pause_reason is not None:
+        raise HTTPException(status_code=422, detail="A pause reason is only needed when pausing an account.")
     profile = _customer_profile(user_id)
-    status_change = changes.get("status")
     try:
-        if status_change == "active":
-            # Remove the Auth ban first; the DB status remains paused if the next call fails.
+        if body.status == "active" and profile.get("status") == "paused" and profile.get("pause_reason") is None:
+            # Legacy pauses also set an Auth ban. New pauses gate the app after identity verification.
             set_auth_user_ban(str(user_id), paused=False)
-        updated = update_profile(str(user_id), changes)
+        updated = update_profile(str(user_id), {"status": body.status, "pause_reason": body.pause_reason})
         if updated is None:
             raise HTTPException(status_code=404, detail="The account was not found.")
-        if status_change == "paused":
-            # The profile is already paused, so existing JWTs fail closed even if Auth fails.
-            set_auth_user_ban(str(user_id), paused=True)
     except SupabaseAdminAPIError as exc:
         raise sanitized_admin_error(exc) from None
     return _user_response(updated)

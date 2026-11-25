@@ -238,14 +238,16 @@ test("reload restores the browser session and verifies the current account", asy
 });
 
 test("reload rejects a restored cookie when the account is paused", async (t) => {
+  const reason = "Please contact us about recent account activity.";
   const tab = authHarness(async (url, options) => {
     if (url === "/api/auth/session" && options.method === "POST") return json(authReply);
     if (url === "/api/auth/session" && options.method === "DELETE") return new Response(null, { status: 204 });
-    return json({ detail: "Account paused" }, 403);
+    return json({ detail: { code: "account_paused", pause_reason: reason } }, 403);
   });
   tab.mount(t);
   await waitForAuth(() => !tab.context().loading);
   assert.equal(tab.context().session, null);
+  assert.ok(tab.context().pauseMessage.includes(reason));
   assert.ok(tab.calls.some(({options}) => options.method === "DELETE"));
 });
 

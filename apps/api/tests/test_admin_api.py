@@ -147,15 +147,54 @@ def test_admin_can_pause_and_resume_customer(monkeypatch):
         lambda account_id, *, paused: calls.append((account_id, paused)),
     )
 
-    paused = client.patch(f"/api/v1/admin/users/{user_id}", json={"status": "paused"})
+    paused = client.patch(f"/api/v1/admin/users/{user_id}", json={"status": "paused", "pause_reason": "  Review of account activity.  "})
     current.update(paused.json())
     resumed = client.patch(f"/api/v1/admin/users/{user_id}", json={"status": "active"})
 
     assert paused.status_code == 200
     assert paused.json()["status"] == "paused"
+    assert paused.json()["pause_reason"] == "Review of account activity."
     assert resumed.status_code == 200
     assert resumed.json()["status"] == "active"
-    assert calls == [(str(user_id), True), (str(user_id), False)]
+    assert resumed.json()["pause_reason"] is None
+    assert calls == []
+
+
+@pytest.mark.parametrize("reason", [None, "   ", "x" * 1001])
+def test_pausing_requires_a_reason_before_writing(monkeypatch, reason):
+    monkeypatch.setattr(admin_router, "update_profile", lambda *_: pytest.fail("Status was written"))
+    response = client.patch(f"/api/v1/admin/users/{uuid4()}", json={"status": "paused", "pause_reason": reason})
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("broadcast", [False, True])
+def test_admin_sends_warning_with_explicit_audience(monkeypatch, broadcast):
+    warning_id = uuid4()
+    target_id = None if broadcast else str(uuid4())
+    count = 3 if broadcast else 1
+    calls = []
+    monkeypatch.setattr(admin_router, "send_customer_warning", lambda *args: calls.append(args) or count)
+    response = client.post("/api/v1/admin/warnings", json={
+        "warning_id": str(warning_id), "target_id": target_id, "message": "  Review account access.  ",
+    })
+    assert response.status_code == 200
+    assert response.json() == {"recipient_count": count}
+    assert calls == [(str(warning_id), target_id, "Review account access.")]
+    assert client.post("/api/v1/admin/warnings", json={
+        "warning_id": str(warning_id), "message": "Omitted target must not send a broadcast",
+    }).status_code == 422
+    assert len(calls) == 1
+
+
+def test_signed_in_customer_cannot_issue_warnings(monkeypatch):
+    monkeypatch.delitem(app.dependency_overrides, security.require_admin_account)
+    monkeypatch.setattr(security, "get_settings", _settings)
+    monkeypatch.setattr(security, "get_profile", lambda user_id, **_: _profile(user_id=user_id))
+    monkeypatch.setattr(admin_router, "send_customer_warning", lambda *_: pytest.fail("Warning was sent"))
+    response = client.post("/api/v1/admin/warnings", headers={"Authorization": f"Bearer {_hs256_token()}"}, json={
+        "warning_id": str(uuid4()), "target_id": None, "message": "Customer cannot send this.",
+    })
+    assert response.status_code == 403
 
 
 def test_admin_cannot_edit_or_delete_another_admin(monkeypatch):
@@ -168,7 +207,7 @@ def test_admin_cannot_edit_or_delete_another_admin(monkeypatch):
     deleted = []
     monkeypatch.setattr(admin_router, "delete_auth_user", lambda account_id: deleted.append(account_id))
 
-    update = client.patch(f"/api/v1/admin/users/{user_id}", json={"status": "paused"})
+    update = client.patch(f"/api/v1/admin/users/{user_id}", json={"status": "paused", "pause_reason": "Fixture"})
     delete = client.delete(f"/api/v1/admin/users/{user_id}")
 
     assert update.status_code == 409

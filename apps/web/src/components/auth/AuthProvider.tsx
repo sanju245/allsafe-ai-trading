@@ -24,6 +24,7 @@ type AuthContextValue = {
   session: AuthSession | null;
   profile: AuthProfile | null;
   loading: boolean;
+  pauseMessage: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   changePassword: (currentPassword: string, password: string) => Promise<void>;
@@ -46,6 +47,7 @@ class ProfileCheckError extends Error {
     message: string,
     readonly status: number,
     readonly shouldSignOut: boolean,
+    readonly pauseMessage: string | null = null,
   ) {
     super(message);
     this.name = "ProfileCheckError";
@@ -77,7 +79,20 @@ function errorText(body: unknown, fallback: string): string {
   return fallback;
 }
 
+const pausedLoginMessage = "This login is paused. Contact the administrator to restore access.";
+
+function accountPauseMessage(body: unknown): string | null {
+  const detail = asRecord(asRecord(body)?.detail);
+  if (detail?.code !== "account_paused") return null;
+  const reason = detail.pause_reason;
+  return typeof reason === "string" && reason.trim()
+    ? `Your account is paused.\n\nReason from your administrator\n${reason}`
+    : pausedLoginMessage;
+}
+
 function accessDeniedMessage(body: unknown, status: number): string {
+  const pause = status === 403 ? accountPauseMessage(body) : null;
+  if (pause) return pause;
   const record = asRecord(body);
   const detail = asRecord(record?.detail);
   const code = [record?.code, record?.reason, record?.error, detail?.code, detail?.reason]
@@ -89,11 +104,11 @@ function accessDeniedMessage(body: unknown, status: number): string {
     .join(" ")
     .toLowerCase();
   if (/account_paused|disabled|account_suspended/.test(code)) {
-    return "This login is paused. Contact the administrator to restore access.";
+    return pausedLoginMessage;
   }
   if (status >= 500) return "Account verification is temporarily unavailable. Try again soon.";
   if (/paused|disabled|account_suspended/.test(`${code} ${text}`)) {
-    return "This login is paused. Contact the administrator to restore access.";
+    return pausedLoginMessage;
   }
   if (/inactive|not active/.test(`${code} ${text}`)) {
     return "This account is not active. Contact the administrator for help.";
@@ -149,6 +164,7 @@ async function fetchProfile(accessToken: string, expectedUserId: string): Promis
       accessDeniedMessage(body, response.status),
       response.status,
       response.status === 401 || response.status === 403,
+      response.status === 403 ? accountPauseMessage(body) : null,
     );
   }
 
@@ -162,9 +178,10 @@ async function fetchProfile(accessToken: string, expectedUserId: string): Promis
   }
   if (profile.status === "paused") {
     throw new ProfileCheckError(
-      "This login is paused. Contact the administrator to restore access.",
+      pausedLoginMessage,
       403,
       true,
+      pausedLoginMessage,
     );
   }
   return profile;
@@ -233,15 +250,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SessionReply | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pauseMessage, setPauseMessage] = useState<string | null>(null);
   const authGeneration = useRef(0);
   const active = useRef<SessionReply | null>(null);
   const channel = useRef<BroadcastChannel | null>(null);
 
-  const clearSession = useCallback(() => {
+  const clearSession = useCallback((pause: string | null = null) => {
     ++authGeneration.current;
     active.current = null;
     setSession(null);
     setProfile(null);
+    setPauseMessage(pause);
     setLoading(false);
   }, []);
 
@@ -249,13 +268,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     active.current = next;
     setSession(next);
     setProfile(nextProfile);
+    setPauseMessage(null);
   }, []);
 
-  const endSession = useCallback(async () => {
+  const endSession = useCallback(async (pause: string | null = null) => {
     const current = active.current;
     saveSignedOut(true);
     channel.current?.postMessage("ended");
-    clearSession();
+    clearSession(pause);
     await sessionRequest("DELETE", current ? { access_token: current.access_token } : undefined).catch(() => {});
   }, [clearSession]);
 
@@ -279,7 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (cause) {
         if (!disposed && generation === authGeneration.current && cause instanceof ProfileCheckError && cause.shouldSignOut) {
-          void endSession();
+          void endSession(cause.pauseMessage);
         }
       } finally {
         if (!disposed && generation === authGeneration.current) setLoading(false);
@@ -313,7 +333,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (disposed || generation !== authGeneration.current) return;
         if ((cause instanceof SessionRequestError && cause.status === 401) ||
             (cause instanceof ProfileCheckError && cause.shouldSignOut)) {
-          void endSession();
+          void endSession(cause instanceof ProfileCheckError ? cause.pauseMessage : null);
           return;
         }
         timer = window.setTimeout(refresh, 15000);
@@ -326,6 +346,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(async (email: string, password: string) => {
     const generation = ++authGeneration.current;
     setLoading(true);
+    setPauseMessage(null);
     try {
       const next = await readSession("PUT", { email: email.trim(), password });
       try {
@@ -337,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (cause) {
         if (generation === authGeneration.current) {
           void sessionRequest("DELETE", { access_token: next.access_token }).catch(() => {});
-          clearSession();
+          clearSession(cause instanceof ProfileCheckError ? cause.pauseMessage : null);
         }
         throw cause;
       }
@@ -358,8 +379,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signal: AbortSignal.timeout(24000),
     });
     if (!response.ok) {
-      if (active.current === session && [401, 403].includes(response.status)) void endSession();
-      throw new Error(accessDeniedMessage(await readJson(response), response.status));
+      const body = await readJson(response);
+      if (active.current === session && [401, 403].includes(response.status)) {
+        void endSession(response.status === 403 ? accountPauseMessage(body) : null);
+      }
+      throw new Error(accessDeniedMessage(body, response.status));
     }
   }, [endSession, session]);
 
@@ -370,14 +394,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const next = await fetchProfile(session.access_token, session.user.id);
       if (generation === authGeneration.current) setProfile(next);
     } catch (cause) {
-      if (generation === authGeneration.current && cause instanceof ProfileCheckError && cause.shouldSignOut) void endSession();
+      if (generation === authGeneration.current && cause instanceof ProfileCheckError && cause.shouldSignOut) {
+        void endSession(cause.pauseMessage);
+      }
       throw cause;
     }
   }, [endSession, session]);
 
   const value = useMemo<AuthContextValue>(() => ({
-    session, profile, loading, signIn, signOut: endSession, changePassword, refreshProfile,
-  }), [session, profile, loading, signIn, endSession, changePassword, refreshProfile]);
+    session, profile, loading, pauseMessage, signIn, signOut: endSession, changePassword, refreshProfile,
+  }), [session, profile, loading, pauseMessage, signIn, endSession, changePassword, refreshProfile]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

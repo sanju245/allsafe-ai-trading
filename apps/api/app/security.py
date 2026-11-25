@@ -141,9 +141,14 @@ def _require_account(
             detail={"code": "account_unavailable", "message": "This account is not available."},
         )
     if status == "paused":
+        detail = {"code": "account_paused", "message": "This login is paused."}
+        reason = profile.get("pause_reason")
+        if capture_sign_in and isinstance(reason, str) and reason.strip():
+            detail["pause_reason"] = reason
         raise HTTPException(
             status_code=403,
-            detail={"code": "account_paused", "message": "This login is paused."},
+            detail=detail,
+            headers={"Cache-Control": "private, no-store"},
         )
     if status != "active":
         raise HTTPException(

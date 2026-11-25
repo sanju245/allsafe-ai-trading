@@ -97,6 +97,7 @@ function harness() {
       if (name === "next/link") return { default: "a" };
       if (name === "@/components/auth/AuthProvider") return { useAuth: () => auth };
       if (name === "@/components/admin/AccountRequestsPanel") return { default: "AccountRequestsPanel" };
+      if (name === "@/components/admin/CustomerMessageDialog") return { default: "CustomerMessageDialog" };
       if (name === "@/components/admin/CustomerSignInHistory") return { default: "CustomerSignInHistory" };
       throw new Error("Unexpected import: " + name);
     },
@@ -175,8 +176,12 @@ test("A denied customer mutation clears the directory and rechecks the role", as
   app.render();
   const actions = find(app.tree, (node) => typeof node.props?.onStatusChange === "function");
   assert.ok(actions);
-  app.setStatus(403);
   await actions.props.onStatusChange(actions.props.user);
+  app.render();
+  const dialog = find(app.tree, (node) => node.type === "CustomerMessageDialog");
+  assert.equal(dialog.props.action, "pause");
+  app.setStatus(403);
+  await assert.rejects(dialog.props.save("Example pause reason", "test-request"), /access was denied/);
   app.render();
 
   assert.doesNotMatch(JSON.stringify(app.tree), /private-customer@example.com|192\.0\.2\.10/);

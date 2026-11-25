@@ -18,7 +18,7 @@ from fastapi import HTTPException
 
 from app.config import Settings, get_settings
 
-PROFILE_COLUMNS = "id,email,role,status,created_at"
+PROFILE_COLUMNS = "id,email,role,status,created_at,pause_reason"
 ACCOUNT_REQUEST_COLUMNS = (
     "id,full_name,date_of_birth,email,phone_number,whatsapp_number,"
     "request_ip,status,notification_status,auth_user_id,decided_by,"
@@ -203,6 +203,24 @@ def list_customer_sign_ins(user_id: str, *, settings: Settings | None = None) ->
         settings=settings,
     )
     if not isinstance(rows, list):
+        raise SupabaseAdminAPIError(502)
+    return rows
+
+
+def send_customer_warning(warning_id: str, target_id: str | None, message: str) -> int:
+    count = _request_json("POST", "rest/v1/rpc/send_customer_warning", payload={
+        "p_id": warning_id, "p_target_id": target_id, "p_message": message,
+    })
+    if type(count) is not int or count < -1:
+        raise SupabaseAdminAPIError(502)
+    return count
+
+
+def list_customer_warnings(user_id: str, before: str | None) -> list[dict[str, Any]]:
+    rows = _request_json("POST", "rest/v1/rpc/get_customer_warnings", payload={
+        "p_customer_id": user_id, "p_before": before,
+    })
+    if not isinstance(rows, list) or len(rows) > 21:
         raise SupabaseAdminAPIError(502)
     return rows
 

@@ -161,6 +161,7 @@ async function intercept(route) {
     fixtureRequests.push({ pathname, symbol, provider, includeHistory });
 
     if (pathname === "/api/v1/auth/me") return respond({ profile: { ...fixtureUser, role: "user", status: "active" } });
+    if (pathname === "/api/v1/auth/warnings") return respond({ warnings: [], next_before: null });
     if (pathname === "/api/v1/live/status") return respond({
       feed_state: "live", provider, streaming_enabled: true, connected: true, session_open: true,
       last_error: null, instruments: Object.fromEntries(symbols.map((id) => [id, { feed_state: "live" }])),

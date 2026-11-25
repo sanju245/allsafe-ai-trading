@@ -13,7 +13,7 @@ const SUPABASE_CONFIGURED = Boolean(
 
 export default function LoginPage() {
   const router = useRouter();
-  const { session, loading, signIn } = useAuth();
+  const { session, loading, signIn, pauseMessage } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -101,9 +101,9 @@ export default function LoginPage() {
             Checking your account. After inactivity, the account service may take about a minute to start. Keep this page open.
           </p>
         )}
-        {error && (
-          <p role="alert" className="mt-4 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
-            {error}
+        {(error || pauseMessage) && (
+          <p role="alert" className="mt-4 whitespace-pre-wrap break-words rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
+            {error ?? pauseMessage}
           </p>
         )}
         <p className="mt-4 text-xs leading-relaxed text-slate-500">

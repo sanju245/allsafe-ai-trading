@@ -3,9 +3,10 @@
 import logging
 import re
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator, model_validator
 
 from app.config import get_settings
 from app.email_notifications import (
@@ -17,7 +18,7 @@ from app.security import (
     require_sign_in_account, verify_supabase_access_token,
 )
 from app.supabase_admin import (
-    SupabaseAdminAPIError, check_current_password, generate_account_link, get_profile_by_email,
+    SupabaseAdminAPIError, check_current_password, generate_account_link, get_profile_by_email, list_customer_warnings,
     revoke_temporary_session, sanitized_admin_error, update_auth_user_password, verify_email_otp,
 )
 
@@ -34,6 +35,17 @@ class CurrentAccountResponse(BaseModel):
     email: str
     role: Literal["user", "admin"]
     status: Literal["active", "paused"]
+
+
+class CustomerWarning(BaseModel):
+    id: UUID
+    message: str
+    sent_at: AwareDatetime
+
+
+class CustomerWarningsResponse(BaseModel):
+    warnings: list[CustomerWarning]
+    next_before: UUID | None
 
 
 class NewPasswordRequest(BaseModel):
@@ -81,6 +93,23 @@ def get_current_account(
     return CurrentAccountResponse(
         id=account.id, email=account.email, role=account.role, status=account.status,
     )
+
+
+@router.get("/warnings", response_model=CustomerWarningsResponse)
+def get_customer_warnings(
+    response: Response,
+    before: UUID | None = None,
+    account: AccountPrincipal = Depends(require_active_account),
+) -> CustomerWarningsResponse:
+    response.headers["Cache-Control"] = "private, no-store"
+    if account.role != "user":
+        return CustomerWarningsResponse(warnings=[], next_before=None)
+    try:
+        rows = list_customer_warnings(account.id, str(before) if before else None)
+        warnings = [CustomerWarning.model_validate(row) for row in rows[:20]]
+    except (SupabaseAdminAPIError, ValidationError):
+        raise HTTPException(status_code=503, detail="Account warnings are temporarily unavailable.") from None
+    return CustomerWarningsResponse(warnings=warnings, next_before=warnings[-1].id if len(rows) > 20 else None)
 
 
 @router.put("/password", status_code=204)

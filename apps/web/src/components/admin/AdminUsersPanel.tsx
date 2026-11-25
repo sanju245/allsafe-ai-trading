@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AccountRequestsPanel from "@/components/admin/AccountRequestsPanel";
+import CustomerMessageDialog from "@/components/admin/CustomerMessageDialog";
 import CustomerSignInHistory, { type SignInEntry } from "@/components/admin/CustomerSignInHistory";
 
 type UserStatus = "active" | "paused" | string;
@@ -15,9 +16,11 @@ type AdminUser = {
   role: UserRole;
   status: UserStatus;
   created_at: string;
+  pause_reason?: string | null;
 };
 
 type UserListReply = { users: AdminUser[] };
+type MessageAction = { kind: "pause"; user: AdminUser } | { kind: "warning"; user: AdminUser | null };
 
 class AdminRequestError extends Error {
   constructor(message: string, readonly status: number) {
@@ -108,9 +111,10 @@ type UserActionsProps = {
   onStatusChange: (user: AdminUser) => void;
   onDelete: (user: AdminUser) => void;
   onViewSignIns: (user: AdminUser) => void;
+  onWarn: (user: AdminUser) => void;
 };
 
-function UserActions({ user, busy, onStatusChange, onDelete, onViewSignIns }: UserActionsProps) {
+function UserActions({ user, busy, onStatusChange, onDelete, onViewSignIns, onWarn }: UserActionsProps) {
   const customer = isCustomer(user);
 
   if (!customer) {
@@ -119,6 +123,10 @@ function UserActions({ user, busy, onStatusChange, onDelete, onViewSignIns }: Us
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <button type="button" onClick={() => onWarn(user)} disabled={busy} aria-haspopup="dialog"
+        className="rounded-lg border border-amber-300/20 px-3 py-2 text-xs font-medium text-amber-200 hover:bg-amber-300/10 disabled:opacity-50">
+        Warning
+      </button>
       <button
         type="button"
         onClick={() => onViewSignIns(user)}
@@ -132,6 +140,7 @@ function UserActions({ user, busy, onStatusChange, onDelete, onViewSignIns }: Us
           type="button"
           disabled={busy}
           onClick={() => onStatusChange(user)}
+          aria-haspopup={user.status === "active" ? "dialog" : undefined}
           className="rounded-lg border border-amber-300/20 px-3 py-2 text-xs font-medium text-amber-200 hover:bg-amber-300/10 disabled:opacity-50"
         >
           {user.status === "active" ? "Pause login" : "Resume login"}
@@ -169,6 +178,7 @@ export default function AdminUsersPanel() {
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [historyTarget, setHistoryTarget] = useState<{ userId: string; token: string } | null>(null);
+  const [messageAction, setMessageAction] = useState<{ action: MessageAction; token: string } | null>(null);
   const [deniedToken, setDeniedToken] = useState<string | null>(null);
   const deniedTokenRef = useRef<string | null>(null);
   const deleteDialogRef = useRef<HTMLElement | null>(null);
@@ -209,6 +219,7 @@ export default function AdminUsersPanel() {
       setDeleteTarget(null);
       setDeleteConfirmation("");
       setHistoryTarget(null);
+      setMessageAction(null);
       try {
         if (cause.status === 401) await signOut();
         else await refreshProfile();
@@ -326,6 +337,7 @@ export default function AdminUsersPanel() {
       setDeleteTarget(null);
       setDeleteConfirmation("");
       setHistoryTarget(null);
+      setMessageAction(null);
       if (accessToken && isAdmin) {
         void refreshUsers();
       } else {
@@ -383,24 +395,61 @@ export default function AdminUsersPanel() {
     }
   }
 
-  async function changeStatus(user: AdminUser) {
+  function openMessage(action: MessageAction) {
+    if (!accessToken || !isAdmin || deniedTokenRef.current === accessToken || busyUserIdRef.current) return;
+    clearNotices();
+    setMessageAction({ action, token: accessToken });
+  }
+
+  async function changeStatus(user: AdminUser, status: "paused" | "active", pauseReason?: string) {
     const generation = requestGenerationRef.current;
-    if (!accessToken || !isAdmin || !isCustomer(user) || busyUserIdRef.current || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
-    const status = user.status === "active" ? "paused" : "active";
+    if (!accessToken || !isAdmin || !isCustomer(user) || busyUserIdRef.current || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) {
+      throw new Error("Administrator access is required.");
+    }
     updateBusyUserId(user.id);
     clearNotices();
     try {
-      await adminRequest<unknown>(accessToken, `/api/v1/admin/users/${encodeURIComponent(user.id)}`, {
+      const updated = await adminRequest<AdminUser>(accessToken, `/api/v1/admin/users/${encodeURIComponent(user.id)}`, {
         method: "PATCH",
-        body: { status },
+        body: status === "paused" ? { status, pause_reason: pauseReason } : { status },
       });
-      if (!isCurrentRequest(generation)) return;
+      if (!isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
+      setUsers((current) => current.map((customer) => customer.id === user.id ? updated : customer));
+      setMessageAction(null);
       setSuccess(`${user.email} login ${status === "paused" ? "paused" : "resumed"}.`);
-      await refreshUsers();
     } catch (cause) {
-      await handleAdminFailure(cause, "Could not update the account status.", generation);
+      if (status === "active" || (cause instanceof AdminRequestError && [401, 403].includes(cause.status))) {
+        await handleAdminFailure(cause, "Could not update the account status.", generation);
+      }
+      throw cause;
     } finally {
       if (isCurrentRequest(generation)) updateBusyUserId(null);
+    }
+  }
+
+  async function sendWarning(user: AdminUser | null, message: string, requestId: string) {
+    const generation = requestGenerationRef.current;
+    if (!accessToken || !isAdmin || !isCurrentRequest(generation) || deniedTokenRef.current === accessToken) {
+      throw new Error("Administrator access is required.");
+    }
+    clearNotices();
+    try {
+      const result = await adminRequest<{ recipient_count: number }>(accessToken, "/api/v1/admin/warnings", {
+        method: "POST",
+        body: { warning_id: requestId, target_id: user?.id ?? null, message },
+      });
+      if (!isCurrentRequest(generation) || deniedTokenRef.current === accessToken) return;
+      setMessageAction(null);
+      const count = result.recipient_count;
+      setSuccess(user ? `Warning sent to ${user.email}.` : `Warning sent to ${count} ${count === 1 ? "customer" : "customers"}.`);
+    } catch (cause) {
+      if (cause instanceof AdminRequestError) {
+        if ([401, 403].includes(cause.status)) {
+          await handleAdminFailure(cause, "Could not send the warning.", generation);
+        }
+        throw cause;
+      }
+      throw new Error("Could not confirm warning delivery. Retry to check the same send.");
     }
   }
 
@@ -469,7 +518,10 @@ export default function AdminUsersPanel() {
       key={user.id}
       user={user}
       busy={busyUserId !== null}
-      onStatusChange={changeStatus}
+      onStatusChange={(target) => target.status === "active"
+        ? openMessage({ kind: "pause", user: target })
+        : changeStatus(target, "active").catch(() => {})}
+      onWarn={(target) => openMessage({ kind: "warning", user: target })}
       onViewSignIns={(target) => {
         if (accessToken) setHistoryTarget({ userId: target.id, token: accessToken });
       }}
@@ -487,6 +539,7 @@ export default function AdminUsersPanel() {
   const historyCustomer = historyTarget && historyTarget.token === accessToken && directoryToken === accessToken
     ? users.find((user) => user.id === historyTarget.userId)
     : undefined;
+  const activeMessage = messageAction?.token === accessToken ? messageAction?.action : undefined;
 
   return (
     <div className="pb-12 pt-8">
@@ -497,6 +550,10 @@ export default function AdminUsersPanel() {
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">Create customer logins and manage account access.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => openMessage({ kind: "warning", user: null })} aria-haspopup="dialog" disabled={busyUserId !== null}
+            className="rounded-lg border border-amber-300/25 px-4 py-2.5 text-sm font-medium text-amber-200 hover:bg-amber-300/10 disabled:opacity-50">
+            Warn all customers
+          </button>
           <button type="button" onClick={() => void refreshUsers()} disabled={loadingUsers} className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 disabled:opacity-50">
             {loadingUsers ? "Refreshing…" : "Refresh list"}
           </button>
@@ -584,6 +641,12 @@ export default function AdminUsersPanel() {
                     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${user.status === "paused" ? "bg-amber-400/10 text-amber-200" : "bg-emerald-400/10 text-emerald-200"}`}>
                       {user.status}
                     </span>
+                    {user.status === "paused" && user.pause_reason && (
+                      <details className="mt-2 max-w-xs text-xs text-slate-300">
+                        <summary className="cursor-pointer text-amber-200">Pause reason</summary>
+                        <p className="mt-1 whitespace-pre-wrap break-words">{user.pause_reason}</p>
+                      </details>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-slate-400">{formatDate(user.created_at)}</td>
                   <td className="px-4 py-4">{renderActions(user)}</td>
@@ -612,6 +675,9 @@ export default function AdminUsersPanel() {
                 <div><dt className="text-slate-500">Role</dt><dd className="mt-1 capitalize text-slate-200">{user.role}</dd></div>
                 <div><dt className="text-slate-500">Created</dt><dd className="mt-1 text-slate-200">{formatDate(user.created_at)}</dd></div>
               </dl>
+              {user.status === "paused" && user.pause_reason && (
+                <p className="mt-3 whitespace-pre-wrap break-words text-xs text-amber-200">{user.pause_reason}</p>
+              )}
               <div className="mt-4 border-t border-white/10 pt-3">{renderActions(user)}</div>
             </article>
           ))}
@@ -620,6 +686,13 @@ export default function AdminUsersPanel() {
           )}
         </div>
       </section>
+
+      {activeMessage && (
+        <CustomerMessageDialog action={activeMessage.kind} email={activeMessage.user?.email ?? null}
+          onClose={() => setMessageAction(null)} save={(message, requestId) => activeMessage.kind === "pause"
+            ? changeStatus(activeMessage.user, "paused", message)
+            : sendWarning(activeMessage.user, message, requestId)}/>
+      )}
 
       {historyCustomer && (
         <CustomerSignInHistory

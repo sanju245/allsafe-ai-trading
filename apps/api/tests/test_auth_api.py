@@ -68,6 +68,47 @@ def test_current_admin_profile_has_only_account_access_fields():
     assert "client_ip" not in response.json()
 
 
+def test_pause_reason_is_visible_after_verified_login_and_market_access_stays_locked(monkeypatch):
+    customer_id = str(uuid4())
+    reason = "Please contact the administrator.\nWe need to review account activity."
+    calls = []
+
+    def profile(user_id, **_):
+        calls.append(user_id)
+        return {"id": user_id, "email": "customer@example.test", "role": "user",
+                "status": "paused" if user_id == customer_id else "active", "pause_reason": reason if user_id == customer_id else None}
+
+    monkeypatch.setattr(security, "get_settings", _settings)
+    monkeypatch.setattr(security, "get_profile", profile)
+    monkeypatch.setattr(security, "get_profile_for_sign_in", lambda customer, *_args, **_opts: profile(customer))
+    token = _hs256_token(user_id=customer_id, session_id=str(uuid4()), amr=[{"method": "password"}])
+    headers = {"Authorization": f"Bearer {token}"}
+    signed_in = client.get("/api/v1/auth/me", headers=headers)
+    assert signed_in.status_code == 403
+    assert signed_in.json()["detail"]["pause_reason"] == reason
+    assert signed_in.headers["cache-control"] == "private, no-store"
+    for path in ["/api/v1/live/quote?symbol=NIFTY50", "/api/v1/auth/warnings"]:
+        denied = client.get(path, headers=headers)
+        assert denied.status_code == 403 and reason not in denied.text
+    assert client.get("/api/v1/auth/me").status_code == 401
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {_hs256_token()}"}).json()["status"] == "active"
+    assert calls.count(customer_id) == 3
+
+
+@pytest.mark.usefixtures("active_account_override")
+def test_warnings_read_only_for_current_customer_and_can_page(monkeypatch, active_account_override):
+    calls = []
+    warnings = [{"id": str(uuid4()), "message": "Example notice", "sent_at": "2026-11-25T09:30:00Z"} for _ in range(21)]
+    monkeypatch.setattr(auth_router, "list_customer_warnings", lambda *args: calls.append(args) or warnings)
+    response = client.get("/api/v1/auth/warnings", params={"customer_id": str(uuid4())})
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json() == {"warnings": warnings[:20], "next_before": warnings[19]["id"]}
+    assert calls == [(active_account_override.id, None)]
+    assert client.get("/api/v1/auth/warnings", params={"before": warnings[19]["id"]}).status_code == 200
+    assert calls[-1] == (active_account_override.id, warnings[19]["id"])
+
+
 def test_password_change_requires_a_verified_account(monkeypatch):
     from types import SimpleNamespace
 
