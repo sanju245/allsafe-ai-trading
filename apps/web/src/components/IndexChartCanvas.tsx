@@ -5,7 +5,7 @@ import {
   CandlestickSeries, ColorType, CrosshairMode, LineStyle, TickMarkType, createChart,
   type CandlestickData, type IChartApi, type IPriceLine, type ISeriesApi, type Time, type UTCTimestamp,
 } from "lightweight-charts";
-import { formatPrice, formatStamp, type Bar, type ChartMark } from "@/lib/indexChart";
+import { formatPrice, formatStamp, type Bar, type ChartMark, type SignalLevels } from "@/lib/indexChart";
 
 const intraday = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const tradingDay = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
@@ -15,9 +15,10 @@ const sameBar = (a: Bar, b: Bar) => a.time === b.time && a.open === b.open && a.
 
 type Props = {
   bars: Bar[]; marks: ChartMark[]; forming: Bar | null; realPrice?: number; priceLabel: string; loading: boolean;
+  levels?: SignalLevels;
 };
 
-export default function IndexChartCanvas({ bars, marks, forming, realPrice, priceLabel, loading }: Props) {
+export default function IndexChartCanvas({ bars, marks, forming, realPrice, priceLabel, loading, levels }: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
@@ -143,6 +144,23 @@ export default function IndexChartCanvas({ bars, marks, forming, realPrice, pric
     if (line.current) line.current.applyOptions(options);
     else line.current = series.current.createPriceLine(options);
   }, [realPrice, priceLabel]);
+
+  const entry = levels?.entry, stop = levels?.stop_loss, target = levels?.target;
+  useEffect(() => {
+    const candles = series.current;
+    if (!candles || !showSignals || entry === undefined || stop === undefined || target === undefined) return;
+    const prices = [
+      { price: entry, title: "Entry", color: "#385ab4" },
+      { price: stop, title: "Stop", color: "#ad3047" },
+      { price: target, title: "Target", color: "#187255" },
+    ];
+    const lines = prices.map(p => candles.createPriceLine({
+      ...p, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true,
+    }));
+    return () => {
+      if (candles === series.current) for (const item of lines) candles.removePriceLine(item);
+    };
+  }, [entry, stop, target, showSignals]);
 
   function zoom(factor: number) {
     const scale = api.current?.timeScale();

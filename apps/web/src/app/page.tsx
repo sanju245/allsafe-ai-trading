@@ -11,6 +11,7 @@ export default async function Home() {
     <LandingPage
       serverTimeUtc={health.ok ? health.timeUtc : null}
       backendOnline={health.ok}
+      marketCalendar={health.ok ? health.marketCalendar : undefined}
       backendVersion={health.ok ? health.version : "0.1.0"}
     />
   );

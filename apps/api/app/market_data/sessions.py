@@ -8,8 +8,8 @@ Conventions (all documented in the README):
 * Intraday candles sit on a grid that starts at 09:15 IST. A 1h candle therefore
   opens at 09:15, 10:15, ... 15:15.
 * A daily candle is identified by its IST calendar date; its time of day is ignored.
-* The regular-session calendar includes published 2026 NSE cash-market closures.
-  Other years currently use weekdays.
+* Published NSE cash-market closures apply in verified years. Weekday hours
+  outside those years are provisional and cannot prove a missing full session.
 
 IST is a fixed UTC+05:30 offset (India has no daylight saving), so no tz database
 is needed. That also avoids a ``tzdata`` requirement on Windows.
@@ -37,18 +37,45 @@ def is_weekday(day: date) -> bool:
     return day.weekday() < 5
 
 
-# NSE capital market circular CMTR71775, plus the January 15 election closure.
-_REGULAR_HOLIDAYS_2026 = frozenset({
-    (1, 15), (1, 26), (3, 3), (3, 26), (3, 31), (4, 3), (4, 14),
-    (5, 1), (5, 28), (6, 26), (9, 14), (10, 2), (10, 20), (11, 10),
-    (11, 24), (12, 25),
-})
+# Published NSE equity calendars. Keep future years provisional until the exchange publishes them.
+VERIFIED_CALENDAR_YEARS = (2025, 2026)
+NSE_HOLIDAYS = {
+    '2025-02-26': 'Mahashivratri',
+    '2025-03-14': 'Holi',
+    '2025-03-31': 'Id-Ul-Fitr (Ramzan Id)',
+    '2025-04-10': 'Shri Mahavir Jayanti',
+    '2025-04-14': 'Dr. Baba Saheb Ambedkar Jayanti',
+    '2025-04-18': 'Good Friday',
+    '2025-05-01': 'Maharashtra Day',
+    '2025-08-15': 'Independence Day',
+    '2025-08-27': 'Ganesh Chaturthi',
+    '2025-10-02': 'Mahatma Gandhi Jayanti / Dussehra',
+    '2025-10-21': 'Diwali Laxmi Pujan',
+    '2025-10-22': 'Diwali Balipratipada',
+    '2025-11-05': 'Prakash Gurpurb Sri Guru Nanak Dev',
+    '2025-12-25': 'Christmas',
+    '2026-01-15': 'Municipal Corporation Election - Maharashtra',
+    '2026-01-26': 'Republic Day',
+    '2026-03-03': 'Holi',
+    '2026-03-26': 'Shri Ram Navami',
+    '2026-03-31': 'Shri Mahavir Jayanti',
+    '2026-04-03': 'Good Friday',
+    '2026-04-14': 'Dr. Baba Saheb Ambedkar Jayanti',
+    '2026-05-01': 'Maharashtra Day',
+    '2026-05-28': 'Bakri Id (Eid al-Adha)',
+    '2026-06-26': 'Muharram',
+    '2026-09-14': 'Ganesh Chaturthi',
+    '2026-10-02': 'Mahatma Gandhi Jayanti',
+    '2026-10-20': 'Dussehra',
+    '2026-11-08': 'Diwali Laxmi Pujan (Muhurat Trading Session)',
+    '2026-11-10': 'Diwali Balipratipada',
+    '2026-11-24': 'Prakash Gurpurb Sri Guru Nanak Dev',
+    '2026-12-25': 'Christmas',
+}
 
 
 def is_regular_trading_day(day: date) -> bool:
-    return is_weekday(day) and not (
-        day.year == 2026 and (day.month, day.day) in _REGULAR_HOLIDAYS_2026
-    )
+    return is_weekday(day) and day.isoformat() not in NSE_HOLIDAYS
 
 
 def _at(day: date, at: time) -> datetime:
@@ -136,7 +163,7 @@ def find_gap(prev_slot: datetime, next_slot: datetime, timeframe: Timeframe) -> 
     missing_days: list[date] = []
     day = prev_day + _ONE_DAY
     while day < next_day:
-        if is_regular_trading_day(day):
+        if day.year in VERIFIED_CALENDAR_YEARS and is_regular_trading_day(day):
             missing_days.append(day)
         day += _ONE_DAY
     return Gap(len(partial), partial[0] if partial else None, tuple(missing_days))

@@ -27,6 +27,7 @@ def _profile(*, user_id, email="customer@example.com", status="active", role="us
 def test_admin_creates_email_login_without_ip_requirement(monkeypatch):
     user_id = uuid4()
     captured = {}
+    monkeypatch.setattr(admin_router, "require_safe_password", lambda password: None)
     monkeypatch.setattr(
         admin_router,
         "create_auth_user",

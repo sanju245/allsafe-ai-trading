@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 
-const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
-const SUPABASE_ANON_KEY = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "").trim();
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ||
+  (process.env.NODE_ENV === "production" ? "https://allsafe-ai-api.onrender.com" : "http://localhost:8000")).replace(/\/+$/, "");
+type SetupProof = { token_hash: string; type: "invite" | "recovery" } | { access_token: string };
 
 export default function SetPasswordPage() {
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [proof, setProof] = useState<SetupProof | null>(null);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -17,10 +18,13 @@ export default function SetPasswordPage() {
   useEffect(() => {
     const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const token = fragment.get("access_token");
+    const hash = fragment.get("token_hash");
+    const type = fragment.get("type");
     const failure = fragment.get("error_description");
     window.history.replaceState(null, "", window.location.pathname);
     const timer = window.setTimeout(() => {
-      if (token) setAccessToken(token);
+      if (hash && (type === "invite" || type === "recovery")) setProof({ token_hash: hash, type });
+      else if (token) setProof({ access_token: token });
       else setError(failure || "This setup link is missing or expired. Contact the administrator for a new link.");
     }, 0);
     return () => window.clearTimeout(timer);
@@ -28,7 +32,7 @@ export default function SetPasswordPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!accessToken) return;
+    if (!proof) return;
     if (password !== confirmPassword) {
       setError("The passwords do not match.");
       return;
@@ -40,21 +44,19 @@ export default function SetPasswordPage() {
     setBusy(true);
     setError(null);
     try {
-      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error("Account setup is not configured yet.");
-      const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-        method: "PUT",
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ password }),
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/password/setup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ ...proof, password }),
         cache: "no-store",
         credentials: "omit",
+        signal: AbortSignal.timeout(60000),
       });
-      if (!response.ok) throw new Error("Could not set the password. The link may have expired; contact the administrator for a new one.");
-      setAccessToken(null);
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(typeof body?.detail === "string" ? body.detail : "Could not set the password. Request a new setup link.");
+      }
+      setProof(null);
       setPassword("");
       setConfirmPassword("");
       setDone(true);
@@ -75,7 +77,7 @@ export default function SetPasswordPage() {
           <div role="status" className="mt-5 text-sm leading-6 text-slate-300">
             Your password is ready. <Link href="/login" className="font-semibold text-emerald-300 underline">Sign in</Link> from any network.
           </div>
-        ) : accessToken ? (
+        ) : proof ? (
           <form onSubmit={submit} className="mt-5 grid gap-4">
             <label className="text-sm text-slate-300">New password
               <input type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-white outline-none focus:border-emerald-400" />
@@ -89,6 +91,7 @@ export default function SetPasswordPage() {
         ) : (
           <p role="alert" className="mt-5 text-sm leading-6 text-rose-200">{error || "Checking your setup link…"}</p>
         )}
+        {!done && <Link href="/forgot-password" className="mt-5 inline-block text-sm text-emerald-300 underline">Request a new password link</Link>}
       </section>
     </main>
   );

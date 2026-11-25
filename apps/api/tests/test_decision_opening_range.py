@@ -181,3 +181,19 @@ def test_ut_bot_requires_boolean_heikin_ashi_flag():
 
     with pytest.raises(ValueError, match="boolean"):
         calculate_ut_bot([], use_heikin_ashi=1)
+
+
+def test_sell_reference_levels_and_first_breakout_survive_wait(monkeypatch):
+    mock_indicators(monkeypatch, ema_bullish=False, rsi_bullish=False,
+                    macd_bullish=False, supertrend_bullish=False, position=-1)
+    base = ist(2026, 11, 25, 9, 15)
+    candles = make_candles([base + timedelta(minutes=15 * i) for i in range(3)], [100.0, 98.0, 97.0])
+    candles[0] = candles[0].model_copy(update={"high": 101.0, "low": 99.0})
+    points = calculate_decisions(candles)
+    assert points[1].decision is TradeDecision.SELL
+    assert points[1].levels is not None
+    assert (points[1].levels.entry, points[1].levels.stop_loss, points[1].levels.target) == (98, 101, 92)
+    assert points[2].decision is TradeDecision.WAIT
+    assert points[2].levels is None
+    assert points[2].first_breakout == points[1].first_breakout
+    assert (points[2].opening_range_low, points[2].opening_range_high) == (99, 101)

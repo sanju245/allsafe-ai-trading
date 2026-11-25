@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config import get_settings
 from app.email_notifications import (
     EmailDeliveryError,
+    account_setup_link,
     ensure_email_ready,
     send_admin_request_notification,
     send_approved,
@@ -25,15 +26,15 @@ from app.security import AccountPrincipal, SlidingWindowRateLimiter, request_cli
 from app.supabase_admin import (
     SupabaseAdminAPIError,
     delete_account_request,
-    delete_auth_user,
     generate_account_link,
     get_account_request,
+    get_auth_user,
+    get_open_account_request,
     get_profile,
     get_profile_by_email,
     insert_account_request,
     list_account_requests,
     update_account_request,
-    update_profile,
 )
 
 public_router = APIRouter(prefix="/api/v1/account-requests", tags=["accounts"])
@@ -102,10 +103,13 @@ class AccountRequestResponse(BaseModel):
     decided_at: datetime | None
     receipt_sent_at: datetime | None
     notification_sent_at: datetime | None
+    processing_started_at: datetime | None = None
+    notification_started_at: datetime | None = None
 
 
 class RequestListResponse(BaseModel):
     requests: list[AccountRequestResponse]
+    has_more: bool
 
 
 def _admin_request_error() -> HTTPException:
@@ -129,90 +133,144 @@ def _load_request(request_id: UUID) -> dict[str, object]:
     return row
 
 
-def _notify_decision(row: dict[str, object], *, link: str | None = None) -> dict[str, object]:
-    try:
-        if row["status"] == "approved":
-            if not link:
-                raise _admin_request_error()
-            send_approved(str(row["email"]), str(row["full_name"]), link)
-        else:
-            send_declined(str(row["email"]), str(row["full_name"]))
-        notification_status = "sent"
-    except EmailDeliveryError:
-        notification_status = "failed"
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _claim_active(value: object) -> bool:
+    if not isinstance(value, (str, datetime)):
+        return False
+    started = datetime.fromisoformat(value) if isinstance(value, str) else value
+    return started > _now() - timedelta(minutes=3)
+
+
+def _write_request(
+    row: dict[str, object], changes: dict[str, object], *, compare: tuple[str, ...] = (),
+) -> dict[str, object]:
     try:
         updated = update_account_request(
-            str(row["id"]),
-            {
-                "notification_status": notification_status,
-                "notification_sent_at": datetime.now(timezone.utc).isoformat() if notification_status == "sent" else None,
-            },
+            str(row["id"]), changes, expected={key: row.get(key) for key in compare},
         )
     except SupabaseAdminAPIError:
         raise _admin_request_error() from None
     if updated is None:
-        raise _admin_request_error()
+        raise HTTPException(status_code=409, detail="This request changed. Refresh the queue and try again.")
     return updated
+
+
+def _release_claim(row: dict[str, object], key: str) -> None:
+    try:
+        _write_request(row, {key: None}, compare=(key,))
+    except HTTPException:
+        # The timestamp allows recovery after a process or service interruption.
+        _LOGGER.warning("Could not release an account request claim. It will expire.")
+
+
+def _linked_customer(row: dict[str, object]) -> dict[str, object]:
+    user_id = row.get("auth_user_id")
+    profile = get_profile(str(user_id)) if user_id else None
+    if not profile or profile.get("role") != "user" or profile.get("status") != "active" or profile.get("email") != row["email"]:
+        raise HTTPException(status_code=409, detail="The linked active customer could not be verified.")
+    return profile
+
+
+def _notify_decision(row: dict[str, object], *, link: str | None = None) -> dict[str, object]:
+    if _claim_active(row.get("notification_started_at")):
+        raise HTTPException(status_code=409, detail="A decision email is already being sent. Try again shortly.")
+    row = _write_request(row, {
+        "notification_started_at": _now().isoformat(),
+    }, compare=("status", "notification_status", "notification_started_at"))
+    sent_at = None
+    try:
+        if row["status"] == "approved":
+            if link is None:
+                _linked_customer(row)
+                generated = generate_account_link(str(row["email"]), link_type="recovery", redirect_to=setup_redirect_url())
+                link = account_setup_link(generated, "recovery")
+            send_approved(str(row["email"]), str(row["full_name"]), link)
+        else:
+            send_declined(str(row["email"]), str(row["full_name"]))
+        sent_at = _now().isoformat()
+    except (EmailDeliveryError, SupabaseAdminAPIError):
+        _LOGGER.warning("A decision email could not be sent. It can be retried from the queue.")
+    except HTTPException:
+        _release_claim(row, "notification_started_at")
+        raise
+    return _write_request(row, {
+        "notification_status": "sent" if sent_at else "failed",
+        "notification_sent_at": sent_at,
+        "notification_started_at": None,
+    }, compare=("notification_started_at",))
 
 
 @public_router.post("", status_code=status.HTTP_202_ACCEPTED)
 def submit_account_request(body: AccountApplication, request: Request) -> dict[str, str]:
     ensure_email_ready()
-    # This server-observed address is retained for form abuse limiting and the
-    # existing audit column only. It is never used to authorize an account.
     client_ip = request_client_ip(request)
     _request_rate_limiter.check(
         client_ip, limit=get_settings().account_request_limit_per_hour, resource="Account application"
     )
+    reply = {"message": "Thank you. If a receipt is due for this request, check your email."}
     try:
-        row = insert_account_request({
-            "full_name": body.full_name,
-            "date_of_birth": body.date_of_birth.isoformat(),
-            "email": body.email,
-            "phone_number": body.phone_number,
-            "whatsapp_number": body.whatsapp_number,
-            "request_ip": client_ip,
-        })
-    except SupabaseAdminAPIError as exc:
-        if exc.status_code == 409:
-            # A request for this address is already pending; do not reveal it publicly.
-            return {"message": "If this is a new request, we will email you after submission."}
-        raise _admin_request_error() from None
-    try:
-        send_request_received(body.email, body.full_name)
-    except EmailDeliveryError:
         try:
-            delete_account_request(str(row["id"]))
-        except SupabaseAdminAPIError:
-            pass
-        raise HTTPException(status_code=503, detail="We could not email your receipt. Please try again later.") from None
+            row = insert_account_request({
+                "full_name": body.full_name,
+                "date_of_birth": body.date_of_birth.isoformat(),
+                "email": body.email,
+                "phone_number": body.phone_number,
+                "whatsapp_number": body.whatsapp_number,
+                "request_ip": client_ip,
+            })
+        except SupabaseAdminAPIError as exc:
+            if exc.status_code != 409:
+                raise
+            row = get_open_account_request(body.email)
+    except SupabaseAdminAPIError:
+        raise _admin_request_error() from None
+    if row is None or row.get("receipt_sent_at") or _claim_active(row.get("receipt_started_at")):
+        return reply
+    try:
+        row = _write_request(row, {"receipt_started_at": _now().isoformat()},
+                             compare=("receipt_sent_at", "receipt_started_at"))
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            return reply
+        raise
+    try:
+        send_request_received(str(row["email"]), str(row["full_name"]))
+    except EmailDeliveryError:
+        _release_claim(row, "receipt_started_at")
+        raise HTTPException(status_code=503, detail="We saved your request. Submit again to retry the email receipt.") from None
+    try:
+        _write_request(row, {"receipt_sent_at": _now().isoformat(), "receipt_started_at": None},
+                       compare=("receipt_started_at",))
+    except HTTPException:
+        _LOGGER.warning("The account request receipt was sent without a recorded acknowledgement.")
     try:
         send_admin_request_notification(
-            name=body.full_name,
-            email=body.email,
-            date_of_birth=body.date_of_birth.isoformat(),
-            phone_number=body.phone_number,
-            whatsapp_number=body.whatsapp_number,
+            name=str(row["full_name"]),
+            email=str(row["email"]),
+            date_of_birth=str(row["date_of_birth"]),
+            phone_number=str(row["phone_number"]),
+            whatsapp_number=str(row["whatsapp_number"]),
         )
     except EmailDeliveryError:
-        # The application and applicant receipt are already durable. Keep them
-        # available in the admin queue and log only a safe, PII-free failure.
         _LOGGER.error("Account request was saved, but the administrator email notification failed.")
-    try:
-        update_account_request(str(row["id"]), {"receipt_sent_at": datetime.now(timezone.utc).isoformat()})
-    except SupabaseAdminAPIError:
-        # The request and receipt already exist; avoid inviting a duplicate submission.
-        pass
-    return {"message": "Thank you. Your request is awaiting administrator review; please check your email."}
+    return reply
 
 
 @admin_router.get("", response_model=RequestListResponse)
-def get_requests(_: AccountPrincipal = Depends(require_admin_account)) -> RequestListResponse:
+def get_requests(
+    _: AccountPrincipal = Depends(require_admin_account),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+    history: bool = False,
+) -> RequestListResponse:
     try:
-        rows = list_account_requests()
+        rows = list_account_requests(offset=offset, limit=limit + 1, review_only=not history)
     except SupabaseAdminAPIError:
         raise _admin_request_error() from None
-    return RequestListResponse(requests=[_serialize(row) for row in rows])
+    return RequestListResponse(requests=[_serialize(row) for row in rows[:limit]], has_more=len(rows) > limit)
 
 
 @admin_router.post("/{request_id}/approve", response_model=AccountRequestResponse)
@@ -222,86 +280,47 @@ def approve_request(
 ) -> AccountRequestResponse:
     ensure_email_ready()
     redirect_url = setup_redirect_url()
-    request_row = _load_request(request_id)
-    if request_row.get("status") != "pending":
-        raise HTTPException(status_code=409, detail="This request has already been handled.")
+    row = _load_request(request_id)
+    if row["status"] not in {"pending", "processing"} or _claim_active(row.get("processing_started_at")):
+        raise HTTPException(status_code=409, detail="This request has been handled or is being processed.")
+    email = str(row["email"])
+    attempt = row.get("approval_attempt")
     try:
-        existing_profile = get_profile_by_email(str(request_row["email"]))
+        existing = get_profile_by_email(email)
+        if existing is not None:
+            user = get_auth_user(str(existing["id"])) if attempt and existing.get("role") == "user" else {}
+            metadata = user.get("user_metadata")
+            if not isinstance(metadata, dict) or metadata.get("allsafe_approval_attempt") != str(attempt):
+                raise HTTPException(
+                    status_code=409,
+                    detail="This email already belongs to an AllSafe account. Use the existing account, or decline this duplicate request.",
+                )
     except SupabaseAdminAPIError:
         raise _admin_request_error() from None
-    if existing_profile is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "This email already belongs to an AllSafe account. Use the existing account, "
-                "or decline this duplicate request."
-            ),
-        )
-    try:
-        row = update_account_request(str(request_id), {"status": "processing"}, expected_status="pending")
-    except SupabaseAdminAPIError:
-        raise _admin_request_error() from None
-    if row is None:
-        _load_request(request_id)
-        raise HTTPException(status_code=409, detail="This request has already been handled.")
 
-    user_id: str | None = None
-    approval_stage = "creating the Supabase invitation"
+    attempt = str(attempt or uuid4())
+    row = _write_request(row, {
+        "status": "processing", "approval_attempt": attempt, "processing_started_at": _now().isoformat(),
+    }, compare=("status", "processing_started_at"))
     try:
-        invitation = generate_account_link(str(row["email"]), link_type="invite", redirect_to=redirect_url)
-        user_id = str(UUID(invitation["user"]["id"]))
-        approval_stage = "checking the new account profile"
-        profile = get_profile(user_id)
-        if profile is None:
-            raise SupabaseAdminAPIError(502)
-        approval_stage = "saving the approval"
-        completed = update_account_request(
-            str(request_id),
-            {
-                "status": "approved", "auth_user_id": user_id, "decided_by": admin.id,
-                "decided_at": datetime.now(timezone.utc).isoformat(),
-            },
-            expected_status="processing",
-        )
-        if completed is None:
-            raise SupabaseAdminAPIError(502)
-    except SupabaseAdminAPIError as exc:
-        _LOGGER.warning(
-            "Account request approval failed while %s (Supabase HTTP %s).",
-            approval_stage,
-            exc.status_code,
-        )
-        if user_id:
-            try:
-                delete_auth_user(user_id)
-            except SupabaseAdminAPIError:
-                pass
-        try:
-            update_account_request(str(request_id), {"status": "pending"}, expected_status="processing")
-        except SupabaseAdminAPIError:
-            pass
-        if approval_stage == "creating the Supabase invitation" and exc.status_code in {409, 422}:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Supabase could not create an invitation for this email. It may already have an account; "
-                    "check the customer list or decline this duplicate request."
-                ),
-            ) from None
-        raise HTTPException(status_code=502, detail="Account approval failed. Please retry.") from None
-    except (ValueError, KeyError, TypeError):
-        _LOGGER.warning("Account request approval received an invalid response while %s.", approval_stage)
-        if user_id:
-            try:
-                delete_auth_user(user_id)
-            except SupabaseAdminAPIError:
-                pass
-        try:
-            update_account_request(str(request_id), {"status": "pending"}, expected_status="processing")
-        except SupabaseAdminAPIError:
-            pass
-        raise HTTPException(status_code=502, detail="Account approval failed. Please retry.") from None
-    return _serialize(_notify_decision(completed, link=invitation["action_link"]))
+        if existing is not None:
+            user_id = str(UUID(str(existing["id"])))
+            link = None
+        else:
+            invitation = generate_account_link(email, link_type="invite", redirect_to=redirect_url,
+                                               approval_attempt=attempt)
+            user_id = str(UUID(invitation["user"]["id"]))
+            if get_profile(user_id) is None:
+                raise SupabaseAdminAPIError(502)
+            link = account_setup_link(invitation, "invite")
+        completed = _write_request(row, {
+            "status": "approved", "auth_user_id": user_id, "decided_by": admin.id,
+            "decided_at": _now().isoformat(), "processing_started_at": None,
+        }, compare=("status", "processing_started_at"))
+    except (HTTPException, SupabaseAdminAPIError, ValueError, KeyError, TypeError):
+        _release_claim(row, "processing_started_at")
+        raise HTTPException(status_code=502, detail="Approval did not finish. Refresh the queue and resume this request.") from None
+    return _serialize(_notify_decision(completed, link=link))
 
 
 @admin_router.post("/{request_id}/decline", response_model=AccountRequestResponse)
@@ -310,17 +329,13 @@ def decline_request(
     admin: AccountPrincipal = Depends(require_admin_account),
 ) -> AccountRequestResponse:
     ensure_email_ready()
-    try:
-        row = update_account_request(
-            str(request_id),
-            {"status": "declined", "decided_by": admin.id, "decided_at": datetime.now(timezone.utc).isoformat()},
-            expected_status="pending",
-        )
-    except SupabaseAdminAPIError:
-        raise _admin_request_error() from None
-    if row is None:
-        _load_request(request_id)
-        raise HTTPException(status_code=409, detail="This request has already been handled.")
+    row = _load_request(request_id)
+    if row["status"] not in {"pending", "processing"} or _claim_active(row.get("processing_started_at")):
+        raise HTTPException(status_code=409, detail="This request has been handled or is being processed.")
+    row = _write_request(row, {
+        "status": "declined", "decided_by": admin.id, "decided_at": _now().isoformat(),
+        "processing_started_at": None,
+    }, compare=("status", "processing_started_at"))
     return _serialize(_notify_decision(row))
 
 
@@ -331,15 +346,29 @@ def retry_decision_email(
 ) -> AccountRequestResponse:
     ensure_email_ready()
     row = _load_request(request_id)
-    if row.get("notification_status") != "failed" or row.get("status") not in {"approved", "declined"}:
-        raise HTTPException(status_code=409, detail="There is no failed decision email to retry.")
-    link = None
-    if row["status"] == "approved":
-        try:
-            result = generate_account_link(
-                str(row["email"]), link_type="recovery", redirect_to=setup_redirect_url()
-            )
-            link = result["action_link"]
-        except SupabaseAdminAPIError:
-            raise HTTPException(status_code=502, detail="Could not create a new setup link.") from None
-    return _serialize(_notify_decision(row, link=link))
+    if row["status"] not in {"approved", "declined"} or (
+        row["status"] == "declined" and row["notification_status"] == "sent"
+    ):
+        raise HTTPException(status_code=409, detail="This request has no decision email to resend.")
+    sent_at = row.get("notification_sent_at")
+    if row["notification_status"] == "sent" and _claim_active(sent_at):
+        raise HTTPException(status_code=429, detail="An email was just sent. Wait a few minutes before resending.")
+    return _serialize(_notify_decision(row))
+
+
+@admin_router.delete("/{request_id}", status_code=204)
+def remove_request(
+    request_id: UUID,
+    _: AccountPrincipal = Depends(require_admin_account),
+) -> Response:
+    row = _load_request(request_id)
+    claims = ("processing_started_at", "receipt_started_at", "notification_started_at")
+    if any(_claim_active(row.get(key)) for key in claims):
+        raise HTTPException(status_code=409, detail="Wait for this request to finish processing.")
+    try:
+        deleted = delete_account_request(str(request_id), expected={key: row.get(key) for key in (*claims, "status")})
+    except SupabaseAdminAPIError:
+        raise _admin_request_error() from None
+    if not deleted:
+        raise HTTPException(status_code=409, detail="This request changed. Refresh the queue and try again.")
+    return Response(status_code=204)

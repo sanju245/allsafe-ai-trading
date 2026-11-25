@@ -8,6 +8,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 export default function AccountPage() {
   const router = useRouter();
   const { session, profile, loading, signOut, changePassword } = useAuth();
+  const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +31,8 @@ export default function AccountPage() {
       return;
     }
     try {
-      await changePassword(password);
+      await changePassword(currentPassword, password);
+      setCurrentPassword("");
       setPassword("");
       setConfirmation("");
       setMessage("Password changed. You are still signed in.");
@@ -108,6 +110,12 @@ export default function AccountPage() {
           <form onSubmit={submitPassword} className="mt-7 max-w-xl">
             <h2 className="text-lg font-semibold text-white">Change password</h2>
             <p className="mt-1 text-sm text-slate-400">Use between 8 and 128 characters and enter it twice.</p>
+            <label className="mt-4 block text-sm text-slate-300">
+              Current password
+              <input type="password" autoComplete="current-password" maxLength={128} required value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                className="mt-1 block w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+            </label>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="text-sm text-slate-300">
                 New password

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { chartSessionFragment, useAuth } from "@/components/auth/AuthProvider";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 type SymbolId = "NIFTY50" | "BANKNIFTY";
 type Candle = {
@@ -149,7 +149,7 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
     NIFTY50: emptySnapshot(),
     BANKNIFTY: emptySnapshot(),
   });
-  const { signOut, chartSessionId } = useAuth();
+  const { signOut } = useAuth();
 
   const refresh = useCallback(async (signal: AbortSignal) => {
     await Promise.all(markets.map(async ({ symbol }) => {
@@ -263,7 +263,7 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
             <article key={symbol} aria-labelledby={`upstox-${symbol}-title`} className="rounded-xl border border-white/10 bg-slate-950/30 p-3 sm:p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 id={`upstox-${symbol}-title`} className="font-semibold text-white">
-                  <Link href={`/chart/${symbol}?provider=upstox&days=${days}${chartSessionFragment(chartSessionId)}`} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+                  <Link href={`/chart/${symbol}?provider=upstox&days=${days}`} target="_blank" rel="noopener noreferrer" className="rounded underline-offset-4 hover:text-emerald-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
                     {label}<span className="ml-2 text-xs text-emerald-300" aria-label="opens chart in a new tab">↗</span>
                   </Link>
                 </h3>

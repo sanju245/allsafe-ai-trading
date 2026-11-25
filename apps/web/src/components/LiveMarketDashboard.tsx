@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { chartSessionFragment, useAuth } from "@/components/auth/AuthProvider";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 type MarketSymbol = "NIFTY50" | "BANKNIFTY";
 type Candle = {
@@ -287,7 +287,7 @@ function MarketCard({
 }
 
 export default function LiveMarketDashboard() {
-  const { session, signOut, chartSessionId } = useAuth();
+  const { session, signOut } = useAuth();
   const accessToken = session?.access_token;
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [providers, setProviders] = useState<ProviderOption[]>([]);
@@ -472,7 +472,7 @@ export default function LiveMarketDashboard() {
         {markets.map(({ symbol, title }) => (
           <MarketCard
             key={symbol}
-            chartHref={`/chart/${symbol}?provider=${selectedProvider}${chartSessionFragment(chartSessionId)}`}
+            chartHref={`/chart/${symbol}?provider=${selectedProvider}`}
             title={title}
             snapshot={marketsState[symbol]}
             feedState={status?.instruments?.[symbol]?.feed_state ?? status?.feed_state ?? "checking"}

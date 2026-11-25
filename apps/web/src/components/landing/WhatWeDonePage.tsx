@@ -3,6 +3,7 @@
 import { memo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
+import type { MarketCalendar } from "@/lib/indianMarketStatus";
 import IndianMarketStatusBadge from "@/components/landing/IndianMarketStatusBadge";
 import LiveIstClock from "@/components/landing/LiveIstClock";
 import ScrollReveal from "@/components/landing/ScrollReveal";
@@ -11,6 +12,7 @@ export interface WhatWeDonePageProps {
   serverTimeUtc?: string | null;
   backendOnline?: boolean;
   backendVersion?: string;
+  marketCalendar?: MarketCalendar;
 }
 
 type ConsensusMode = "BUY" | "SELL" | "WAIT";
@@ -106,6 +108,7 @@ const SIGNAL_CHECKS: SignalCheckSpec[] = [
 function WhatWeDonePage({
   serverTimeUtc = null,
   backendOnline = false,
+  marketCalendar,
 }: WhatWeDonePageProps) {
   const { session } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -191,6 +194,7 @@ function WhatWeDonePage({
           <div className="flex items-center gap-2.5">
             <div className="hidden xl:block">
               <IndianMarketStatusBadge
+                calendar={marketCalendar}
                 variant="compact"
                 serverTimeOffsetMs={serverTimeOffsetMs}
                 showCountdown={false}
@@ -256,6 +260,7 @@ function WhatWeDonePage({
             variant="hero"
           />
           <IndianMarketStatusBadge
+                calendar={marketCalendar}
             initialEpochMs={initialEpochMs}
             serverTimeOffsetMs={serverTimeOffsetMs}
             variant="hero"

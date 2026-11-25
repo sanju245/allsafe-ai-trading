@@ -4,9 +4,11 @@ import { memo, useEffect, useState } from "react";
 import {
   evaluateIndianMarketStatus,
   type IndianMarketStatusResult,
+  type MarketCalendar,
 } from "@/lib/indianMarketStatus";
 
 export interface IndianMarketStatusBadgeProps {
+  calendar?: MarketCalendar;
   /** Optional server-clock offset in milliseconds (serverUtcMs - clientUtcMs) */
   serverTimeOffsetMs?: number;
   /** Optional initial epoch timestamp (ms) for deterministic SSR / test hydration */
@@ -27,6 +29,7 @@ export interface IndianMarketStatusBadgeProps {
  * regular hours, and announced special Muhurat sessions.
  */
 function IndianMarketStatusBadge({
+  calendar,
   serverTimeOffsetMs = 0,
   initialEpochMs,
   forceUnavailable = false,
@@ -36,7 +39,7 @@ function IndianMarketStatusBadge({
 }: IndianMarketStatusBadgeProps) {
   const [status, setStatus] = useState<IndianMarketStatusResult>(() =>
     initialEpochMs !== undefined
-      ? evaluateIndianMarketStatus(initialEpochMs, { forceUnavailable })
+      ? evaluateIndianMarketStatus(initialEpochMs, { forceUnavailable, calendar })
       : evaluateIndianMarketStatus(0, { forceUnavailable: true }),
   );
 
@@ -46,6 +49,7 @@ function IndianMarketStatusBadge({
         evaluateIndianMarketStatus(Date.now(), {
           serverTimeOffsetMs,
           forceUnavailable,
+          calendar,
         }),
       );
     };
@@ -55,7 +59,7 @@ function IndianMarketStatusBadge({
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [serverTimeOffsetMs, forceUnavailable]);
+  }, [serverTimeOffsetMs, forceUnavailable, calendar]);
 
   const isLive = status.state === "OPEN";
   const isClosed = status.state === "CLOSED";

@@ -6,15 +6,15 @@
  * 2. Official NSE Regular Equity Session: Monday to Friday, 09:15:00 to 15:30:00 IST (09:15 inclusive, 15:30 exclusive).
  * 3. Holiday-aware: Uses the published NSE equity trading holiday calendar for 2025 and 2026.
  * 4. Special-session-aware: Accounts for special trading sessions including Diwali Muhurat Trading windows.
- * 5. Safe fallback: Returns "MARKET STATUS UNAVAILABLE" if the clock timestamp is invalid or outside verified calendar bounds
- *    without a verified backend status override, never falsely claiming the market is live.
+ * 5. Years beyond the published calendar use a provisional regular-session schedule.
  */
 
-export type MarketStatusState = "OPEN" | "CLOSED" | "UNAVAILABLE";
+export type MarketStatusState = "OPEN" | "CLOSED" | "ESTIMATE" | "UNAVAILABLE";
 
 export type MarketStatusLabel =
   | "NSE MARKET LIVE"
   | "NSE MARKET CLOSED"
+  | "NSE SCHEDULE ESTIMATE"
   | "MARKET STATUS UNAVAILABLE";
 
 export type MarketSessionKind =
@@ -102,7 +102,10 @@ export interface EvaluateMarketStatusOptions {
   holidaysOverride?: Record<string, string>;
   /** Optional custom special sessions override for testing */
   specialSessionsOverride?: Record<string, SpecialTradingSession>;
+  calendar?: MarketCalendar;
 }
+
+export type MarketCalendar = { holidays: Record<string, string>; verifiedYears: number[] };
 
 /** Fixed IST offset: UTC + 5 hours 30 minutes (330 minutes = 19,800,000 ms). India has no DST. */
 export const IST_OFFSET_MINUTES = 330;
@@ -500,28 +503,23 @@ export function evaluateIndianMarketStatus(
     };
   }
 
-  // If year is outside our published 2025–2026 NSE holiday calendar and no custom override was supplied,
-  // report MARKET STATUS UNAVAILABLE rather than guessing holiday status.
-  if (
-    !options.holidaysOverride &&
-    (clock.year < MIN_SUPPORTED_CALENDAR_YEAR || clock.year > MAX_SUPPORTED_CALENDAR_YEAR)
-  ) {
+  const verified = options.calendar?.verifiedYears.includes(clock.year) ??
+    (clock.year >= MIN_SUPPORTED_CALENDAR_YEAR && clock.year <= MAX_SUPPORTED_CALENDAR_YEAR);
+  if (!options.holidaysOverride && !verified) {
+    const estimate = evaluateIndianMarketStatus(input, {
+      ...options, holidaysOverride: {}, specialSessionsOverride: {},
+    });
     return {
-      state: "UNAVAILABLE",
-      label: "MARKET STATUS UNAVAILABLE",
+      ...estimate,
+      state: "ESTIMATE",
+      label: "NSE SCHEDULE ESTIMATE",
       isLive: false,
       dotColor: "amber",
-      sessionKind: "UNAVAILABLE",
-      reason: `NSE holiday calendar for ${clock.year} is not verified in offline bundle.`,
-      holidayName: null,
-      specialSessionName: null,
-      scheduleSummary: "NSE regular session: 09:15 AM – 03:30 PM IST",
-      countdown: null,
-      istClock: clock,
+      reason: `Regular weekday hours until the NSE ${clock.year} holiday calendar is verified.`,
     };
   }
 
-  const holidays = options.holidaysOverride ?? NSE_TRADING_HOLIDAYS;
+  const holidays = options.holidaysOverride ?? options.calendar?.holidays ?? NSE_TRADING_HOLIDAYS;
   const specialSessions = options.specialSessionsOverride ?? NSE_SPECIAL_SESSIONS;
 
   const holidayName = holidays[clock.dateKeyIst] ?? null;

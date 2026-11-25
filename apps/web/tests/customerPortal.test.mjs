@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { webcrypto } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -39,17 +38,10 @@ function compile(relativePath) {
 function authHarness(fetchImpl, href = "https://site.example.test/") {
   const slots = [];
   let cursor = 0;
-  let effect;
+  let effects = [];
   const calls = [];
   const timeouts = [];
   const location = new URL(href);
-  const history = {
-    state: { existing: true },
-    replaceState(state, title, url) {
-      assert.strictEqual(state, this.state);
-      location.href = new URL(url, location).href;
-    },
-  };
   const hooks = {
     createContext: () => ({ Provider: "AuthContextProvider" }),
     useState: (initial) => {
@@ -64,7 +56,7 @@ function authHarness(fetchImpl, href = "https://site.example.test/") {
     },
     useMemo: (callback) => callback(),
     useCallback: (callback) => callback,
-    useEffect: (callback) => { effect = callback; },
+    useEffect: (callback) => { effects.push(callback); },
   };
   const moduleObj = { exports: {} };
   vm.runInNewContext(compile("src/components/auth/AuthProvider.tsx"), {
@@ -85,8 +77,8 @@ function authHarness(fetchImpl, href = "https://site.example.test/") {
         return AbortSignal.timeout(milliseconds);
       },
     },
-    console, crypto: webcrypto, BroadcastChannel: TestBroadcastChannel,
-    window: { location, history, setTimeout, clearTimeout },
+    console, BroadcastChannel: TestBroadcastChannel,
+    window: { location, setTimeout, clearTimeout, addEventListener() {}, removeEventListener() {} },
     fetch: async (url, options) => {
       calls.push({ url, options });
       return fetchImpl(url, options);
@@ -94,15 +86,15 @@ function authHarness(fetchImpl, href = "https://site.example.test/") {
   });
   const context = () => {
     cursor = 0;
+    effects = [];
     return moduleObj.exports.AuthProvider({ children: null }).props.value;
   };
   return {
     calls, timeouts, context, location,
     mount(t) {
       context();
-      t.after(effect());
+      for (const cleanup of effects.map(effect => effect())) if (cleanup) t.after(cleanup);
     },
-    chartSessionFragment: moduleObj.exports.chartSessionFragment,
   };
 }
 
@@ -115,33 +107,34 @@ async function waitForAuth(condition) {
 }
 
 test("sign-in establishes only the API-verified profile for the authenticated subject and bounds requests", async () => {
-  const harness = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json(activeProfile));
+  const harness = authHarness(async (url, options) => (url === "/api/auth/session" && options?.method === "PUT") ? json(authReply) : json(activeProfile));
   await harness.context().signIn(" customer@example.com ", "password-123");
   assert.equal(harness.context().session.user.id, userId);
   assert.equal(harness.context().profile.id, userId);
   assert.equal(harness.context().loading, false);
   assert.equal(JSON.parse(harness.calls[0].options.body).email, "customer@example.com");
-  assert.deepEqual(harness.timeouts, [12000, 65000]);
+  assert.deepEqual(harness.timeouts, [15000, 65000]);
+  assert.equal(harness.calls[0].options.credentials, "same-origin");
+  assert.equal(harness.calls[1].options.credentials, "omit");
   for (const { options } of harness.calls) {
-    assert.equal(options.credentials, "omit");
     assert.ok(options.signal instanceof AbortSignal);
   }
 });
 
 test("a different profile subject cannot establish a signed-in customer session", async () => {
-  const harness = authHarness(async (url) => {
-    if (url.includes("/token?")) return json(authReply);
-    if (url.includes("/logout")) return new Response(null, { status: 204 });
+  const harness = authHarness(async (url, options) => {
+    if ((url === "/api/auth/session" && options?.method === "PUT")) return json(authReply);
+    if ((url === "/api/auth/session" && options?.method === "DELETE")) return new Response(null, { status: 204 });
     return json({ ...activeProfile, id: "00000000-0000-4000-8000-000000000002" });
   });
   await assert.rejects(harness.context().signIn("customer@example.com", "password-123"), /unexpected profile/);
   assert.equal(harness.context().session, null);
   assert.equal(harness.context().profile, null);
-  assert.ok(harness.calls.some(({ url }) => url.endsWith("/logout")));
+  assert.ok(harness.calls.some(({ url, options }) => url === "/api/auth/session" && options.method === "DELETE"));
 });
 
 test("customer profile establishes a session without IP fields", async () => {
-  const harness = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json(activeProfile));
+  const harness = authHarness(async (url, options) => (url === "/api/auth/session" && options?.method === "PUT") ? json(authReply) : json(activeProfile));
   await harness.context().signIn("customer@example.com", "password-123");
   assert.equal(harness.context().session.user.id, userId);
   assert.equal(harness.context().profile.id, userId);
@@ -150,9 +143,9 @@ test("customer profile establishes a session without IP fields", async () => {
 });
 
 test("a profile startup timeout explains the wait and leaves the portal signed out", async () => {
-  const harness = authHarness(async (url) => {
-    if (url.includes("/token?")) return json(authReply);
-    if (url.includes("/logout")) return new Response(null, { status: 204 });
+  const harness = authHarness(async (url, options) => {
+    if ((url === "/api/auth/session" && options?.method === "PUT")) return json(authReply);
+    if ((url === "/api/auth/session" && options?.method === "DELETE")) return new Response(null, { status: 204 });
     throw { name: "TimeoutError" };
   });
   await assert.rejects(harness.context().signIn("customer@example.com", "password-123"), /taking longer than usual to start/);
@@ -162,12 +155,12 @@ test("a profile startup timeout explains the wait and leaves the portal signed o
 });
 
 test("sign-out clears local credentials immediately even if upstream logout never responds", async () => {
-  const harness = authHarness(async (url) => {
-    if (url.includes("/logout")) return new Promise(() => {});
-    return url.includes("/token?") ? json(authReply) : json(activeProfile);
+  const harness = authHarness(async (url, options) => {
+    if ((url === "/api/auth/session" && options?.method === "DELETE")) return new Promise(() => {});
+    return (url === "/api/auth/session" && options?.method === "PUT") ? json(authReply) : json(activeProfile);
   });
   await harness.context().signIn("customer@example.com", "password-123");
-  await harness.context().signOut();
+  void harness.context().signOut();
   assert.equal(harness.context().session, null);
   assert.equal(harness.context().profile, null);
   assert.equal(harness.context().loading, false);
@@ -175,9 +168,9 @@ test("sign-out clears local credentials immediately even if upstream logout neve
 
 test("a sign-in response arriving after sign-out cannot restore the session", async () => {
   let finishProfile;
-  const harness = authHarness(async (url) => {
-    if (url.includes("/token?")) return json(authReply);
-    if (url.includes("/logout")) return new Response(null, { status: 204 });
+  const harness = authHarness(async (url, options) => {
+    if ((url === "/api/auth/session" && options?.method === "PUT")) return json(authReply);
+    if ((url === "/api/auth/session" && options?.method === "DELETE")) return new Response(null, { status: 204 });
     return new Promise((resolve) => { finishProfile = resolve; });
   });
   const pending = harness.context().signIn("customer@example.com", "password-123");
@@ -190,25 +183,25 @@ test("a sign-in response arriving after sign-out cannot restore the session", as
 });
 
 test("a denied password operation clears a stale session and obeys the API password bound", async () => {
-  const harness = authHarness(async (url) => {
-    if (url.includes("/token?")) return json(authReply);
-    if (url.includes("/logout")) return new Response(null, { status: 204 });
+  const harness = authHarness(async (url, options) => {
+    if ((url === "/api/auth/session" && options?.method === "PUT")) return json(authReply);
+    if ((url === "/api/auth/session" && options?.method === "DELETE")) return new Response(null, { status: 204 });
     if (url.includes("/password")) return json({ detail: { code: "account_paused" } }, 403);
     return json(activeProfile);
   });
   await harness.context().signIn("customer@example.com", "password-123");
-  await assert.rejects(harness.context().changePassword("x".repeat(129)), /between 8 and 128/);
+  await assert.rejects(harness.context().changePassword("old-fixture", "x".repeat(129)), /between 8 and 128/);
   assert.ok(!harness.calls.some(({ url }) => url.endsWith("/password")));
-  await assert.rejects(harness.context().changePassword("new-password-123"), /paused/);
+  await assert.rejects(harness.context().changePassword("old-fixture", "new-password-123"), /paused/);
   assert.equal(harness.context().session, null);
   assert.equal(harness.context().profile, null);
 });
 
 test("temporary profile outage preserves a valid session, but expired authentication removes it", async () => {
   let profileStatus = 200;
-  const harness = authHarness(async (url) => {
-    if (url.includes("/token?")) return json(authReply);
-    if (url.includes("/logout")) return new Response(null, { status: 204 });
+  const harness = authHarness(async (url, options) => {
+    if ((url === "/api/auth/session" && options?.method === "PUT")) return json(authReply);
+    if ((url === "/api/auth/session" && options?.method === "DELETE")) return new Response(null, { status: 204 });
     return profileStatus === 200 ? json(activeProfile) : json({ detail: "unavailable" }, profileStatus);
   });
   await harness.context().signIn("customer@example.com", "password-123");
@@ -223,7 +216,7 @@ test("temporary profile outage preserves a valid session, but expired authentica
 });
 
 test("active admin profiles are verified without IP metadata", async () => {
-  const harness = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json({
+  const harness = authHarness(async (url, options) => (url === "/api/auth/session" && options?.method === "PUT") ? json(authReply) : json({
     ...activeProfile, role: "admin",
   }));
   await harness.context().signIn("admin@example.com", "password-123");
@@ -231,61 +224,44 @@ test("active admin profiles are verified without IP metadata", async () => {
   assert.equal("allowed_ip" in harness.context().profile, false);
 });
 
-test("a chart tab receives only its invited session and verifies the profile with the API", async (t) => {
-  const source = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json(activeProfile));
-  const otherId = "00000000-0000-4000-8000-000000000002";
-  const otherUser = { id: otherId, email: "other@example.com" };
-  const other = authHarness(async (url) => url.includes("/token?")
-    ? json({ access_token: "other-token", user: otherUser })
-    : json({ ...activeProfile, ...otherUser }));
-  source.mount(t);
-  other.mount(t);
-  await source.context().signIn("customer@example.com", "password-123");
-  await other.context().signIn("other@example.com", "password-123");
-  const fragment = source.chartSessionFragment(source.context().chartSessionId);
-  assert.match(fragment, /^#session=[0-9a-f-]{36}$/);
-
-  const chart = authHarness(async (url) => url.includes("/logout")
-    ? new Response(null, { status: 204 })
-    : json(activeProfile), `https://site.example.test/chart/BANKNIFTY?provider=upstox&days=14${fragment}`);
-  chart.mount(t);
-  await waitForAuth(() => !chart.context().loading);
-  assert.equal(chart.context().session?.user.id, userId);
-  assert.equal(chart.context().chartSessionId, source.context().chartSessionId);
-  assert.equal(chart.calls.length, 1);
-  assert.equal(chart.calls[0].url, "https://api.example.test/api/v1/auth/me");
-  assert.equal(chart.calls[0].options.headers.Authorization, "Bearer test-token");
-  assert.equal(chart.location.href, "https://site.example.test/chart/BANKNIFTY?provider=upstox&days=14");
-
-  await chart.context().signOut();
-  await waitForAuth(() => source.context().session === null);
-  assert.equal(other.context().session.user.id, otherId);
+test("reload restores the browser session and verifies the current account", async (t) => {
+  const tab = authHarness(async (url, options) => {
+    if (url === "/api/auth/session" && options.method === "POST") return json(authReply);
+    return json(activeProfile);
+  }, "https://site.example.test/chart/BANKNIFTY?days=14");
+  tab.mount(t);
+  await waitForAuth(() => !tab.context().loading);
+  assert.equal(tab.context().session?.user.id, userId);
+  assert.equal(tab.calls[0].options.credentials, "same-origin");
+  assert.equal(tab.calls[1].options.headers.Authorization, "Bearer test-token");
+  assert.equal(tab.location.hash, "");
 });
 
-test("a chart tab rejects a shared credential when the account service denies access", async (t) => {
-  const source = authHarness(async (url) => url.includes("/token?") ? json(authReply) : json(activeProfile));
-  source.mount(t);
-  await source.context().signIn("customer@example.com", "password-123");
-  const fragment = source.chartSessionFragment(source.context().chartSessionId);
-  const chart = authHarness(() => json({ detail: "Account paused" }, 403), `https://site.example.test/chart/NIFTY50${fragment}`);
-  chart.mount(t);
-  await waitForAuth(() => !chart.context().loading);
-  assert.equal(chart.calls.length, 1);
-  assert.equal(chart.context().session, null);
-  assert.equal(chart.context().profile, null);
+test("reload rejects a restored cookie when the account is paused", async (t) => {
+  const tab = authHarness(async (url, options) => {
+    if (url === "/api/auth/session" && options.method === "POST") return json(authReply);
+    if (url === "/api/auth/session" && options.method === "DELETE") return new Response(null, { status: 204 });
+    return json({ detail: "Account paused" }, 403);
+  });
+  tab.mount(t);
+  await waitForAuth(() => !tab.context().loading);
+  assert.equal(tab.context().session, null);
+  assert.ok(tab.calls.some(({options}) => options.method === "DELETE"));
 });
 
-test("a chart tab cannot restore a shared session after its source signs out", async (t) => {
-  const source = authHarness(async (url) => {
-    if (url.includes("/logout")) return new Response(null, { status: 204 });
-    return url.includes("/token?") ? json(authReply) : json(activeProfile);
+test("logout in another tab invalidates a refresh already in progress", async (t) => {
+  const source = authHarness(async (url, options) => {
+    if (url === "/api/auth/session" && options.method === "PUT") return json(authReply);
+    if (url === "/api/auth/session" && options.method === "DELETE") return new Response(null, { status: 204 });
+    return json(activeProfile);
   });
   source.mount(t);
+  await waitForAuth(() => !source.context().loading);
   await source.context().signIn("customer@example.com", "password-123");
-  const fragment = source.chartSessionFragment(source.context().chartSessionId);
-
   let finishProfile;
-  const chart = authHarness(() => new Promise((resolve) => { finishProfile = resolve; }), `https://site.example.test/chart/NIFTY50${fragment}`);
+  const chart = authHarness(async (url) => url === "/api/auth/session"
+    ? json(authReply)
+    : new Promise(resolve => { finishProfile = resolve; }));
   chart.mount(t);
   await waitForAuth(() => Boolean(finishProfile));
   await source.context().signOut();
@@ -293,21 +269,17 @@ test("a chart tab cannot restore a shared session after its source signs out", a
   finishProfile(json(activeProfile));
   await delay(0);
   assert.equal(chart.context().session, null);
-  assert.equal(chart.context().profile, null);
 });
 
-test("a chart tab with no open source resolves to signed out without an API call", async (t) => {
-  const fragment = `#session=${webcrypto.randomUUID()}`;
-  const chart = authHarness(
-    () => assert.fail("An invitation without an open source must not make an API request"),
-    `https://site.example.test/chart/BANKNIFTY?provider=upstox${fragment}`,
-  );
-  chart.mount(t);
-  assert.equal(chart.context().loading, true);
-  await waitForAuth(() => !chart.context().loading);
-  assert.equal(chart.context().session, null);
-  assert.equal(chart.location.href, "https://site.example.test/chart/BANKNIFTY?provider=upstox");
-  assert.equal(chart.calls.length, 0);
+test("a browser with no refresh cookie does not request the private profile", async (t) => {
+  const tab = authHarness(async (url) => {
+    assert.equal(url, "/api/auth/session");
+    return new Response(null, { status: 401 });
+  });
+  tab.mount(t);
+  await waitForAuth(() => !tab.context().loading);
+  assert.equal(tab.context().session, null);
+  assert.equal(tab.calls.length, 1);
 });
 
 test("terminal includes the separate Upstox 15-minute historical chart", () => {
@@ -374,10 +346,8 @@ function dashboardHarness() {
       };
       if (name === "next/link") return { default: "a" };
       if (name === "@/components/auth/AuthProvider") return {
-        chartSessionFragment: (sessionId) => sessionId ? `#session=${sessionId}` : "",
         useAuth: () => ({
           session: { access_token: "test-token" },
-          chartSessionId: userId,
           signOut: async () => { signedOut = true; },
         }),
       };
@@ -523,7 +493,7 @@ test("each index title opens a separate chart tab and shows the latest decision"
   };
   const links = visit(dashboard.view());
   for (const symbol of ["NIFTY50", "BANKNIFTY"]) {
-    assert.ok(links.some((link) => link.props?.href === `/chart/${symbol}?provider=groww#session=${userId}` && link.props?.target === "_blank"));
+    assert.ok(links.some((link) => link.props?.href === `/chart/${symbol}?provider=groww` && link.props?.target === "_blank"));
   }
   assert.equal(dashboard.snapshots().NIFTY50.decision.decision, "BUY");
   assert.ok(dashboard.requests().some((url) => url.includes("timeframe=15m")));

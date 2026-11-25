@@ -11,8 +11,9 @@ export type RawCandle = {
 
 export type Bar = { time: number; open: number; high: number; low: number; close: number };
 export type Side = "BUY" | "SELL";
-export type Signal = { timestamp: string; decision: Side | "WAIT" | "DATA_UNAVAILABLE" };
-export type ChartMark = { time: number; side: Side; price: number };
+export type SignalLevels = { entry: number; stop_loss: number; target: number };
+export type Signal = { timestamp: string; decision: Side | "WAIT" | "DATA_UNAVAILABLE"; levels?: SignalLevels | null };
+export type ChartMark = { time: number; side: Side; price: number; levels?: SignalLevels };
 
 const openingRangeLabels = {
   MISSING: "Opening candle missing",
@@ -32,6 +33,9 @@ export type Decision = {
   ut_bot_signal: string | null;
   opening_range_state?: keyof typeof openingRangeLabels | null;
   ut_bot_position?: keyof typeof trendPositionLabels | null;
+  opening_range_high?: number | null;
+  opening_range_low?: number | null;
+  first_breakout?: { timestamp: string; side: Side; decision: Signal["decision"]; reason: string } | null;
   ema_bullish: boolean | null;
   rsi_bullish: boolean | null;
   macd_bullish: boolean | null;
@@ -113,7 +117,14 @@ export function chartHistory(series?: SeriesSnapshot) {
     const time = epoch(signal.timestamp);
     const bar = byTime.get(time);
     if (!bar || marked.has(time)) continue;
-    marks.push({ time, side, price: side === "BUY" ? bar.low : bar.high });
+    const mark: ChartMark = { time, side, price: side === "BUY" ? bar.low : bar.high };
+    const levels = signal.levels;
+    if (levels && [levels.entry, levels.stop_loss, levels.target].every(p => Number.isFinite(p) && p > 0) &&
+        (side === "BUY" ? levels.stop_loss < levels.entry && levels.entry < levels.target :
+          levels.target < levels.entry && levels.entry < levels.stop_loss)) {
+      mark.levels = levels;
+    }
+    marks.push(mark);
     marked.add(time);
   }
   return { bars, marks };
