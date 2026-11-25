@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.indicators import decision as decision_module
-from app.indicators.decision import TradeDecision, calculate_decisions
+from app.indicators.decision import OpeningRangeState, TradeDecision, calculate_decisions
 from app.indicators.ut_bot import UTBotSignal
 from app.market_data import Candle, DataSource, DataSourceKind, InstrumentId, Timeframe
 from tests.fixtures.sample_data import ist
@@ -89,7 +89,10 @@ def test_15m_first_confirmed_opening_range_break_is_signal(monkeypatch):
 
     points = calculate_decisions(candles)
 
+    assert points[0].opening_range_state == OpeningRangeState.SET
+    assert points[1].opening_range_state == OpeningRangeState.INSIDE
     assert points[2].decision == TradeDecision.BUY
+    assert points[2].opening_range_state == OpeningRangeState.ABOVE_HIGH
     assert "opening-range BUY" in points[2].reason
     assert points[3].decision == TradeDecision.WAIT
     assert "already evaluated" in points[3].reason
@@ -103,15 +106,19 @@ def test_15m_breakout_needs_the_0915_candle(monkeypatch):
     points = calculate_decisions(candles)
 
     assert all(point.decision == TradeDecision.WAIT for point in points)
+    assert all(point.opening_range_state == OpeningRangeState.MISSING for point in points)
     assert all("No 09:15 opening candle" in point.reason for point in points)
 
 
-def test_15m_neutral_confirmation_does_not_count_as_sell_or_buy(monkeypatch):
-    mock_indicators(monkeypatch, ema_bullish=None, position=1)
+@pytest.mark.parametrize(("position", "breakout_close"), [(1, 102.0), (-1, 98.0)])
+def test_15m_neutral_confirmation_does_not_count_as_sell_or_buy(monkeypatch, position, breakout_close):
+    bullish = position == 1
+    mock_indicators(monkeypatch, ema_bullish=None, rsi_bullish=bullish, macd_bullish=bullish,
+                    supertrend_bullish=bullish, position=position)
     base = ist(2026, 1, 5, 9, 15)
     candles = make_candles(
         [base + timedelta(minutes=15 * i) for i in range(3)],
-        [100.0, 100.5, 102.0],
+        [100.0, 100.5, breakout_close],
     )
     candles[0] = candles[0].model_copy(update={"high": 101.0, "low": 99.0})
 
@@ -119,19 +126,28 @@ def test_15m_neutral_confirmation_does_not_count_as_sell_or_buy(monkeypatch):
 
     assert points[2].decision == TradeDecision.WAIT
     assert points[2].ema_bullish is None
+    assert "Trend check A did not confirm" in points[2].reason
 
 
-def test_15m_breakouts_after_1415_are_blocked(monkeypatch):
-    mock_indicators(monkeypatch)
+@pytest.mark.parametrize(("minute", "close", "range_state", "decision"), [
+    (15, 98.0, OpeningRangeState.BELOW_LOW, TradeDecision.SELL),
+    (30, 98.0, OpeningRangeState.BELOW_LOW, TradeDecision.WAIT),
+    (30, 100.0, OpeningRangeState.INSIDE, TradeDecision.WAIT),
+])
+def test_15m_reports_actual_range_state_at_and_after_cutoff(monkeypatch, minute, close, range_state, decision):
+    mock_indicators(monkeypatch, ema_bullish=False, rsi_bullish=False, supertrend_bullish=False, position=-1)
     opening = ist(2026, 1, 5, 9, 15)
-    late = ist(2026, 1, 5, 14, 30)
-    candles = make_candles([opening, late], [100.0, 102.0])
+    late = ist(2026, 1, 5, 14, minute)
+    candles = make_candles([opening, late], [100.0, close])
     candles[0] = candles[0].model_copy(update={"high": 101.0, "low": 99.0})
 
     points = calculate_decisions(candles)
 
-    assert points[1].decision == TradeDecision.WAIT
-    assert "stop after 14:15" in points[1].reason
+    assert points[1].decision == decision
+    assert points[1].opening_range_state == range_state
+    if minute > 15:
+        assert "opened after the last eligible slot at 14:15 IST" in points[1].reason
+        assert "breakout" not in points[1].reason.lower()
 
 
 def test_non_15m_neutral_confirmation_does_not_vote_bearish(monkeypatch):
