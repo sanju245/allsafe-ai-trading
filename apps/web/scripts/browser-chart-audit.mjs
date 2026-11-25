@@ -189,7 +189,8 @@ async function intercept(route) {
     if (pathname === "/api/v1/live/forming-candle") return respond({ available: false, forming_candle: null });
     if (pathname === "/api/v1/market-data/upstox/candles") {
       const candles = bars(symbol);
-      return respond({ candles, provider: "upstox", timeframe: "15m", instrument: symbol, start_date: fixtureDays[0], end_date: fixtureDays.at(-1), retrieved_at: candles.at(-1).timestamp, last_candle_at: candles.at(-1).timestamp, message: "Synthetic Upstox history." });
+      const signals = candleFixture(symbol, true).indicator_history;
+      return respond({ candles, signals, provider: "upstox", timeframe: "15m", instrument: symbol, start_date: fixtureDays[0], end_date: fixtureDays.at(-1), retrieved_at: candles.at(-1).timestamp, last_candle_at: candles.at(-1).timestamp, message: "Synthetic Upstox history." });
     }
     throw new Error(`Unhandled fixture endpoint ${pathname}`);
   } catch (error) {
@@ -225,6 +226,7 @@ async function assertFullChart(chart, title) {
   for (const side of ["Buy", "Sell"]) await chart.locator(`[aria-label^="${side} signal on"]`).first().waitFor();
   await chart.getByText("Signal confirmation checks", { exact: true }).waitFor();
   assert.equal(await chart.locator(".chart-badge").count(), 2, "Only confirmed events have badges.");
+  await chart.locator(".chart-caption").getByText(/1 BUY · 1 SELL/).waitFor();
 }
 
 async function audit(context) {
@@ -251,6 +253,15 @@ async function audit(context) {
   await live.getByRole("img", { name: "BANK NIFTY 15-minute candlestick chart" }).waitFor();
   const history = entry.getByRole("region", { name: "Historical index charts" });
   await history.getByRole("img", { name: "NIFTY 50 Upstox 15-minute historical candlestick chart" }).waitFor();
+  for (const region of [live, history]) {
+    for (const preview of await region.getByRole("img").all()) {
+      for (const side of ["BUY", "SELL"]) {
+        const mark = preview.locator(`text[data-side="${side}"]`);
+        await mark.waitFor();
+        assert.equal(await mark.count(), 1, "Only completed signals have preview labels.");
+      }
+    }
+  }
 
   const nifty = await openChart(context, live.getByRole("link", { name: /^NIFTY 50/ }), "NIFTY50");
   await assertFullChart(nifty, "NIFTY 50");
@@ -353,6 +364,8 @@ async function audit(context) {
       for (const p of expected.indicator_history) {
         const mark = page.locator(`.chart-badge[data-time="${Date.parse(p.timestamp) / 1000}"][data-side="${p.decision}"]`);
         await mark.waitFor();
+        // Fit redraws the pane and positions its overlay on the next animation frame.
+        await mark.scrollIntoViewIfNeeded();
         await mark.hover({ force: true });
         const name = await mark.getAttribute("aria-label");
         await page.locator(".chart-values").getByText(name.split("signal on ")[1], { exact: true }).waitFor();

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
+import type { Signal } from "@/lib/indexChart";
+import CandleSignalLabels from "./CandleSignalLabels";
 
 type SymbolId = "NIFTY50" | "BANKNIFTY";
 type Candle = {
@@ -21,10 +23,12 @@ type CandleReply = {
   retrieved_at: string;
   last_candle_at: string | null;
   candles: Candle[];
+  signals?: Signal[];
   message: string;
 };
 type MarketSnapshot = {
   candles: Candle[];
+  signals: Signal[];
   retrievedAt: string | null;
   lastCandleAt: string | null;
   startDate: string | null;
@@ -50,6 +54,7 @@ const API_BASE_URL = (
 
 const emptySnapshot = (): MarketSnapshot => ({
   candles: [],
+  signals: [],
   retrievedAt: null,
   lastCandleAt: null,
   startDate: null,
@@ -69,7 +74,7 @@ function formatIst(value: string): string {
     : date.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" });
 }
 
-function HistoryCandleChart({ candles, label }: { candles: Candle[]; label: string }) {
+function HistoryCandleChart({ candles, signals, label }: { candles: Candle[]; signals: Signal[]; label: string }) {
   if (candles.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-white/10 px-6 text-center text-sm text-slate-400">
@@ -83,6 +88,7 @@ function HistoryCandleChart({ candles, label }: { candles: Candle[]; label: stri
   const width = Math.max(720, candles.length * 11 + inset * 2);
   const plotHeight = height - inset * 2 - 18;
   const slotWidth = (width - inset * 2) / candles.length;
+  const slotX = (index: number) => inset + (index + 0.5) * slotWidth;
   const min = Math.min(...candles.map((candle) => candle.low));
   const max = Math.max(...candles.map((candle) => candle.high));
   const range = Math.max(max - min, Math.abs(max) * 0.0001, 1);
@@ -116,7 +122,7 @@ function HistoryCandleChart({ candles, label }: { candles: Candle[]; label: stri
           );
         })}
         {candles.map((candle, index) => {
-          const x = inset + index * slotWidth + slotWidth / 2;
+          const x = slotX(index);
           const bullish = candle.close >= candle.open;
           const color = bullish ? "#34d399" : "#fb7185";
           const bodyTop = Math.min(y(candle.open), y(candle.close));
@@ -128,6 +134,7 @@ function HistoryCandleChart({ candles, label }: { candles: Candle[]; label: stri
             </g>
           );
         })}
+        <CandleSignalLabels candles={candles} signals={signals} x={slotX} y={y} />
         {dayStarts.map(({ index, date }) => {
           const x = inset + index * slotWidth;
           const shortDate = new Date(`${date}T00:00:00+05:30`).toLocaleDateString("en-IN", {
@@ -182,6 +189,7 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
           ...current,
           [symbol]: {
             candles: result.candles,
+            signals: result.signals ?? [],
             retrievedAt: result.retrieved_at,
             lastCandleAt: result.last_candle_at,
             startDate: result.start_date,
@@ -278,7 +286,7 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
               {snapshot.loading && snapshot.candles.length === 0 ? (
                 <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-white/10 text-sm text-slate-400">Loading Upstox candles…</div>
               ) : (
-                <HistoryCandleChart candles={snapshot.candles} label={label} />
+                <HistoryCandleChart candles={snapshot.candles} signals={snapshot.signals} label={label} />
               )}
               <p className="mt-2 text-xs text-slate-500">
                 {snapshot.startDate && snapshot.endDate

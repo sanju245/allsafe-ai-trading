@@ -20,6 +20,7 @@ A read-only Indian index market-analysis and decision-support application for NI
 ## Current behavior
 
 - The analysis engine is a deterministic five-check signal rule over confirmed candles. It returns BUY, SELL, WAIT, or DATA_UNAVAILABLE according to the engine rules.
+- Each regular 15-minute session can confirm its first BUY above the 09:15 opening high and its first SELL below the opening low independently. Filtered or warming-up candidates remain eligible on later completed closes through the 14:15 IST candle. An emitted side stays suppressed for the rest of the session.
 - The signed-in terminal provides completed Upstox 15-minute NIFTY 50 and BANK NIFTY charts for a selectable 1–30 calendar-day range. This history is separate from the selected provider's live 15-minute chart.
 - A full chart can show reference entry, stop-loss and 2R target lines for any visible confirmed opening-range signal. Entry is the signal candle's market close. Stop-loss is the opposite edge of the opening range, and the target is twice that price distance in the signal direction. The first breakout's result and the numeric opening range remain visible in the decision details.
 - The landing page reads the API's verifiable NSE schedule via `/health?calendar=1`. Future years use an amber weekday schedule estimate until official holidays are recorded. Provider freshness is reported in the terminal.

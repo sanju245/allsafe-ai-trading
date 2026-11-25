@@ -95,7 +95,37 @@ def test_15m_first_confirmed_opening_range_break_is_signal(monkeypatch):
     assert points[2].opening_range_state == OpeningRangeState.ABOVE_HIGH
     assert "opening-range BUY" in points[2].reason
     assert points[3].decision == TradeDecision.WAIT
-    assert "already evaluated" in points[3].reason
+    assert "BUY already confirmed" in points[3].reason
+
+
+@pytest.mark.parametrize("side", [TradeDecision.BUY, TradeDecision.SELL])
+@pytest.mark.parametrize("first_result", [TradeDecision.WAIT, TradeDecision.DATA_UNAVAILABLE])
+def test_first_filtered_close_can_confirm_later_without_reentering_range(monkeypatch, side, first_result):
+    bullish = side == TradeDecision.BUY
+    direction = 1 if bullish else -1
+    mock_indicators(monkeypatch, ema_bullish=bullish, rsi_bullish=bullish,
+                    supertrend_bullish=bullish, position=direction)
+    aligned_ema = decision_module.calculate_ema_trend
+
+    def late_ema(candles):
+        points = aligned_ema(candles)
+        if first_result == TradeDecision.DATA_UNAVAILABLE:
+            points[1].ema50 = None
+        else:
+            points[1].bullish = points[1].bearish = None
+        return points
+
+    monkeypatch.setattr(decision_module, "calculate_ema_trend", late_ema)
+    start = ist(2026, 11, 23, 9, 15)
+    times = [start + timedelta(minutes=15 * i) for i in range(4)]
+    candles = make_candles(times, [100 + direction * i for i in range(4)])
+    points = calculate_decisions(candles)
+
+    assert [p.decision for p in points[1:]] == [first_result, side, TradeDecision.WAIT]
+    assert points[1].levels is None and points[3].levels is None
+    assert points[2].levels.entry == candles[2].close
+    assert points[1].first_breakout == points[2].first_breakout == points[3].first_breakout
+    assert points[1].first_breakout.timestamp == times[1]
 
 
 def test_15m_breakout_needs_the_0915_candle(monkeypatch):

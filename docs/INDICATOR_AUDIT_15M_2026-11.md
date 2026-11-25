@@ -1,5 +1,7 @@
 # 15-Minute Indicator Audit
 
+This report scored the earlier one-attempt-per-session rule. The 25 November update allows one confirmed signal per direction per session. To reproduce the figures below, run the audit at [the original audited revision](https://github.com/sanju245/allsafe-ai-trading/tree/9cbd6ce).
+
 ## One-month result
 
 The revised 15-minute decision rule recorded a **68.2% directional hit rate** across NIFTY 50 and Bank Nifty in the checked month. It exceeded 60% for each index in this sample:

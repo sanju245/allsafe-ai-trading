@@ -115,6 +115,7 @@ function Workspace({ symbol, provider, days, token, signOut }: {
     </div>
     <details className="chart-checks"><summary>Signal confirmation checks</summary>
       <p>{seriesError ? "Waiting for the latest signal calculation." : decision?.reason || "Waiting for completed candles."}</p>
+      <p>Each session can confirm one BUY above the opening high and one SELL below the opening low. Checks run on every completed candle through the 14:15 IST candle.</p>
       {firstBreakout && <p>
         First breakout · {firstBreakout.side} · {formatStamp(epoch(firstBreakout.timestamp))} IST · {firstBreakout.decision}. {firstBreakout.reason}
       </p>}
