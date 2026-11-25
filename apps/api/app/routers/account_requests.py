@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import re
+from base64 import b32encode
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from uuid import UUID, uuid4
 
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from app.config import get_settings
 from app.email_notifications import (
@@ -17,22 +20,28 @@ from app.email_notifications import (
     account_setup_link,
     ensure_email_ready,
     send_admin_request_notification,
+    send_application_email_code,
     send_approved,
+    send_chosen_password_approval,
     send_declined,
     send_request_received,
     setup_redirect_url,
 )
+from app.password_policy import require_safe_password
 from app.security import AccountPrincipal, SlidingWindowRateLimiter, request_client_ip, require_admin_account
 from app.supabase_admin import (
     SupabaseAdminAPIError,
+    create_auth_user_from_hash,
     delete_account_request,
     generate_account_link,
     get_account_request,
+    get_account_request_password_hash,
     get_auth_user,
     get_open_account_request,
     get_profile,
     get_profile_by_email,
     insert_account_request,
+    insert_account_request_with_password,
     list_account_requests,
     update_account_request,
 )
@@ -43,18 +52,41 @@ _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _PHONE_PATTERN = re.compile(r"^\+?[0-9][0-9 ()-]{6,18}$")
 _LOGGER = logging.getLogger(__name__)
 _request_rate_limiter = SlidingWindowRateLimiter(window_seconds=3600)
+_email_code_rate_limiter = SlidingWindowRateLimiter(window_seconds=3600)
+_EMAIL_CODE_WINDOW_SECONDS = 600
 RequestStatus = Literal["pending", "processing", "approved", "declined"]
 NotificationStatus = Literal["pending", "sent", "failed"]
 
 
-class AccountApplication(BaseModel):
+class AccountApplicationEmail(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    email: str = Field(min_length=3, max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        email = value.strip().lower()
+        if not _EMAIL_PATTERN.fullmatch(email):
+            raise ValueError("Enter a valid email address.")
+        return email
+
+
+class AccountApplication(AccountApplicationEmail):
     full_name: str = Field(min_length=2, max_length=120)
     date_of_birth: date
-    email: str = Field(min_length=3, max_length=254)
     phone_number: str = Field(min_length=7, max_length=20)
     whatsapp_number: str = Field(min_length=7, max_length=20)
+    password: SecretStr | None = Field(default=None, min_length=8, max_length=72)
+    email_code: str | None = Field(default=None, pattern=r"^[A-Z2-7]{8}$")
+
+    @model_validator(mode="after")
+    def validate_password(self) -> AccountApplication:
+        if (self.password is None) != (self.email_code is None):
+            raise ValueError("Provide a password and an email verification code together.")
+        if self.password is not None and len(self.password.get_secret_value().encode("utf-8")) > 72:
+            raise ValueError("Choose a shorter password. Some characters use more than one byte.")
+        return self
 
     @field_validator("full_name")
     @classmethod
@@ -70,14 +102,6 @@ class AccountApplication(BaseModel):
         if value > datetime.now(timezone.utc).date():
             raise ValueError("Date of birth cannot be in the future.")
         return value
-
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: str) -> str:
-        email = value.strip().lower()
-        if not _EMAIL_PATTERN.fullmatch(email):
-            raise ValueError("Enter a valid email address.")
-        return email
 
     @field_validator("phone_number", "whatsapp_number")
     @classmethod
@@ -105,6 +129,7 @@ class AccountRequestResponse(BaseModel):
     notification_sent_at: datetime | None
     processing_started_at: datetime | None = None
     notification_started_at: datetime | None = None
+    uses_chosen_password: bool = False
 
 
 class RequestListResponse(BaseModel):
@@ -135,6 +160,22 @@ def _load_request(request_id: UUID) -> dict[str, object]:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _email_code_key() -> bytes:
+    key = get_settings().supabase_service_role_key
+    if key is None or not key.get_secret_value().strip():
+        raise HTTPException(status_code=503, detail="Email verification is temporarily unavailable.")
+    return key.get_secret_value().strip().encode("utf-8")
+
+
+def _email_code_window() -> int:
+    return int(_now().timestamp()) // _EMAIL_CODE_WINDOW_SECONDS
+
+
+def _email_code(email: str, window: int, key: bytes) -> str:
+    message = f"allsafe-account-request-email:{window}:{email}".encode("utf-8")
+    return b32encode(hmac.digest(key, message, "sha256"))[:8].decode("ascii")
 
 
 def _claim_active(value: object) -> bool:
@@ -174,6 +215,27 @@ def _linked_customer(row: dict[str, object]) -> dict[str, object]:
     return profile
 
 
+def _matches_approval(row: dict[str, object], profile: dict[str, object]) -> bool:
+    attempt = row.get("approval_attempt")
+    if not attempt or profile.get("role") != "user":
+        return False
+    user = get_auth_user(str(profile["id"]))
+    metadata = user.get("app_metadata" if row.get("uses_chosen_password") else "user_metadata")
+    return isinstance(metadata, dict) and metadata.get("allsafe_approval_attempt") == str(attempt)
+
+
+def _require_no_created_customer(row: dict[str, object]) -> None:
+    if not row.get("uses_chosen_password") or row["status"] != "processing" or not row.get("approval_attempt"):
+        return
+    try:
+        profile = get_profile_by_email(str(row["email"]))
+        created = profile is not None and _matches_approval(row, profile)
+    except SupabaseAdminAPIError:
+        raise _admin_request_error() from None
+    if created:
+        raise HTTPException(status_code=409, detail="The customer was already created. Resume approval to finish this request.")
+
+
 def _notify_decision(row: dict[str, object], *, link: str | None = None) -> dict[str, object]:
     if _claim_active(row.get("notification_started_at")):
         raise HTTPException(status_code=409, detail="A decision email is already being sent. Try again shortly.")
@@ -185,9 +247,13 @@ def _notify_decision(row: dict[str, object], *, link: str | None = None) -> dict
         if row["status"] == "approved":
             if link is None:
                 _linked_customer(row)
-                generated = generate_account_link(str(row["email"]), link_type="recovery", redirect_to=setup_redirect_url())
-                link = account_setup_link(generated, "recovery")
-            send_approved(str(row["email"]), str(row["full_name"]), link)
+            if row.get("uses_chosen_password"):
+                send_chosen_password_approval(str(row["email"]), str(row["full_name"]))
+            else:
+                if link is None:
+                    generated = generate_account_link(str(row["email"]), link_type="recovery", redirect_to=setup_redirect_url())
+                    link = account_setup_link(generated, "recovery")
+                send_approved(str(row["email"]), str(row["full_name"]), link)
         else:
             send_declined(str(row["email"]), str(row["full_name"]))
         sent_at = _now().isoformat()
@@ -203,6 +269,20 @@ def _notify_decision(row: dict[str, object], *, link: str | None = None) -> dict
     }, compare=("notification_started_at",))
 
 
+@public_router.post("/email-code", status_code=status.HTTP_202_ACCEPTED)
+def send_account_request_email_code(body: AccountApplicationEmail, request: Request) -> dict[str, str]:
+    ensure_email_ready()
+    limit = get_settings().account_request_limit_per_hour
+    _email_code_rate_limiter.check(f"ip:{request_client_ip(request)}", limit=limit, resource="Email verification")
+    _email_code_rate_limiter.check(f"email:{body.email}", limit=limit, resource="Email verification")
+    code = _email_code(body.email, _email_code_window(), _email_code_key())
+    try:
+        send_application_email_code(body.email, code)
+    except EmailDeliveryError:
+        raise HTTPException(status_code=503, detail="We could not send your verification code. Try again shortly.") from None
+    return {"message": "Check your email for the verification code."}
+
+
 @public_router.post("", status_code=status.HTTP_202_ACCEPTED)
 def submit_account_request(body: AccountApplication, request: Request) -> dict[str, str]:
     ensure_email_ready()
@@ -211,16 +291,27 @@ def submit_account_request(body: AccountApplication, request: Request) -> dict[s
         client_ip, limit=get_settings().account_request_limit_per_hour, resource="Account application"
     )
     reply = {"message": "Thank you. If a receipt is due for this request, check your email."}
+    values = {
+        "full_name": body.full_name,
+        "date_of_birth": body.date_of_birth.isoformat(),
+        "email": body.email,
+        "phone_number": body.phone_number,
+        "whatsapp_number": body.whatsapp_number,
+        "request_ip": client_ip,
+    }
+    password_hash = None
+    if body.password is not None and body.email_code is not None:
+        window = _email_code_window()
+        key = _email_code_key()
+        if not any(hmac.compare_digest(body.email_code, _email_code(body.email, slot, key))
+                   for slot in (window, window - 1)):
+            raise HTTPException(status_code=422, detail="The email code is invalid or expired. Check it or send a new code.")
+        password = body.password.get_secret_value()
+        require_safe_password(password)
+        password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("ascii")
     try:
         try:
-            row = insert_account_request({
-                "full_name": body.full_name,
-                "date_of_birth": body.date_of_birth.isoformat(),
-                "email": body.email,
-                "phone_number": body.phone_number,
-                "whatsapp_number": body.whatsapp_number,
-                "request_ip": client_ip,
-            })
+            row = insert_account_request_with_password(values, password_hash) if password_hash else insert_account_request(values)
         except SupabaseAdminAPIError as exc:
             if exc.status_code != 409:
                 raise
@@ -279,7 +370,6 @@ def approve_request(
     admin: AccountPrincipal = Depends(require_admin_account),
 ) -> AccountRequestResponse:
     ensure_email_ready()
-    redirect_url = setup_redirect_url()
     row = _load_request(request_id)
     if row["status"] not in {"pending", "processing"} or _claim_active(row.get("processing_started_at")):
         raise HTTPException(status_code=409, detail="This request has been handled or is being processed.")
@@ -287,14 +377,11 @@ def approve_request(
     attempt = row.get("approval_attempt")
     try:
         existing = get_profile_by_email(email)
-        if existing is not None:
-            user = get_auth_user(str(existing["id"])) if attempt and existing.get("role") == "user" else {}
-            metadata = user.get("user_metadata")
-            if not isinstance(metadata, dict) or metadata.get("allsafe_approval_attempt") != str(attempt):
-                raise HTTPException(
-                    status_code=409,
-                    detail="This email already belongs to an AllSafe account. Use the existing account, or decline this duplicate request.",
-                )
+        if existing is not None and not _matches_approval(row, existing):
+            raise HTTPException(
+                status_code=409,
+                detail="This email already belongs to an AllSafe account. Use the existing account, or decline this duplicate request.",
+            )
     except SupabaseAdminAPIError:
         raise _admin_request_error() from None
 
@@ -303,12 +390,18 @@ def approve_request(
         "status": "processing", "approval_attempt": attempt, "processing_started_at": _now().isoformat(),
     }, compare=("status", "processing_started_at"))
     try:
+        link = None
         if existing is not None:
             user_id = str(UUID(str(existing["id"])))
-            link = None
+        elif row.get("uses_chosen_password"):
+            password_hash = get_account_request_password_hash(str(request_id), attempt)
+            user = create_auth_user_from_hash(email, password_hash, attempt)
+            user_id = str(UUID(user["id"]))
+            _linked_customer({**row, "auth_user_id": user_id})
         else:
-            invitation = generate_account_link(email, link_type="invite", redirect_to=redirect_url,
-                                               approval_attempt=attempt)
+            invitation = generate_account_link(
+                email, link_type="invite", redirect_to=setup_redirect_url(), approval_attempt=attempt,
+            )
             user_id = str(UUID(invitation["user"]["id"]))
             if get_profile(user_id) is None:
                 raise SupabaseAdminAPIError(502)
@@ -332,6 +425,7 @@ def decline_request(
     row = _load_request(request_id)
     if row["status"] not in {"pending", "processing"} or _claim_active(row.get("processing_started_at")):
         raise HTTPException(status_code=409, detail="This request has been handled or is being processed.")
+    _require_no_created_customer(row)
     row = _write_request(row, {
         "status": "declined", "decided_by": admin.id, "decided_at": _now().isoformat(),
         "processing_started_at": None,
@@ -365,6 +459,7 @@ def remove_request(
     claims = ("processing_started_at", "receipt_started_at", "notification_started_at")
     if any(_claim_active(row.get(key)) for key in claims):
         raise HTTPException(status_code=409, detail="Wait for this request to finish processing.")
+    _require_no_created_customer(row)
     try:
         deleted = delete_account_request(str(request_id), expected={key: row.get(key) for key in (*claims, "status")})
     except SupabaseAdminAPIError:

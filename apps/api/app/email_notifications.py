@@ -29,7 +29,7 @@ def _email_config(settings: Settings | None = None) -> tuple[str, str, str, str]
     return client_id, client_secret, refresh_token, sender
 
 
-def setup_redirect_url(settings: Settings | None = None) -> str:
+def _public_site_url(settings: Settings | None = None) -> str:
     config = settings or get_settings()
     url = config.public_site_url.strip().rstrip("/")
     parsed = urlsplit(url)
@@ -47,7 +47,11 @@ def setup_redirect_url(settings: Settings | None = None) -> str:
         ))
     ):
         raise HTTPException(status_code=503, detail="The public site URL is not configured correctly.")
-    return url + "/set-password"
+    return url
+
+
+def setup_redirect_url(settings: Settings | None = None) -> str:
+    return _public_site_url(settings) + "/set-password"
 
 
 def account_setup_link(result: dict, link_type: str) -> str:
@@ -118,6 +122,16 @@ def send_email(to_email: str, subject: str, body: str) -> None:
         raise EmailDeliveryError() from exc
 
 
+def send_application_email_code(email: str, code: str) -> None:
+    send_email(
+        email,
+        "Verify your AllSafe account request email",
+        f"Enter this code in the AllSafe account request form:\n\n{code}\n\n"
+        "The code expires within 20 minutes. If you did not request it, you can ignore this email.\n\n"
+        "AllSafe AI Trading",
+    )
+
+
 def send_request_received(email: str, name: str) -> None:
     send_email(
         email,
@@ -158,6 +172,16 @@ def send_approved(email: str, name: str, setup_link: str) -> None:
         f"{setup_link}\n\nIf the link expires, contact the administrator for a new one. "
         "After setting your password, sign in from any network.\n\n"
         "AllSafe AI Trading",
+    )
+
+
+def send_chosen_password_approval(email: str, name: str) -> None:
+    send_email(
+        email,
+        "Your AllSafe account request was approved",
+        f"Hello {name},\n\nYour AllSafe AI Trading account is approved. "
+        "Sign in with your email address and the password you chose on the application form.\n\n"
+        f"{_public_site_url()}/login\n\nAllSafe AI Trading",
     )
 
 

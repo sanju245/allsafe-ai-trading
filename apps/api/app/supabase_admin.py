@@ -23,7 +23,8 @@ ACCOUNT_REQUEST_COLUMNS = (
     "id,full_name,date_of_birth,email,phone_number,whatsapp_number,"
     "request_ip,status,notification_status,auth_user_id,decided_by,"
     "created_at,receipt_sent_at,decided_at,notification_sent_at,"
-    "approval_attempt,processing_started_at,notification_started_at,receipt_started_at"
+    "approval_attempt,processing_started_at,notification_started_at,receipt_started_at,"
+    "uses_chosen_password"
 )
 _REQUEST_TIMEOUT_SECONDS = 10
 
@@ -264,6 +265,18 @@ def create_auth_user(
     return user
 
 
+def create_auth_user_from_hash(email: str, password_hash: str, approval_attempt: str) -> dict[str, Any]:
+    user = _request_json("POST", "auth/v1/admin/users", payload={
+        "email": email,
+        "password_hash": password_hash,
+        "email_confirm": True,
+        "app_metadata": {"allsafe_approval_attempt": approval_attempt},
+    })
+    if not isinstance(user, dict) or not isinstance(user.get("id"), str):
+        raise SupabaseAdminAPIError(502)
+    return user
+
+
 def set_auth_user_ban(
     user_id: str,
     *,
@@ -364,6 +377,24 @@ def generate_account_link(
         if not isinstance(user, dict) or not isinstance(user.get("id"), str):
             raise SupabaseAdminAPIError(502)
     return {"user": user, "action_link": properties["action_link"], "hashed_token": properties.get("hashed_token")}
+
+
+def insert_account_request_with_password(values: dict[str, Any], password_hash: str) -> dict[str, Any]:
+    row = _request_json("POST", "rest/v1/rpc/insert_account_request_with_password", payload={
+        "p_application": values, "p_password_hash": password_hash,
+    })
+    if not isinstance(row, dict):
+        raise SupabaseAdminAPIError(502)
+    return row
+
+
+def get_account_request_password_hash(request_id: str, approval_attempt: str) -> str:
+    digest = _request_json("POST", "rest/v1/rpc/get_account_request_password_hash", payload={
+        "p_request_id": request_id, "p_approval_attempt": approval_attempt,
+    })
+    if not isinstance(digest, str) or not digest:
+        raise SupabaseAdminAPIError(502)
+    return digest
 
 
 def insert_account_request(values: dict[str, Any], *, settings: Settings | None = None) -> dict[str, Any]:

@@ -4,6 +4,7 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic-settings>=2.4
 PyJWT[crypto]>=2.10,<3
+bcrypt==5.0.0
 ./vendor/growwapi
 pyotp>=2.9.0
 upstox-python-sdk>=2.30.0,<3

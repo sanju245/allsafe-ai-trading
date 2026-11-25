@@ -8,12 +8,14 @@ from io import BytesIO
 from urllib.error import HTTPError
 from uuid import uuid4
 
+import bcrypt
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 import app.email_notifications as notifications
 import app.routers.account_requests as routes
+import app.supabase_admin as supabase
 from app.config import Settings
 from app.email_notifications import EmailDeliveryError
 from app.main import app
@@ -21,6 +23,7 @@ from app.supabase_admin import SupabaseAdminAPIError
 
 client = TestClient(app)
 ADMIN_ID = "00000000-0000-4000-8000-000000000002"
+APPLICATION_PASSWORD = "Saffron river 6932!"
 
 
 def test_gmail_https_delivery(monkeypatch):
@@ -167,6 +170,138 @@ def application(**changes):
         "whatsapp_number": "+91 9876543210",
         **changes,
     }
+
+
+@pytest.fixture
+def chosen_password_request(store, monkeypatch):
+    rows, calls = store
+    codes = {}
+    hashes = {}
+    monkeypatch.setattr(routes, "get_settings", lambda: Settings(
+        supabase_service_role_key=SecretStr("synthetic-verification-test-key"),
+    ))
+    monkeypatch.setattr(routes._email_code_rate_limiter, "check", lambda *args, **kwargs: None)
+    monkeypatch.setattr(routes, "send_application_email_code", codes.__setitem__)
+    monkeypatch.setattr(routes, "require_safe_password", lambda _: None)
+
+    def insert_with_password(values, digest):
+        row = routes.insert_account_request({**values, "uses_chosen_password": True})
+        hashes[row["id"]] = digest
+        return row
+
+    def read_hash(request_id, attempt):
+        assert rows[request_id]["status"] == "processing"
+        assert rows[request_id]["approval_attempt"] == attempt
+        return hashes[request_id]
+
+    monkeypatch.setattr(routes, "insert_account_request_with_password", insert_with_password)
+    monkeypatch.setattr(routes, "get_account_request_password_hash", read_hash)
+    assert client.post("/api/v1/account-requests/email-code", json={"email": "ASHA@example.com"}).status_code == 202
+    return rows, calls, hashes, application(password=APPLICATION_PASSWORD, email_code=codes["asha@example.com"])
+
+
+def test_chosen_password_requires_a_fresh_code_for_the_same_email(chosen_password_request, monkeypatch):
+    rows, calls, hashes, payload = chosen_password_request
+    for changes in (
+        {"email_code": None},
+        {"email": "other@example.com"},
+        {"password": "short"},
+        {"password": "🔒" * 19},
+    ):
+        response = client.post("/api/v1/account-requests", json={**payload, **changes})
+        assert response.status_code == 422
+        assert APPLICATION_PASSWORD not in response.text
+        assert payload["email_code"] not in response.text
+    expired_window = routes._email_code_window() + 2
+    monkeypatch.setattr(routes, "_email_code_window", lambda: expired_window)
+    response = client.post("/api/v1/account-requests", json=payload)
+    assert response.status_code == 422
+    assert "invalid or expired" in response.json()["detail"]
+    assert not rows and not calls and not hashes
+
+
+@pytest.mark.usefixtures("admin_account_override")
+def test_verified_password_is_imported_only_at_approval_and_email_points_to_login(chosen_password_request, monkeypatch):
+    rows, calls, hashes, payload = chosen_password_request
+    user_id = str(uuid4())
+    profile = {"id": user_id, "email": payload["email"], "status": "active", "role": "user"}
+    auth_requests = []
+    mail = []
+
+    def auth_create(method, path, *, payload):
+        assert method == "POST"
+        assert path == "auth/v1/admin/users"
+        auth_requests.append(payload)
+        return {"id": user_id}
+
+    monkeypatch.setattr(supabase, "_request_json", auth_create)
+    monkeypatch.setattr(routes, "get_profile", lambda _: profile)
+    monkeypatch.setattr(routes, "generate_account_link", lambda *args, **kwargs: pytest.fail("Setup link was generated"))
+    monkeypatch.setattr(notifications, "get_settings", lambda: Settings(public_site_url="https://example.com"))
+    monkeypatch.setattr(notifications, "send_email", lambda *args: mail.append(args))
+
+    submitted = client.post("/api/v1/account-requests", json=payload)
+    assert submitted.status_code == 202
+    assert auth_requests == []
+    assert calls == [("received", payload["email"]), ("admin_request", payload["email"])]
+    request_id = next(iter(rows))
+    digest = hashes[request_id]
+    assert bcrypt.checkpw(APPLICATION_PASSWORD.encode(), digest.encode())
+    assert client.post("/api/v1/account-requests", json={**payload, "password": "Alternate test phrase 865"}).status_code == 202
+    assert hashes[request_id] == digest
+
+    path = f"/api/v1/admin/account-requests/{request_id}"
+    queue = client.get("/api/v1/admin/account-requests")
+    approved = client.post(f"{path}/approve")
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert approved.json()["uses_chosen_password"] is True
+    assert auth_requests == [{
+        "email": payload["email"], "password_hash": digest, "email_confirm": True,
+        "app_metadata": {"allsafe_approval_attempt": rows[request_id]["approval_attempt"]},
+    }]
+    rows[request_id]["notification_sent_at"] = (datetime.now(timezone.utc) - timedelta(minutes=4)).isoformat()
+    assert client.post(f"{path}/retry-email").status_code == 200
+    assert len(auth_requests) == 1 and len(mail) == 2
+    assert all(recipient == payload["email"] and "https://example.com/login" in body for recipient, _, body in mail)
+    for secret in (APPLICATION_PASSWORD, digest, payload["email_code"]):
+        assert all(secret not in message for message in (submitted.text, queue.text, approved.text, str(mail)))
+
+
+@pytest.mark.usefixtures("admin_account_override")
+def test_interrupted_password_approval_can_resume_without_creating_another_user(chosen_password_request, monkeypatch):
+    rows, _, _, payload = chosen_password_request
+    assert client.post("/api/v1/account-requests", json=payload).status_code == 202
+    request_id = next(iter(rows))
+    profile = {"id": str(uuid4()), "email": payload["email"], "status": "active", "role": "user"}
+    users = []
+
+    def create(email, digest, attempt):
+        users.append({"id": profile["id"], "app_metadata": {"allsafe_approval_attempt": attempt}})
+        return users[-1]
+
+    monkeypatch.setattr(routes, "create_auth_user_from_hash", create)
+    monkeypatch.setattr(routes, "get_profile", lambda _: profile)
+    monkeypatch.setattr(routes, "get_profile_by_email", lambda _: profile if users else None)
+    monkeypatch.setattr(routes, "get_auth_user", lambda _: users[-1])
+    monkeypatch.setattr(routes, "send_chosen_password_approval", lambda *args: None)
+    update = routes.update_account_request
+
+    def interrupted(row_id, changes, **kwargs):
+        if changes.get("status") == "approved":
+            raise SupabaseAdminAPIError(503)
+        return update(row_id, changes, **kwargs)
+
+    monkeypatch.setattr(routes, "update_account_request", interrupted)
+    path = f"/api/v1/admin/account-requests/{request_id}"
+    assert client.post(f"{path}/approve").status_code == 502
+    assert client.post(f"{path}/decline").status_code == 409
+    assert client.delete(path).status_code == 409
+
+    monkeypatch.setattr(routes, "update_account_request", update)
+    assert client.post(f"{path}/approve").status_code == 200
+    assert rows[request_id]["auth_user_id"] == profile["id"]
+    assert len(users) == 1
 
 
 def test_public_request_sends_receipt_without_creating_account(store, monkeypatch):
