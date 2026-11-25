@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -21,6 +21,8 @@ async function errorMessage(response: Response): Promise<string> {
 
 export default function AccountRequestButton() {
   const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const [fullName, setFullName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [email, setEmail] = useState("");
@@ -32,13 +34,16 @@ export default function AccountRequestButton() {
   const [resultMessage, setResultMessage] = useState("");
 
   useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) setOpen(false);
+    const panel = dialog.current;
+    const opener = trigger.current;
+    if (!open || !panel) return;
+    panel.showModal();
+    panel.querySelector("input")?.focus();
+    return () => {
+      panel.close();
+      opener?.focus();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, open]);
+  }, [open]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,6 +69,12 @@ export default function AccountRequestButton() {
         ? (body as { message: unknown }).message : null;
       setResultMessage(typeof message === "string" ? message : "Your request is awaiting administrator review.");
       setSubmitted(true);
+      setFullName("");
+      setDateOfBirth("");
+      setEmail("");
+      setPhoneNumber("");
+      setWhatsappNumber("");
+
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not submit the request.");
     } finally {
@@ -74,12 +85,14 @@ export default function AccountRequestButton() {
   const inputClass = "mt-1 block w-full rounded-lg border border-white/15 bg-[#0b1118] px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400";
   return (
     <>
-      <button type="button" onClick={() => { setSubmitted(false); setError(null); setOpen(true); }} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-300/10 px-6 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-300/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300">
+      <button ref={trigger} type="button" onClick={() => { setSubmitted(false); setError(null); setOpen(true); }} className="inline-flex min-h-12 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-300/10 px-6 py-3 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-300/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300">
         Create account with us
       </button>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setOpen(false); }}>
-          <section role="dialog" aria-modal="true" aria-labelledby="account-request-title" className="my-auto w-full max-w-2xl rounded-2xl border border-white/15 bg-[#101820] p-5 shadow-2xl sm:p-8">
+        <dialog ref={dialog} aria-labelledby="account-request-title" onCancel={(event) => {
+          event.preventDefault();
+          if (!busy) setOpen(false);
+        }} className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-2xl overflow-y-auto rounded-2xl border border-white/15 bg-[#101820] p-5 shadow-2xl backdrop:bg-black/80 sm:p-8">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-widest text-emerald-300">Customer access</p>
@@ -116,8 +129,7 @@ export default function AccountRequestButton() {
                 </form>
               </>
             )}
-          </section>
-        </div>
+        </dialog>
       )}
     </>
   );

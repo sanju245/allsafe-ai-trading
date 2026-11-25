@@ -2,7 +2,7 @@
 
 import base64
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email import message_from_bytes
 from io import BytesIO
 from urllib.error import HTTPError
@@ -121,9 +121,11 @@ def store(monkeypatch):
         rows[row["id"]] = row
         return row.copy()
 
-    def update(request_id, changes, *, expected_status=None):
+    def update(request_id, changes, *, expected_status=None, expected=None):
         row = rows.get(request_id)
         if row is None or expected_status is not None and row["status"] != expected_status:
+            return None
+        if any(row.get(key) != value for key, value in (expected or {}).items()):
             return None
         row.update(changes)
         return row.copy()
@@ -131,9 +133,17 @@ def store(monkeypatch):
     monkeypatch.setattr(routes, "insert_account_request", insert)
     monkeypatch.setattr(routes, "get_account_request", lambda request_id: rows.get(request_id))
     monkeypatch.setattr(routes, "get_profile_by_email", lambda email: None)
-    monkeypatch.setattr(routes, "list_account_requests", lambda: list(rows.values()))
+    monkeypatch.setattr(routes, "get_open_account_request", lambda email: next(
+        (row.copy() for row in rows.values() if row["email"] == email and row["status"] in {"pending", "processing"}), None,
+    ))
+    def listed(*, offset, limit, review_only):
+        ordered = list(reversed(list(rows.values())))
+        if review_only:
+            ordered = [row for row in ordered if row["status"] in {"pending", "processing"} or row["notification_status"] != "sent"]
+        return ordered[offset:offset + limit]
+    monkeypatch.setattr(routes, "list_account_requests", listed)
     monkeypatch.setattr(routes, "update_account_request", update)
-    monkeypatch.setattr(routes, "delete_account_request", lambda request_id: rows.pop(request_id, None))
+    monkeypatch.setattr(routes, "delete_account_request", lambda request_id, **_: bool(rows.pop(request_id, None)))
     return rows, calls
 
 
@@ -166,12 +176,18 @@ def test_request_needs_no_customer_ip_and_duplicate_is_generic(store):
     assert calls == [("received", "asha@example.com"), ("admin_request", "asha@example.com")]
 
 
-def test_failed_receipt_does_not_leave_a_pending_request(store, monkeypatch):
-    rows, _ = store
+def test_failed_receipt_can_retry_the_same_pending_request(store, monkeypatch):
+    rows, calls = store
     monkeypatch.setattr(routes, "send_request_received", lambda *args: (_ for _ in ()).throw(EmailDeliveryError()))
     response = client.post("/api/v1/account-requests", json=application())
     assert response.status_code == 503
-    assert rows == {}
+    assert len(rows) == 1
+    assert next(iter(rows.values()))["receipt_started_at"] is None
+    monkeypatch.setattr(routes, "send_request_received", lambda *args: calls.append(("received", args[0])))
+    assert client.post("/api/v1/account-requests", json=application()).status_code == 202
+    assert len(rows) == 1
+    assert next(iter(rows.values()))["receipt_sent_at"]
+    assert calls[0] == ("received", "asha@example.com")
 
 
 def test_failed_admin_notification_keeps_saved_request_and_receipt(store, monkeypatch, caplog):
@@ -200,7 +216,7 @@ def test_approval_creates_user_without_ip_binding_and_sends_setup_link(store, mo
     monkeypatch.setattr(routes, "generate_account_link", lambda email, **kwargs: {
         "user": {"id": user_id}, "action_link": "https://auth.example/verify?token=secret"
     })
-    monkeypatch.setattr(routes, "get_profile", lambda account_id: {"id": account_id})
+    monkeypatch.setattr(routes, "get_profile", lambda account_id: {"id": account_id, "role": "user", "status": "active", "email": "asha@example.com"})
     response = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
@@ -278,11 +294,11 @@ def test_failed_approval_email_keeps_approved_account_and_can_retry(store, monke
     request_id = next(iter(rows))
     user_id = str(uuid4())
     link_types = []
-    def link(email, *, link_type, redirect_to):
+    def link(email, *, link_type, redirect_to, approval_attempt=None):
         link_types.append(link_type)
         return {"user": {"id": user_id}, "action_link": "https://auth.example/verify?token=secret"}
     monkeypatch.setattr(routes, "generate_account_link", link)
-    monkeypatch.setattr(routes, "get_profile", lambda account_id: {"id": account_id})
+    monkeypatch.setattr(routes, "get_profile", lambda account_id: {"id": account_id, "role": "user", "status": "active", "email": "asha@example.com"})
     monkeypatch.setattr(routes, "send_approved", lambda *args: (_ for _ in ()).throw(EmailDeliveryError()))
     approved = client.post(f"/api/v1/admin/account-requests/{request_id}/approve")
     assert approved.status_code == 200
@@ -293,3 +309,76 @@ def test_failed_approval_email_keeps_approved_account_and_can_retry(store, monke
     assert retried.status_code == 200
     assert retried.json()["notification_status"] == "sent"
     assert link_types == ["invite", "recovery"]
+
+
+@pytest.mark.usefixtures("admin_account_override")
+def test_interrupted_approval_resumes_the_same_invited_customer(store, monkeypatch):
+    rows, _ = store
+    client.post("/api/v1/account-requests", json=application())
+    request_id = next(iter(rows))
+    path = f"/api/v1/admin/account-requests/{request_id}/approve"
+    user_id = str(uuid4())
+    profile = {"id": user_id, "email": "asha@example.com", "role": "user", "status": "active"}
+    invocations = []
+    def link(email, *, link_type, redirect_to, approval_attempt=None):
+        invocations.append((link_type, approval_attempt))
+        return {"user": profile, "action_link": "https://auth.example/mock"}
+    monkeypatch.setattr(routes, "generate_account_link", link)
+    monkeypatch.setattr(routes, "get_profile", lambda _: profile)
+    update = routes.update_account_request
+    def outage(row_id, changes, **kwargs):
+        if changes.get("status") == "approved" or changes.get("processing_started_at", True) is None:
+            raise SupabaseAdminAPIError(503)
+        return update(row_id, changes, **kwargs)
+    monkeypatch.setattr(routes, "update_account_request", outage)
+    assert client.post(path).status_code == 502
+    assert rows[request_id]["status"] == "processing"
+    assert client.post(path).status_code == 409
+
+    rows[request_id]["processing_started_at"] = (datetime.now(timezone.utc) - timedelta(minutes=4)).isoformat()
+    monkeypatch.setattr(routes, "update_account_request", update)
+    monkeypatch.setattr(routes, "get_profile_by_email", lambda _: profile)
+    monkeypatch.setattr(routes, "get_auth_user", lambda _: {
+        **profile, "user_metadata": {"allsafe_approval_attempt": invocations[0][1]},
+    })
+    assert client.post(path).status_code == 200
+    assert rows[request_id]["auth_user_id"] == user_id
+    assert [entry[0] for entry in invocations] == ["invite", "recovery"]
+
+
+@pytest.mark.usefixtures("admin_account_override")
+def test_pending_decision_acknowledgement_can_be_retried(store, monkeypatch):
+    rows, calls = store
+    client.post("/api/v1/account-requests", json=application())
+    request_id = next(iter(rows))
+    path = f"/api/v1/admin/account-requests/{request_id}"
+    update = routes.update_account_request
+    def lose_ack(row_id, changes, **kwargs):
+        if changes.get("notification_status") == "sent":
+            raise SupabaseAdminAPIError(503)
+        return update(row_id, changes, **kwargs)
+    monkeypatch.setattr(routes, "update_account_request", lose_ack)
+    assert client.post(path + "/decline").status_code == 502
+    assert rows[request_id]["notification_status"] == "pending"
+    assert client.post(path + "/retry-email").status_code == 409
+
+    rows[request_id]["notification_started_at"] = (datetime.now(timezone.utc) - timedelta(minutes=4)).isoformat()
+    monkeypatch.setattr(routes, "update_account_request", update)
+    assert client.post(path + "/retry-email").status_code == 200
+    assert rows[request_id]["notification_status"] == "sent"
+    assert [call[0] for call in calls].count("declined") == 2
+
+
+@pytest.mark.usefixtures("admin_account_override")
+def test_queue_pages_and_admin_can_remove_an_application(store):
+    rows, _ = store
+    for index in range(3):
+        assert client.post("/api/v1/account-requests", json=application(email=f"fixture-{index}@example.test")).status_code == 202
+    first = client.get("/api/v1/admin/account-requests?limit=2").json()
+    second = client.get("/api/v1/admin/account-requests?limit=2&offset=2").json()
+    assert first["has_more"] is True
+    assert second["has_more"] is False
+    assert len(second["requests"]) == 1
+    request_id = second["requests"][0]["id"]
+    assert client.delete(f"/api/v1/admin/account-requests/{request_id}").status_code == 204
+    assert request_id not in rows

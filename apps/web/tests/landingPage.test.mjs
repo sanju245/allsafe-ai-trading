@@ -224,7 +224,7 @@ test("NSE Market Status: weekends, published NSE holidays, and the announced Diw
   assert.equal(afterMuhurat.countdown.targetTimeLabelIst, "09:15 AM IST");
 });
 
-test("NSE Market Status: returns MARKET STATUS UNAVAILABLE when data is invalid or out of verified calendar bounds", () => {
+test("NSE Market Status: returns MARKET STATUS UNAVAILABLE when invalid and gives an estimate beyond the verified calendar", () => {
   const forced = indianMarketStatus.evaluateIndianMarketStatus(Date.now(), {
     forceUnavailable: true,
   });
@@ -241,15 +241,21 @@ test("NSE Market Status: returns MARKET STATUS UNAVAILABLE when data is invalid 
   const unverifiedFutureYear = indianMarketStatus.evaluateIndianMarketStatus(
     "2027-05-12T10:30:00+05:30",
   );
-  assert.equal(unverifiedFutureYear.state, "UNAVAILABLE");
-  assert.equal(unverifiedFutureYear.label, "MARKET STATUS UNAVAILABLE");
+  assert.equal(unverifiedFutureYear.state, "ESTIMATE");
+  assert.equal(unverifiedFutureYear.label, "NSE SCHEDULE ESTIMATE");
+  assert.equal(unverifiedFutureYear.countdown.targetEvent, "CLOSE");
+  const verified = indianMarketStatus.evaluateIndianMarketStatus("2027-05-12T10:30:00+05:30", {
+    calendar: { holidays: { "2027-05-12": "Fixture holiday" }, verifiedYears: [2027] },
+  });
+  assert.equal(verified.state, "CLOSED");
+  assert.equal(verified.holidayName, "Fixture holiday");
   assert.equal(unverifiedFutureYear.isLive, false);
 
   const laterYear = indianMarketStatus.evaluateIndianMarketStatus(
     "2032-05-12T10:30:00+05:30",
   );
-  assert.equal(laterYear.state, "UNAVAILABLE");
-  assert.equal(laterYear.label, "MARKET STATUS UNAVAILABLE");
+  assert.equal(laterYear.state, "ESTIMATE");
+  assert.equal(laterYear.label, "NSE SCHEDULE ESTIMATE");
 });
 
 test("Landing Page & How It Works page compile cleanly and describe the current rule engine accurately", () => {

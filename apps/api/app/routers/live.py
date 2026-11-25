@@ -431,6 +431,9 @@ def get_live_candles(
         ut_bot_signal=decision_summary.ut_bot_signal,
         opening_range_state=decision_summary.opening_range_state,
         ut_bot_position=decision_summary.ut_bot_position,
+        opening_range_high=decision_summary.opening_range_high,
+        opening_range_low=decision_summary.opening_range_low,
+        first_breakout=decision_summary.first_breakout,
         ema_bullish=decision_summary.ema_bullish,
         rsi_bullish=decision_summary.rsi_bullish,
         macd_bullish=decision_summary.macd_bullish,
@@ -451,6 +454,7 @@ def get_live_candles(
                 macd_bullish=point.macd_bullish,
                 supertrend_bullish=point.supertrend_bullish,
                 reason=point.reason,
+                levels=point.levels,
             )
             for point in points
             if history_days is None or (point.timestamp in visible_stamps and point.decision.value in ("BUY", "SELL"))

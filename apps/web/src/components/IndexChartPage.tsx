@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useMemo, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useIndexChart } from "./useIndexChart";
 import { chartHistory, currentSignal, decisionChecks, epoch, formatPrice, formatStamp, formingBar, freshQuote } from "@/lib/indexChart";
@@ -42,6 +42,10 @@ function Workspace({ symbol, provider, days, token, signOut }: {
 }) {
   const { series, tick, quoteError, seriesError } = useIndexChart(symbol, provider, days, token, signOut);
   const { bars, marks } = useMemo(() => chartHistory(series), [series]);
+  const [levelTime, setLevelTime] = useState("latest");
+  const withLevels = useMemo(() => marks.filter(mark => mark.levels), [marks]);
+  const levelMark = levelTime === "latest" ? withLevels.at(-1) : withLevels.find(mark => String(mark.time) === levelTime);
+  const levels = levelMark?.levels;
   const quote = quoteError ? undefined : tick;
   const live = freshQuote(quote);
   const forming = useMemo(() => formingBar(quote, bars.at(-1)), [quote, bars]);
@@ -62,6 +66,7 @@ function Workspace({ symbol, provider, days, token, signOut }: {
     decision ? "Waiting for candles" : "Loading";
   const count = decision?.confirmed_candle_count;
   const checks = decisionChecks(seriesError ? undefined : decision);
+  const firstBreakout = seriesError ? null : decision?.first_breakout;
   const options = [...new Set([1, 7, 14, 30, days])].sort((a,b) => a - b);
   return <main className="index-workspace">
     <nav className="chart-top"><Link href="/terminal"><span aria-hidden="true">←</span> Market dashboard</Link>
@@ -82,7 +87,26 @@ function Workspace({ symbol, provider, days, token, signOut }: {
     {(seriesError || quoteError || series?.history_warning) && <p className="chart-notice" role="alert">
       {seriesError ? "Candle and signal refresh delayed. Retrying." : series?.history_warning} {quoteError && "Quote refresh delayed. Retrying."}
     </p>}
-    <ChartCanvas bars={bars} marks={marks} forming={forming} realPrice={realPrice} priceLabel={priceLabel} loading={!series && !seriesError} />
+    <ChartCanvas bars={bars} marks={marks} forming={forming} realPrice={realPrice} priceLabel={priceLabel}
+      loading={!series && !seriesError} levels={levels} />
+    {withLevels.length > 0 && <section className="chart-levels" aria-label="Signal price levels">
+      <label>Signal levels <select value={levelTime} onChange={event => setLevelTime(event.target.value)}>
+        <option value="latest">Latest confirmed signal</option>
+        <option value="off">Hide levels</option>
+        {withLevels.toReversed().map(mark => <option key={mark.time} value={String(mark.time)}>
+          {mark.side} · {formatStamp(mark.time)} IST
+        </option>)}
+      </select></label>
+      {levels && levelMark && <>
+        <p>{levelMark.side} · {formatStamp(levelMark.time)} IST</p>
+        <dl>
+          <div><dt>Reference entry</dt><dd>{formatPrice(levels.entry)}</dd></div>
+          <div><dt>Stop-loss</dt><dd>{formatPrice(levels.stop_loss)}</dd></div>
+          <div><dt>Target (2R)</dt><dd>{formatPrice(levels.target)}</dd></div>
+        </dl>
+        <small>Levels use the confirmed market candle close and the opposite opening-range boundary.</small>
+      </>}
+    </section>}
     <div className="chart-decision-strip">
       <div><label>{current ? "Current confirmed signal" : "Last decision"}</label><strong className={current ? (direction === "BUY" ? "chart-up" : "chart-down") : ""}>{signalText}</strong></div>
       <div><label>Evaluated candle</label><strong>{decision?.candle_timestamp ? formatStamp(epoch(decision.candle_timestamp)) + " IST" : "—"}</strong></div>
@@ -91,8 +115,13 @@ function Workspace({ symbol, provider, days, token, signOut }: {
     </div>
     <details className="chart-checks"><summary>Signal confirmation checks</summary>
       <p>{seriesError ? "Waiting for the latest signal calculation." : decision?.reason || "Waiting for completed candles."}</p>
+      {firstBreakout && <p>
+        First breakout · {firstBreakout.side} · {formatStamp(epoch(firstBreakout.timestamp))} IST · {firstBreakout.decision}. {firstBreakout.reason}
+      </p>}
       <dl>{checks.map(([name, reading]) =>
         <div key={name}><dt>{name}</dt><dd>{reading}</dd></div>)}</dl>
+      {!seriesError && decision?.opening_range_high != null && decision.opening_range_low != null &&
+        <p>Opening range · Low {formatPrice(decision.opening_range_low)} · High {formatPrice(decision.opening_range_high)}</p>}
     </details>
     <footer className="chart-credit"><span>Heikin Ashi shows averaged prices. Signals use completed 15-minute market candles.</span>
       <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView Lightweight Charts™ © 2025 TradingView, Inc.</a></footer>

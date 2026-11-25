@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.config import get_settings
+from app.market_data.sessions import NSE_HOLIDAYS, VERIFIED_CALENDAR_YEARS
 from app.routers import account_requests, admin, auth, live, market_data, upstox_history
 from app.routers.live import build_runtimes_from_settings, set_live_runtimes
 
@@ -124,12 +125,15 @@ app.include_router(account_requests.admin_router)
 
 
 @app.get("/health", tags=["system"])
-def health() -> dict[str, str]:
+def health(calendar: bool = False) -> dict[str, object]:
     """Liveness check. Reports service status only, never market data."""
-    return {
+    result: dict[str, object] = {
         "status": "ok",
         "service": "allsafe-ai-trading-api",
         "version": __version__,
         "environment": settings.app_env,
         "time_utc": datetime.now(UTC).isoformat(),
     }
+    if calendar:
+        result["market_calendar"] = {"holidays": NSE_HOLIDAYS, "verifiedYears": VERIFIED_CALENDAR_YEARS}
+    return result

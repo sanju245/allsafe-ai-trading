@@ -4,6 +4,7 @@ import { memo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
 import BullBearHeroArena from "@/components/landing/BullBearHeroArena";
+import type { MarketCalendar } from "@/lib/indianMarketStatus";
 import IndianMarketStatusBadge from "@/components/landing/IndianMarketStatusBadge";
 import LiveIstClock from "@/components/landing/LiveIstClock";
 import AccountRequestButton from "@/components/landing/AccountRequestButton";
@@ -12,6 +13,7 @@ export interface LandingPageProps {
   serverTimeUtc?: string | null;
   backendOnline?: boolean;
   backendVersion?: string;
+  marketCalendar?: MarketCalendar;
 }
 
 type ExampleMode = "BUY" | "SELL" | "WAIT";
@@ -67,6 +69,7 @@ const FEATURES = [
 function LandingPage({
   serverTimeUtc = null,
   backendOnline = false,
+  marketCalendar,
 }: LandingPageProps) {
   const { session } = useAuth();
   const [exampleMode, setExampleMode] = useState<ExampleMode>("WAIT");
@@ -123,7 +126,7 @@ function LandingPage({
 
           <div className="mx-auto grid max-w-7xl gap-3 px-4 pb-10 sm:px-6 md:grid-cols-3 lg:px-8">
             <LiveIstClock initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
-            <IndianMarketStatusBadge initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
+            <IndianMarketStatusBadge calendar={marketCalendar} initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
             <div className="rounded-xl border border-white/10 bg-[#0b1018]/90 px-4 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Account service</p>
               <p className={`mt-2 font-mono text-lg font-semibold ${backendOnline ? "text-emerald-300" : "text-amber-200"}`}>{backendOnline ? "Reachable" : "Currently unavailable"}</p>

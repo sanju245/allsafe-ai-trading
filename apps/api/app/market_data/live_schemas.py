@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.indicators.decision import OpeningRangeState, TradeDecision
+from app.indicators.decision import OpeningRangeAttempt, OpeningRangeState, SignalLevels, TradeDecision
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_models import (
     FeedState,
@@ -138,6 +138,9 @@ class IndicatorDecisionSchema(BaseModel):
     ut_bot_signal: str | None = None
     opening_range_state: OpeningRangeState | None = None
     ut_bot_position: int | None = None
+    opening_range_high: float | None = None
+    opening_range_low: float | None = None
+    first_breakout: OpeningRangeAttempt | None = None
     ema_bullish: bool | None = None
     rsi_bullish: bool | None = None
     macd_bullish: bool | None = None
@@ -159,6 +162,7 @@ class IndicatorHistoryPointSchema(BaseModel):
     macd_bullish: bool | None = None
     supertrend_bullish: bool | None = None
     reason: str
+    levels: SignalLevels | None = None
 
 
 class LiveCandlesResponse(BaseModel):

@@ -170,6 +170,7 @@ def verify_supabase_access_token(
     *,
     supabase_url: str | None,
     jwt_secret: SecretStr | None,
+    require_recent_email: bool = False,
 ) -> str:
     """Verify a Supabase access token and return its canonical user id.
 
@@ -270,6 +271,17 @@ def verify_supabase_access_token(
     subject = claims.get("sub")
     if claims.get("role") != "authenticated" or not isinstance(subject, str):
         _invalid_token()
+
+    if require_recent_email:
+        methods = claims.get("amr")
+        now = time.time()
+        if not isinstance(methods, list) or not any(
+            isinstance(method, dict) and method.get("method") in ("otp", "invite", "recovery")
+            and (checked := _numeric_date(method.get("timestamp"))) is not None
+            and now - 900 <= checked <= now + _CLOCK_SKEW_SECONDS
+            for method in methods
+        ):
+            raise HTTPException(status_code=401, detail="This setup link has expired. Request a new one.")
 
     try:
         return str(UUID(subject))

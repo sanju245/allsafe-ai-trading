@@ -50,6 +50,22 @@ def setup_redirect_url(settings: Settings | None = None) -> str:
     return url + "/set-password"
 
 
+def account_setup_link(result: dict, link_type: str) -> str:
+    """Keep the one-time token out of HTTP URLs, access logs, and referrers."""
+    hashed_token = result.get("hashed_token")
+    if isinstance(hashed_token, str) and hashed_token:
+        return f"{setup_redirect_url()}#{urlencode({'token_hash': hashed_token, 'type': link_type})}"
+    return result["action_link"]
+
+
+def send_password_reset(email: str, setup_link: str) -> None:
+    send_email(
+        email, "Reset your AllSafe password",
+        f"Open this one-time link to choose a new password for AllSafe AI Trading:\n\n{setup_link}\n\n"
+        "If you did not request a password reset, you can ignore this message.",
+    )
+
+
 def ensure_email_ready() -> None:
     _email_config()
     setup_redirect_url()

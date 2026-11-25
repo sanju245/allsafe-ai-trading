@@ -22,7 +22,8 @@ PROFILE_COLUMNS = "id,email,role,status,created_at"
 ACCOUNT_REQUEST_COLUMNS = (
     "id,full_name,date_of_birth,email,phone_number,whatsapp_number,"
     "request_ip,status,notification_status,auth_user_id,decided_by,"
-    "created_at,receipt_sent_at,decided_at,notification_sent_at"
+    "created_at,receipt_sent_at,decided_at,notification_sent_at,"
+    "approval_attempt,processing_started_at,notification_started_at,receipt_started_at"
 )
 _REQUEST_TIMEOUT_SECONDS = 10
 
@@ -96,6 +97,7 @@ def _request_json(
     query: dict[str, str] | None = None,
     payload: dict[str, Any] | None = None,
     settings: Settings | None = None,
+    user_token: str | None = None,
 ) -> Any:
     base_url, service_key = _credentials(settings)
     url = f"{base_url}/{endpoint.lstrip('/')}"
@@ -106,11 +108,11 @@ def _request_json(
     headers = {
         "Accept": "application/json",
         "apikey": service_key,
-        "Authorization": f"Bearer {service_key}",
+        "Authorization": f"Bearer {user_token or service_key}",
     }
     if data is not None:
         headers["Content-Type"] = "application/json"
-    if method in {"PATCH", "POST"} and endpoint.startswith("rest/v1/"):
+    if method in {"PATCH", "POST", "DELETE"} and endpoint.startswith("rest/v1/"):
         headers["Prefer"] = "return=representation"
 
     request = Request(url, data=data, headers=headers, method=method)
@@ -250,26 +252,69 @@ def delete_auth_user(user_id: str, *, settings: Settings | None = None) -> None:
     )
 
 
+def get_auth_user(user_id: str, *, settings: Settings | None = None) -> dict[str, Any]:
+    result = _request_json("GET", f"auth/v1/admin/users/{user_id}", settings=settings)
+    user = result.get("user", result) if isinstance(result, dict) else None
+    if not isinstance(user, dict) or user.get("id") != user_id:
+        raise SupabaseAdminAPIError(502)
+    return user
+
+
+def revoke_temporary_session(access_token: str) -> None:
+    try:
+        _request_json("POST", "auth/v1/logout", query={"scope": "local"}, user_token=access_token)
+    except SupabaseAdminAPIError:
+        return
+
+
+def verify_email_otp(token_hash: str, link_type: str) -> str:
+    result = _request_json("POST", "auth/v1/verify", payload={"token_hash": token_hash, "type": link_type})
+    if not isinstance(result, dict) or not isinstance(result.get("access_token"), str):
+        raise SupabaseAdminAPIError(502)
+    return result["access_token"]
+
+
+def check_current_password(email: str, password: str, *, expected_user_id: str) -> bool:
+    try:
+        result = _request_json("POST", "auth/v1/token", query={"grant_type": "password"},
+                               payload={"email": email, "password": password})
+    except SupabaseAdminAPIError as exc:
+        if exc.status_code in {400, 401, 403, 422}:
+            return False
+        raise
+    user = result.get("user") if isinstance(result, dict) else None
+    if isinstance(result, dict) and isinstance(result.get("access_token"), str):
+        revoke_temporary_session(result["access_token"])
+    return isinstance(user, dict) and user.get("id") == expected_user_id
+
+
 def generate_account_link(
     email: str,
     *,
     link_type: str,
     redirect_to: str,
+    approval_attempt: str | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     """An invite creates the Auth user; recovery refreshes a setup link."""
+    payload: dict[str, Any] = {"type": link_type, "email": email, "redirect_to": redirect_to}
+    if approval_attempt:
+        payload["data"] = {"allsafe_approval_attempt": approval_attempt}
     result = _request_json(
         "POST", "auth/v1/admin/generate_link",
-        payload={"type": link_type, "email": email, "redirect_to": redirect_to},
+        payload=payload,
         settings=settings,
     )
-    if not isinstance(result, dict) or not isinstance(result.get("action_link"), str):
+    if not isinstance(result, dict):
+        raise SupabaseAdminAPIError(502)
+    properties = result.get("properties", result)
+    user = result.get("user", result)
+    if not isinstance(properties, dict) or not isinstance(properties.get("action_link"), str):
         raise SupabaseAdminAPIError(502)
     if link_type == "invite":
-        user = result.get("user")
         if not isinstance(user, dict) or not isinstance(user.get("id"), str):
             raise SupabaseAdminAPIError(502)
-    return result
+    return {"user": user, "action_link": properties["action_link"], "hashed_token": properties.get("hashed_token")}
 
 
 def insert_account_request(values: dict[str, Any], *, settings: Settings | None = None) -> dict[str, Any]:
@@ -282,15 +327,33 @@ def insert_account_request(values: dict[str, Any], *, settings: Settings | None 
     return rows[0]
 
 
-def list_account_requests(*, settings: Settings | None = None) -> list[dict[str, Any]]:
+def list_account_requests(
+    *, offset: int = 0, limit: int = 26, review_only: bool = True, settings: Settings | None = None,
+) -> list[dict[str, Any]]:
+    query = {
+        "select": ACCOUNT_REQUEST_COLUMNS, "order": "created_at.desc,id.desc",
+        "offset": str(offset), "limit": str(limit),
+    }
+    if review_only:
+        query["or"] = "(status.in.(pending,processing),notification_status.in.(pending,failed))"
     rows = _request_json(
         "GET", "rest/v1/account_requests",
-        query={"select": ACCOUNT_REQUEST_COLUMNS, "order": "created_at.desc", "limit": "1000"},
+        query=query,
         settings=settings,
     )
     if not isinstance(rows, list):
         raise SupabaseAdminAPIError(502)
     return rows
+
+
+def get_open_account_request(email: str) -> dict[str, Any] | None:
+    rows = _request_json("GET", "rest/v1/account_requests", query={
+        "select": ACCOUNT_REQUEST_COLUMNS, "email": f"eq.{email}",
+        "status": "in.(pending,processing)", "limit": "1",
+    })
+    if not isinstance(rows, list):
+        raise SupabaseAdminAPIError(502)
+    return rows[0] if rows else None
 
 
 def get_account_request(request_id: str, *, settings: Settings | None = None) -> dict[str, Any] | None:
@@ -309,11 +372,13 @@ def update_account_request(
     changes: dict[str, Any],
     *,
     expected_status: str | None = None,
+    expected: dict[str, object] | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any] | None:
     query = {"select": ACCOUNT_REQUEST_COLUMNS, "id": f"eq.{request_id}"}
     if expected_status is not None:
         query["status"] = f"eq.{expected_status}"
+    query.update(_account_request_filters(expected))
     rows = _request_json(
         "PATCH", "rest/v1/account_requests", query=query, payload=changes, settings=settings,
     )
@@ -322,10 +387,21 @@ def update_account_request(
     return rows[0] if rows else None
 
 
-def delete_account_request(request_id: str, *, settings: Settings | None = None) -> None:
-    _request_json(
-        "DELETE", "rest/v1/account_requests", query={"id": f"eq.{request_id}"}, settings=settings,
+def _account_request_filters(expected: dict[str, object] | None) -> dict[str, str]:
+    return {key: "is.null" if value is None else f"eq.{value}" for key, value in (expected or {}).items()}
+
+
+def delete_account_request(
+    request_id: str, *, expected: dict[str, object] | None = None, settings: Settings | None = None,
+) -> bool:
+    rows = _request_json(
+        "DELETE", "rest/v1/account_requests",
+        query={"id": f"eq.{request_id}", **_account_request_filters(expected)},
+        settings=settings,
     )
+    if not isinstance(rows, list):
+        raise SupabaseAdminAPIError(502)
+    return bool(rows)
 
 
 def sanitized_admin_error(exc: SupabaseAdminAPIError) -> HTTPException:

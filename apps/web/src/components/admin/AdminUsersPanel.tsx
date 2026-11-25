@@ -587,7 +587,7 @@ export default function AdminUsersPanel() {
             <p className="text-xs font-medium uppercase tracking-widest text-rose-200">Delete customer</p>
             <h2 id="delete-dialog-title" className="mt-2 text-xl font-semibold text-white">This will remove the login</h2>
             <p id="delete-dialog-description" className="mt-3 text-sm leading-relaxed text-slate-300">
-              To confirm, type <span className="font-semibold text-white">{deleteTarget.email}</span>. This action cannot be undone.
+              To confirm, type <span className="font-semibold text-white">{deleteTarget.email}</span>. Any linked approved application is also removed. This action cannot be undone.
             </p>
             <label className="mt-4 block text-sm text-slate-300">
               Confirm email

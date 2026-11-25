@@ -18,7 +18,7 @@ from threading import Lock
 from time import monotonic
 from typing import Any, Protocol
 
-from app.indicators.decision import DecisionPoint, OpeningRangeState, TradeDecision, calculate_decisions
+from app.indicators.decision import DecisionPoint, OpeningRangeAttempt, OpeningRangeState, TradeDecision, calculate_decisions
 from app.market_data.instruments import InstrumentId
 from app.market_data.live_aggregator import LiveSessionAggregator
 from app.market_data.live_models import (
@@ -114,6 +114,9 @@ class LiveDecisionSummary:
     confirmed_candle_count: int
     opening_range_state: OpeningRangeState | None = None
     ut_bot_position: int | None = None
+    opening_range_high: float | None = None
+    opening_range_low: float | None = None
+    first_breakout: OpeningRangeAttempt | None = None
 
 
 class LiveMarketDataRuntime:
@@ -298,6 +301,11 @@ class LiveMarketDataRuntime:
         latest = stamp is not None and stamp == latest_closed_slot(as_of)
         if point and fresh and not latest:
             reason += " The latest session candle is not available."
+        diagnostic = point
+        if stamp is not None and (point is None or point.opening_range_high is None):
+            day = to_ist(stamp).date()
+            diagnostic = next((item for item in reversed(points)
+                               if to_ist(item.timestamp).date() == day and item.opening_range_high is not None), point)
         summary = LiveDecisionSummary(
             instrument=instrument, timeframe=Timeframe.M15, evaluated_at=as_of,
             feed_state=status.feed_state, is_stale=status.is_stale, candle_timestamp=stamp,
@@ -312,6 +320,9 @@ class LiveMarketDataRuntime:
             reason=reason,
             opening_range_state=point.opening_range_state if point else None,
             ut_bot_position=point.ut_bot_position if point else None,
+            opening_range_high=diagnostic.opening_range_high if diagnostic else None,
+            opening_range_low=diagnostic.opening_range_low if diagnostic else None,
+            first_breakout=diagnostic.first_breakout if diagnostic else None,
         )
         return summary, points
 

@@ -1,6 +1,7 @@
 // Server-side helper for talking to the FastAPI backend.
 // Only import this from Server Components or route handlers: API_BASE_URL is
 // intentionally not exposed to the browser.
+import type { MarketCalendar } from "./indianMarketStatus";
 
 export type HealthResult =
   | {
@@ -9,8 +10,18 @@ export type HealthResult =
       version: string;
       environment: string;
       timeUtc: string;
+      marketCalendar?: MarketCalendar;
     }
   | { ok: false; reason: string };
+
+function parseMarketCalendar(value: unknown): MarketCalendar | undefined {
+  if (!value || typeof value !== "object") return;
+  const { holidays, verifiedYears } = value as Record<string, unknown>;
+  if (!holidays || typeof holidays !== "object" || Array.isArray(holidays) ||
+      !Array.isArray(verifiedYears) || !verifiedYears.every(year => Number.isInteger(year)) ||
+      !Object.entries(holidays).every(([day, name]) => /^\d{4}-\d{2}-\d{2}$/.test(day) && typeof name === "string")) return;
+  return { holidays: holidays as MarketCalendar["holidays"], verifiedYears };
+}
 
 export async function getApiHealth(): Promise<HealthResult> {
   const base = process.env.API_BASE_URL;
@@ -19,7 +30,7 @@ export async function getApiHealth(): Promise<HealthResult> {
   }
 
   try {
-    const res = await fetch(`${base}/health`, {
+    const res = await fetch(`${base}/health?calendar=1`, {
       cache: "no-store",
       signal: AbortSignal.timeout(3000),
     });
@@ -43,6 +54,7 @@ export async function getApiHealth(): Promise<HealthResult> {
       version: String(d.version ?? "unknown"),
       environment: String(d.environment ?? "unknown"),
       timeUtc: String(d.time_utc ?? ""),
+      marketCalendar: parseMarketCalendar(d.market_calendar),
     };
   } catch {
     return { ok: false, reason: "API is not reachable" };

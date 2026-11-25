@@ -1,36 +1,21 @@
-# Project Status
+# Project status
 
-Updated 2026-11-19. This file describes the released implementation. Live deployment records are tracked separately in the release handover; a source build alone does not prove production health.
+Updated 25 November 2026. This page describes the current source. GitHub and hosting release records identify which revision is live.
 
-## Application
+## Market terminal
 
-- Public landing page at /, educational explanation at /what-we-done, signed-in terminal at /terminal, customer account at /account, customer sign-in at /login, and verified administrator portal at /admin with /admin/login.
-- The landing preview is static and contains no fabricated market prices or trade sizing. The backend engine performs five deterministic checks over confirmed candles.
-- Market-data failures clear old display values. Historical data is labeled not current. Account-service startup has a bounded wait with plain-language feedback.
-- Production includes authenticated Upstox Historical Candle V3 charts for completed 15-minute NIFTY 50 and BANK NIFTY candles, with a selectable 1–30 calendar-day range. This extends the Groww/Upstox live 5-minute selector with a separate historical view.
-- The production chart reads `UPSTOX_ACCESS_TOKEN` on the API service only. The route and deployment are live, but no authenticated historical request was made, so token validity and returned candle data remain unverified.
+- NIFTY 50 and BANK NIFTY use completed 15-minute candles for decisions. Live quotes and forming candles are shown separately. The Upstox historical chart supports a 1–30 day range.
+- Full charts show the first opening-range attempt and the numeric opening range. Confirmed markers can display reference entry, stop-loss and 2R target overlays.
+- The landing page uses the NSE schedule from the API. Before the exchange's future-year holiday calendar is recorded, weekday hours are labeled as estimates.
+- The application provides read-only analysis and does not place orders.
 
-## Access policy
+## Accounts
 
-- A valid Supabase token, matching profile identity, supported role, and active account are required.
-- Active administrators can access from any IP, including when proxy client-IP metadata is unavailable.
-- Active customers require one valid client IP and exact configured IP match. Missing, invalid, comma-separated, and duplicate proxy-IP headers fail closed for customers.
-- No email string in frontend code grants an admin role. Admin ownership is stored in Supabase and was verified through an authorized database session.
-- Live Supabase inspection verified the single-admin index and an RLS admin helper requiring both the admin role and active status.
-- Logout clears local session state immediately; stale authentication replies cannot restore it. Admin directory access denial clears customer rows and rechecks account access.
+- Supabase token verification, role, and active account status protect customer and admin routes. Customers and administrators can sign in from any network. The application form records the source IP for rate limiting and auditing.
+- Sessions restore after reload through a same-origin HttpOnly refresh cookie. Password changes require the current password. Invite and recovery links use verified email proof.
+- The admin queue supports paging, resuming interrupted approvals, retrying decision emails, sending replacement setup links, and removing stored applications.
+- The versioned Supabase migrations create the profile guard and the account request workflow. The launch-readiness schema is required for the current API.
 
-## Live observations before release
+## Verification
 
-- Render /health returned HTTP 200 after its free instance woke up. The free tier can take more than 50 seconds on a cold start.
-- Through the public Render hostname, forged CF-Connecting-IP was rejected at Cloudflare; forged X-Forwarded-For did not change the detected address.
-- An invalid Groww authentication-mode setting was corrected to the API-key/secret flow for the next backend deployment. Existing provider secrets were not copied into source.
-- Account-role changes were performed using a guarded transaction after explicit confirmation, with private rollback records. Passwords were not changed.
-- No password-backed production login test was performed by the agents because the account's existing password was not supplied. Role/authorization logic is covered by local regression tests.
-
-## Verification and safety
-
-Run frontend tests, typecheck, lint, and production build from apps/web. Run the full backend suite from apps/api with LIVE_STREAM_ENABLED=false. Exact command outputs, tested commit, screenshots, deployment results, and outstanding provider limits belong in the private release handover.
-
-No broker order-placement path was added. The application remains supervised, read-only market analysis. No autonomous or live orders are authorized by this release.
-
-Upstox 15-minute history was released to production from commit `d33fcccefa1b21c82b235bd4defaff94c472ad76` on 2026-11-19. Render reported the deploy live; Vercel reported the production deployment ready.
+Run the API suite with both live streams disabled. Run frontend tests, lint, a production build, and the browser chart test with fixtures. Confirm the release SHA on Vercel and Render and check the production endpoints before announcing deployment. Verify third-party email delivery separately from simulated account workflows.

@@ -26,7 +26,8 @@ const origin = deployment ?? localOrigin;
 const fixtureUser = { id: "browser-chart-audit-user", email: "browser-chart-audit@example.test" };
 const fixturePassword = "synthetic-browser-chart-audit";
 const fixtureToken = "synthetic-browser-chart-audit-access-token";
-const fixtureCredentials = [fixtureUser.email, fixturePassword, fixtureToken];
+const fixtureRefresh = "synthetic-browser-chart-audit-refresh-token";
+const fixtureCredentials = [fixtureUser.email, fixturePassword, fixtureToken, fixtureRefresh];
 const health = { status: "ok", service: "chart-audit-fixture", version: "1", environment: "test" };
 const symbols = ["NIFTY50", "BANKNIFTY"];
 const fixtureDays = ["2026-11-12", "2026-11-13", "2026-11-16", "2026-11-17", "2026-11-18"];
@@ -57,7 +58,13 @@ function candleFixture(symbol, includeHistory, historyDays) {
   const candles = bars(symbol, liveWarmupDays);
   const current = symbol === "BANKNIFTY" ? "SELL" : "BUY";
   const opposite = current === "BUY" ? "SELL" : "BUY";
-  const events = [{ timestamp: candles.at(-17).timestamp, decision: opposite }, { timestamp: candles.at(-1).timestamp, decision: current }];
+  const levels = (side, price) => side === "SELL"
+    ? { entry: price, stop_loss: price + 20, target: price - 40 }
+    : { entry: price, stop_loss: price - 20, target: price + 40 };
+  const events = [
+    { timestamp: candles.at(-17).timestamp, decision: opposite, levels: levels(opposite, candles.at(-17).close) },
+    { timestamp: candles.at(-1).timestamp, decision: current, levels: levels(current, candles.at(-1).close) },
+  ];
   if (rolled.has(symbol)) {
     candles.push(nextBar(candles.at(-1)));
     events.push({ timestamp: candles.at(-1).timestamp, decision: current });
@@ -75,6 +82,9 @@ function candleFixture(symbol, includeHistory, historyDays) {
       candle_timestamp: candles.at(-1).timestamp,
       reason: "Synthetic confirmed signal.",
       ut_bot_signal: current,
+      opening_range_low: candles.at(-3).low,
+      opening_range_high: candles.at(-3).high,
+      first_breakout: { timestamp: candles.at(-1).timestamp, side: current, decision: current, reason: "Synthetic confirmed signal." },
       ema_bullish: current === "BUY",
       rsi_bullish: current === "BUY",
       macd_bullish: current === "BUY",
@@ -94,7 +104,7 @@ async function intercept(route) {
   const request = route.request();
   const { pathname, searchParams, origin: requestOrigin } = new URL(request.url());
   const method = request.method();
-  const isAuth = /\/auth\/v1\/(?:token|logout)$/.test(pathname);
+  const isSession = pathname === "/api/auth/session" && requestOrigin === origin;
   const isApi = pathname.startsWith("/api/v1/") || pathname === "/health";
   const respond = (json, status = 200) => route.fulfill({
     status,
@@ -107,11 +117,12 @@ async function intercept(route) {
     },
   });
 
-  if (!isAuth && !isApi) {
+  if (isSession && !deployment) return route.continue();
+  if (!isSession && !isApi) {
     const forwardsCredential = [request.url(), request.postData() ?? "", ...Object.values(request.headers())]
       .some((value) => fixtureCredentials.some((credential) =>
         value.includes(credential) || value.includes(encodeURIComponent(credential))));
-    const appResource = pathname === "/login" || pathname === "/terminal" || pathname === "/favicon.ico" ||
+    const appResource = pathname === "/login" || pathname === "/account" || pathname === "/terminal" || pathname === "/favicon.ico" ||
       pathname.startsWith("/_next/") || /^\/chart\/(?:NIFTY50|BANKNIFTY)$/.test(pathname);
     if (forwardsCredential) requestErrors.push(new Error("A browser request tried to forward a fixture credential."));
     if (!forwardsCredential && requestOrigin === origin && appResource && ["GET", "HEAD"].includes(method)) {
@@ -122,13 +133,22 @@ async function intercept(route) {
 
   try {
     if (method === "OPTIONS") return respond({});
-    if (pathname.endsWith("/auth/v1/token")) {
-      assert.equal(method, "POST");
-      assert.deepEqual(request.postDataJSON(), { email: fixtureUser.email, password: fixturePassword });
-      signInCount += 1;
-      return respond({ access_token: fixtureToken, user: fixtureUser });
+    if (isSession) {
+      const headers = { "cache-control": "no-store" };
+      if (method === "DELETE") {
+        headers["set-cookie"] = "allsafe_refresh=; Path=/api/auth/session; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
+        return route.fulfill({ status: 204, headers });
+      }
+      if (method === "PUT") {
+        assert.deepEqual(request.postDataJSON(), { email: fixtureUser.email, password: fixturePassword });
+        signInCount += 1;
+        headers["set-cookie"] = `allsafe_refresh=${fixtureRefresh}; Path=/api/auth/session; HttpOnly; Secure; SameSite=Strict`;
+      } else {
+        assert.equal(method, "POST");
+        if (!(await request.headerValue("cookie"))?.includes(fixtureRefresh)) return respond({}, 401);
+      }
+      return route.fulfill({ status: 200, headers, json: { access_token: fixtureToken, user: fixtureUser, expires_in: 3600 } });
     }
-    if (pathname.endsWith("/auth/v1/logout")) return respond({});
     if (pathname === "/health") return respond(health);
     if (request.headers().authorization !== `Bearer ${fixtureToken}`) {
       forbiddenAccessCount += 1;
@@ -237,6 +257,12 @@ async function audit(context) {
   const bank = await openChart(context, live.getByRole("link", { name: /^BANK NIFTY/ }), "BANKNIFTY");
   await assertFullChart(bank, "BANK NIFTY");
   assert.equal(signInCount, 1, "Both chart tabs should reuse one sign-in.");
+  await bank.getByRole("region", { name: "Signal price levels" }).getByText("Stop-loss", { exact: true }).waitFor();
+  await bank.getByText("Signal confirmation checks", { exact: true }).click();
+  await bank.getByText(/First breakout · SELL/).waitFor();
+  await bank.reload();
+  await assertFullChart(bank, "BANK NIFTY");
+  assert.equal(signInCount, 1, "Reload should restore the session without a second login.");
   for (const symbol of symbols) {
     assert.ok(fixtureRequests.some((item) => item.symbol === symbol && item.includeHistory));
   }
@@ -345,6 +371,8 @@ async function audit(context) {
   assert.equal(hasStoredToken, false);
   assert.ok(!nifty.url().includes(fixtureToken));
   assert.ok(!(await context.cookies()).some((cookie) => cookie.value.includes(fixtureToken)));
+  assert.ok((await context.cookies()).some((cookie) => cookie.value === fixtureRefresh && cookie.httpOnly));
+  assert.ok(!nifty.url().includes("#session="));
 
   await entry.getByRole("button", { name: "Sign out" }).click();
   for (const chart of [nifty, bank, historical]) {
@@ -361,9 +389,30 @@ let nextServer;
 let browser;
 try {
   if (!deployment) {
-    server = createServer((request, response) => {
-      response.writeHead(request.url === "/health" ? 200 : 404, { "content-type": "application/json" });
-      response.end(JSON.stringify(health));
+    server = createServer(async (request, response) => {
+      const url = new URL(request.url, fixtureApi);
+      const reply = (status, data) => {
+        response.writeHead(status, { "content-type": "application/json" });
+        response.end(JSON.stringify(data));
+      };
+      if (url.pathname === "/health") return reply(200, health);
+      if (url.pathname === "/auth/v1/logout") return reply(200, {});
+      if (url.pathname !== "/auth/v1/token") return reply(404, {});
+      try {
+        const chunks = [];
+        for await (const chunk of request) chunks.push(chunk);
+        const body = JSON.parse(Buffer.concat(chunks));
+        if (url.searchParams.get("grant_type") === "password") {
+          assert.deepEqual(body, { email: fixtureUser.email, password: fixturePassword });
+          signInCount += 1;
+        } else {
+          assert.deepEqual(body, { refresh_token: fixtureRefresh });
+        }
+        return reply(200, { access_token: fixtureToken, refresh_token: fixtureRefresh, expires_in: 3600, user: fixtureUser });
+      } catch (error) {
+        requestErrors.push(error);
+        return reply(400, {});
+      }
     });
     server.listen(3906, "127.0.0.1");
     await once(server, "listening");
@@ -371,7 +420,7 @@ try {
       ...process.env,
       API_BASE_URL: fixtureApi,
       NEXT_PUBLIC_API_BASE_URL: fixtureApi,
-      NEXT_PUBLIC_SUPABASE_URL: localOrigin,
+      NEXT_PUBLIC_SUPABASE_URL: fixtureApi,
       NEXT_PUBLIC_SUPABASE_ANON_KEY: "synthetic-public-anon-key",
       NEXT_TELEMETRY_DISABLED: "1",
     };

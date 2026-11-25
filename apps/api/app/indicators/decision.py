@@ -30,6 +30,21 @@ class OpeningRangeState(StrEnum):
 
 
 @dataclass(frozen=True)
+class OpeningRangeAttempt:
+    timestamp: datetime
+    side: TradeDecision
+    decision: TradeDecision
+    reason: str
+
+
+@dataclass(frozen=True)
+class SignalLevels:
+    entry: float
+    stop_loss: float
+    target: float
+
+
+@dataclass(frozen=True)
 class DecisionPoint:
     timestamp: datetime
     decision: TradeDecision
@@ -41,6 +56,23 @@ class DecisionPoint:
     reason: str
     opening_range_state: OpeningRangeState | None = None
     ut_bot_position: int | None = None
+    opening_range_high: float | None = None
+    opening_range_low: float | None = None
+    first_breakout: OpeningRangeAttempt | None = None
+    levels: SignalLevels | None = None
+
+
+def opening_range_levels(
+    close: float, side: TradeDecision, opening_high: float, opening_low: float,
+) -> SignalLevels | None:
+    """Reference prices from the confirmed market candle and the opposite range edge."""
+    direction = 1 if side is TradeDecision.BUY else -1
+    stop = opening_low if direction == 1 else opening_high
+    risk = direction * (close - stop)
+    target = close + direction * 2 * risk
+    if risk <= 0 or target <= 0:
+        return None
+    return SignalLevels(entry=close, stop_loss=stop, target=target)
 
 
 def _has_warmup(ut, ema, rsi, macd, supertrend) -> bool:
@@ -100,7 +132,7 @@ def calculate_decisions(
             if local.time() == time(9, 15):
                 opening_ranges[local.date()] = (index, candle.high, candle.low)
 
-    attempted_sessions: set[date] = set()
+    attempted_sessions: dict[date, OpeningRangeAttempt] = {}
     decisions: list[DecisionPoint] = []
 
     for index, candle in enumerate(candles):
@@ -115,14 +147,17 @@ def calculate_decisions(
         opening_reason = "Waiting for the first confirmed close outside the 09:15 opening range."
         opening_direction = 0
         opening_range_state = None
+        opening_high = opening_low = None
+        session = local.date()
         if is_15m:
-            session = local.date()
             opening = opening_ranges.get(session)
             if opening is None:
                 opening_range_state = OpeningRangeState.MISSING
                 opening_reason = "No 09:15 opening candle; opening-range signals are disabled for this session."
             elif index <= opening[0]:
                 opening_range_state = OpeningRangeState.SET
+                if index == opening[0]:
+                    _, opening_high, opening_low = opening
             else:
                 opening_high, opening_low = opening[1], opening[2]
                 if candle.close > opening_high:
@@ -138,9 +173,6 @@ def calculate_decisions(
                     opening_reason = "The first opening-range breakout for this session was already evaluated."
                 elif opening_range_state is not OpeningRangeState.INSIDE:
                     opening_direction = 1 if opening_range_state is OpeningRangeState.ABOVE_HIGH else -1
-                    # Consume the first range break even if a gate is neutral or
-                    # warming up; later breaks are not a second attempt.
-                    attempted_sessions.add(session)
 
         if _has_warmup(ut, ema, rsi, macd, supertrend):
             decision = TradeDecision.DATA_UNAVAILABLE
@@ -178,6 +210,14 @@ def calculate_decisions(
             decision = TradeDecision.WAIT
             reason = "No confirmed trigger with all directional checks aligned."
 
+        levels = None
+        if opening_direction:
+            side = TradeDecision.BUY if opening_direction == 1 else TradeDecision.SELL
+            # Keep the original outcome visible after this session's one attempt.
+            attempted_sessions[session] = OpeningRangeAttempt(candle.timestamp, side, decision, reason)
+            if decision is side and opening_high is not None and opening_low is not None:
+                levels = opening_range_levels(candle.close, side, opening_high, opening_low)
+
         decisions.append(
             DecisionPoint(
                 timestamp=candle.timestamp,
@@ -190,6 +230,10 @@ def calculate_decisions(
                 reason=reason,
                 opening_range_state=opening_range_state,
                 ut_bot_position=ut.position if ut.trailing_stop is not None else None,
+                opening_range_high=opening_high,
+                opening_range_low=opening_low,
+                first_breakout=attempted_sessions.get(session),
+                levels=levels,
             )
         )
 

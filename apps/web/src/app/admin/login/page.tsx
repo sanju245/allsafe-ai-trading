@@ -105,6 +105,8 @@ export default function AdminLoginPage() {
           </form>
         )}
 
+        <Link href="/forgot-password" className="mt-4 inline-flex text-sm text-emerald-300 underline">Forgot password?</Link>
+
         {loading && !session && (
           <p role="status" className="mt-4 text-sm text-slate-400">
             Checking administrator access… The account service can take up to a minute to wake up.

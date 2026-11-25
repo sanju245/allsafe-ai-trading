@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from app.security import AccountPrincipal, require_admin_account
+from app.password_policy import require_safe_password
 from app.supabase_admin import (
     SupabaseAdminAPIError,
     create_auth_user,
@@ -113,10 +114,12 @@ def create_user(
     _: AccountPrincipal = Depends(require_admin_account),
 ) -> UserResponse:
     user_id: UUID | None = None
+    password = body.password.get_secret_value()
+    require_safe_password(password)
     try:
         auth_user = create_auth_user(
             body.email,
-            body.password.get_secret_value(),
+            password,
         )
         user_id = UUID(auth_user["id"])
         profile = get_profile(str(user_id))

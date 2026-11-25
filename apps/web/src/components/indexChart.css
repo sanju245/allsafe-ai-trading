@@ -64,6 +64,11 @@
 .chart-decision-strip > div { padding: 10px 14px; border-right: 1px solid var(--line); }
 .chart-decision-strip > div:last-child { border: 0; }
 .chart-decision-strip strong { display: block; margin-top: 3px; font-size: 14px; line-height: 1.4; }
+.chart-levels { display: grid; gap: 6px; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: white; font-size: 13px; }
+.chart-levels label, .chart-levels dl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.chart-levels select { max-width: 100%; border: 1px solid var(--line); border-radius: 5px; padding: 4px 7px; }
+.chart-levels dt, .chart-levels small { color: var(--muted); }
+.chart-levels dd { font-weight: 600; }
 .chart-checks { font-size: 13px; border-bottom: 1px solid var(--line); padding: 12px 0; }
 .chart-checks summary { cursor: pointer; font-weight: 600; }
 .chart-checks p, .chart-checks dl { margin-top: 10px; }

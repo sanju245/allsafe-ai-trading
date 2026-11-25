@@ -1,12 +1,12 @@
 # Supabase account setup
 
-The API owns user administration. The browser may sign in with the public anon
-key, but it must never receive the service-role credential.
+The API owns user administration. The web session route uses the public anon key. The service-role credential stays on the API.
 
 ## Apply the migrations
 
-Apply all SQL files under `supabase/migrations` in timestamp order using the
-Supabase SQL Editor or the Supabase CLI. The account-controls migration adds an
+Apply versioned migrations under `supabase/migrations` with the Supabase CLI.
+When adopting a database with manually applied changes, verify its schema and
+repair the migration history before pushing a new migration. The account-controls migration adds an
 `active`/`paused` state and a legacy exact-IP field to each profile. Current sign-in
 authorization uses token, role, and account status; it does not restrict customers by IP.
 Browser roles remain read-only on `public.profiles`.
@@ -89,4 +89,7 @@ New account applications no longer ask customers for an IP. The API records the
 source address from Render's `CF-Connecting-IP` header for abuse limiting and audit
 metadata in the legacy `request_ip` column. Existing `profiles.allowed_ip` and
 `account_requests.request_ip` values are retained but do not affect login or access.
-No schema change is required to release this behavior.
+The launch-readiness migration adds request processing timestamps, approved
+application cleanup on customer deletion, and indexes for the paginated
+admin queue. It leaves RLS and the application's service-role-only table access
+in place.
