@@ -15,7 +15,7 @@ jobs:
     steps:
       - name: Probe public routes and request incident analysis
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         shell: python
         run: |
           import json, os, urllib.request, urllib.error
@@ -34,25 +34,29 @@ jobs:
           if all(value == 200 for value in results.values()):
               print("Public routes healthy; no AI request needed")
               raise SystemExit(0)
-          key = os.environ.get("GEMINI_API_KEY")
+          key = os.environ.get("GROQ_API_KEY")
           if not key:
-              raise SystemExit("Gemini credential unavailable")
-          base = "https://generativelanguage.googleapis.com/v1beta/"
+              raise SystemExit("Groq credential unavailable")
+          base = "https://api.groq.com/openai/v1/"
           def request(path, payload=None):
-              req = urllib.request.Request(base + path, data=None if payload is None else json.dumps(payload).encode(), headers={"x-goog-api-key":key,"Content-Type":"application/json"})
+              req = urllib.request.Request(base + path, data=None if payload is None else json.dumps(payload).encode(), headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"})
               try:
                   with urllib.request.urlopen(req, timeout=30) as response:
                       return json.load(response)
               except urllib.error.HTTPError as exc:
-                  raise SystemExit(f"Gemini HTTP {exc.code}") from None
-          models = request("models").get("models", [])
-          candidates = sorted(m["name"] for m in models if "flash" in m["name"] and "generateContent" in m.get("supportedGenerationMethods",[]) and not any(x in m["name"] for x in ("preview","experimental","image","audio","tts")))
-          if not candidates:
-              raise SystemExit("No eligible model")
-          prompt = "Analyze these public HTTP status observations. Give possible causes and safe diagnostic steps. Do not claim a root cause is proven or request secrets. Observations: " + json.dumps(results)
-          response = request(candidates[-1]+":generateContent", {"contents":[{"parts":[{"text":prompt}]}],"generationConfig":{"maxOutputTokens":1024}})
-          report["model"] = candidates[-1]
-          report["analysis"] = [p["text"] for c in response.get("candidates",[]) for p in c.get("content",{}).get("parts",[]) if "text" in p and not p.get("thought")]
+                  raise SystemExit(f"Groq HTTP {exc.code}") from None
+          models = request("models").get("data", [])
+          available = {m["id"] for m in models}
+          model = next((m for m in ("llama-3.3-70b-versatile","llama-3.1-8b-instant") if m in available), None)
+          if not model:
+              raise SystemExit("No configured Groq model available")
+          prompt = "Analyze public HTTP status observations, give possible causes and safe diagnostic steps, without claiming proven root cause or requesting secrets: " + json.dumps(results)
+          result = request("chat/completions", {"model":model,"messages":[{"role":"user","content":prompt}],"max_tokens":512})
+          answer = result.get("choices",[{}])[0].get("message",{}).get("content","")
+          if not answer.strip():
+              raise SystemExit("No generated text returned")
+          report["model"] = model
+          report["analysis"] = answer
           Path("guardian-triage.json").write_text(json.dumps(report, indent=2))
           raise SystemExit("Public route incident detected")
       - uses: actions/upload-artifact@v4
