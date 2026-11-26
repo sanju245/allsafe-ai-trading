@@ -164,6 +164,17 @@ def test_all_four_live_endpoints_and_indicator_decision_over_http():
         assert sb["instruments"]["NIFTY50"]["confirmed_candle_count"] == 1
         assert sb["instruments"]["NIFTY50"]["has_forming_candle"] is True
 
+        overview = client.get("/api/v1/live/overview", params={"provider": "groww"})
+        assert overview.status_code == 200
+        assert overview.headers["cache-control"] == "no-store"
+        overview_body = overview.json()
+        assert overview_body["provider"] == "groww"
+        assert overview_body["feed_state"] == sb["feed_state"]
+        assert {option["id"] for option in overview_body["providers"]} == {"groww", "upstox"}
+        assert overview_body["quotes"]["NIFTY50"]["quote"]["ltp"] == 24340.0
+        assert overview_body["quotes"]["NIFTY50"]["forming_candle"]["is_confirmed"] is False
+        assert overview_body["quotes"]["BANKNIFTY"]["quote"] is None
+
         # 2. /api/v1/live/quote
         rq = client.get("/api/v1/live/quote", params={"symbol": "NSE-NIFTY"})
         assert rq.status_code == 200
@@ -239,7 +250,8 @@ def test_http_responses_never_leak_groww_secrets():
     assert res.json()["feed_state"] == "failed"
 
 
-def test_live_api_rejects_requests_without_a_signed_in_account(monkeypatch):
+@pytest.mark.parametrize("endpoint", ["status", "overview"])
+def test_live_api_rejects_requests_without_a_signed_in_account(monkeypatch, endpoint):
     from app import security
 
     app.dependency_overrides.pop(require_active_account, None)
@@ -254,7 +266,7 @@ def test_live_api_rejects_requests_without_a_signed_in_account(monkeypatch):
     )
 
     response = TestClient(app).get(
-        "/api/v1/live/status",
+        f"/api/v1/live/{endpoint}",
         headers={"Authorization": ""},
     )
 

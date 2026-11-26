@@ -2,6 +2,7 @@
 
 Endpoints:
 * GET /api/v1/live/status
+* GET /api/v1/live/overview?provider=...
 * GET /api/v1/live/quote?symbol=...
 * GET /api/v1/live/candles?symbol=...&timeframe=15m&limit=...
 * GET /api/v1/live/forming-candle?symbol=...&provider=groww|upstox
@@ -34,6 +35,7 @@ from app.market_data.live_schemas import (
     InstrumentStatusSchema,
     LiveCandlesResponse,
     LiveFormingCandleResponse,
+    LiveOverviewResponse,
     LiveQuotePayloadSchema,
     LiveQuoteResponse,
     LiveStatusResponse,
@@ -42,7 +44,7 @@ from app.market_data.live_schemas import (
 from app.market_data.sessions import IST
 from app.market_data.timeframes import Timeframe
 from app.providers.groww_auth import GrowwCredentials
-from app.providers.groww_stream import GrowwLiveStreamManager
+from app.providers.groww_stream import GrowwLiveStreamManager, InstrumentFeedStatus, StreamStatusSnapshot
 from app.providers.upstox_history import UpstoxHistoricalProvider
 from app.providers.upstox_stream import UpstoxLiveStreamManager
 from app.security import AccountPrincipal, require_active_account
@@ -249,6 +251,12 @@ def get_live_providers(
 ) -> dict[str, list[dict[str, object]]]:
     """Report read-only provider availability without exposing credentials."""
     response.headers["Cache-Control"] = "no-store"
+    return {"providers": _provider_options(request, as_of=datetime.now(IST))}
+
+
+def _provider_options(
+    request: Request, *, as_of: datetime, selected: StreamStatusSnapshot | None = None,
+) -> list[dict[str, object]]:
     cfg = get_settings()
     runtimes = getattr(request.app.state, "live_runtimes", None) or _default_runtimes
     output: list[dict[str, object]] = []
@@ -260,7 +268,9 @@ def get_live_providers(
             else cfg.upstox_live_stream_enabled and bool(cfg.upstox_access_token.get_secret_value().strip())
         )
         runtime = runtimes.get(provider) if isinstance(runtimes, dict) else None
-        snapshot = runtime.stream_manager.status_snapshot() if isinstance(runtime, LiveMarketDataRuntime) else None
+        snapshot = selected if selected is not None and selected.provider == provider else (
+            runtime.stream_manager.status_snapshot(as_of=as_of) if isinstance(runtime, LiveMarketDataRuntime) else None
+        )
         state = snapshot.feed_state if snapshot else FeedState.UNAVAILABLE
         output.append({
             "id": provider,
@@ -273,7 +283,32 @@ def get_live_providers(
                 else "Platform feed is not configured"
             ),
         })
-    return {"providers": output}
+    return output
+
+
+@router.get("/overview", response_model=LiveOverviewResponse)
+def get_live_overview(
+    request: Request,
+    response: Response,
+    provider: str | None = Query(default=None),
+    _: AccountPrincipal = Depends(require_active_account),  # noqa: B008
+) -> LiveOverviewResponse:
+    """Return both indices' quotes, forming candles, and feed status with one account check."""
+    response.headers["Cache-Control"] = "no-store"
+    rt = get_live_runtime(request, provider)
+    now_ist = datetime.now(IST)
+    snapshot = rt.stream_manager.status_snapshot(as_of=now_ist)
+    return LiveOverviewResponse(
+        provider=snapshot.provider,
+        providers=_provider_options(request, as_of=now_ist, selected=snapshot),
+        feed_state=snapshot.feed_state,
+        connected=snapshot.connected,
+        session_open=snapshot.session_open,
+        last_error=snapshot.last_error,
+        quotes={instrument: _quote_snapshot(rt, status, now_ist, include_forming=True)
+                for instrument, status in snapshot.instruments.items()},
+        checked_at=now_ist,
+    )
 
 
 @router.get("/quote", response_model=LiveQuoteResponse)
@@ -289,9 +324,16 @@ def get_live_quote(
     response.headers["Cache-Control"] = "no-store"
     instrument = _resolve_symbol_or_422(symbol)
     rt = get_live_runtime(request, provider)
-    mgr = rt.stream_manager
     now_ist = datetime.now(IST)
-    inst_status = mgr.evaluate_instrument_state(instrument, as_of=now_ist)
+    inst_status = rt.stream_manager.evaluate_instrument_state(instrument, as_of=now_ist)
+    return _quote_snapshot(rt, inst_status, now_ist, include_forming=include_forming)
+
+
+def _quote_snapshot(
+    rt: LiveMarketDataRuntime, inst_status: InstrumentFeedStatus, now_ist: datetime, *, include_forming: bool,
+) -> LiveQuoteResponse:
+    mgr = rt.stream_manager
+    instrument = inst_status.instrument
     quote = mgr.aggregator.get_latest_quote(instrument)
     forming = mgr.aggregator.get_forming_candle(instrument, as_of=now_ist) if include_forming else None
 

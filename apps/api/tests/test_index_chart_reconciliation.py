@@ -166,7 +166,7 @@ def test_connected_broker_is_reported_as_closed_on_a_holiday(monkeypatch):
 
     runtime = make_test_runtime()
     monkeypatch.setattr(runtime.stream_manager, "status_snapshot",
-                        lambda: SimpleNamespace(connected=True, feed_state=FeedState.CLOSED))
+                        lambda **_: SimpleNamespace(connected=True, feed_state=FeedState.CLOSED))
     settings = live.get_settings().model_copy(update={
         "upstox_live_stream_enabled": True, "upstox_access_token": SecretStr("test-only"),
     })
