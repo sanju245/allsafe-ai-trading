@@ -39,17 +39,20 @@ jobs:
               raise SystemExit("Groq credential unavailable")
           base = "https://api.groq.com/openai/v1/"
           def request(path, payload=None):
-              req = urllib.request.Request(base + path, data=None if payload is None else json.dumps(payload).encode(), headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"})
+              req = urllib.request.Request(base + path, data=None if payload is None else json.dumps(payload).encode(), headers={"Authorization":"Bearer "+key,"Content-Type":"application/json","User-Agent":"AllSafe-Guardian/1.0","Accept":"application/json"})
               try:
                   with urllib.request.urlopen(req, timeout=30) as response:
                       return json.load(response)
               except urllib.error.HTTPError as exc:
                   raise SystemExit(f"Groq HTTP {exc.code}") from None
           models = request("models").get("data", [])
-          available = {m["id"] for m in models}
-          model = next((m for m in ("llama-3.3-70b-versatile","llama-3.1-8b-instant") if m in available), None)
+          import re
+          available = {m["id"] for m in models if isinstance(m, dict) and isinstance(m.get("id"), str) and m.get("active", True)}
+          print("Available model IDs:", sorted(m for m in available if re.fullmatch(r"[a-zA-Z0-9_./-]{1,150}", m)))
+          preferred = ("openai/gpt-oss-120b","openai/gpt-oss-20b","llama-3.3-70b-versatile","llama-3.1-8b-instant","qwen/qwen3-32b","moonshotai/kimi-k2-instruct-0905")
+          model = next((m for m in preferred if m in available), None)
           if not model:
-              raise SystemExit("No configured Groq model available")
+              raise SystemExit("No recognized chat model available; inspect model IDs above")
           prompt = "Analyze public HTTP status observations, give possible causes and safe diagnostic steps, without claiming proven root cause or requesting secrets: " + json.dumps(results)
           result = request("chat/completions", {"model":model,"messages":[{"role":"user","content":prompt}],"max_tokens":512})
           answer = result.get("choices",[{}])[0].get("message",{}).get("content","")
