@@ -335,7 +335,7 @@ function dashboardHarness() {
   const slots = [];
   let cursor = 0;
   let effect;
-  let interval;
+  let scheduledRefresh;
   let failureStatus = 0;
   let stale = false;
   let signedOut = false;
@@ -345,7 +345,7 @@ function dashboardHarness() {
   const hooks = {
     useState: (initial) => {
       const slot = cursor++;
-      if (!(slot in slots)) slots[slot] = initial;
+      if (!(slot in slots)) slots[slot] = typeof initial === "function" ? initial() : initial;
       return [slots[slot], (value) => { slots[slot] = typeof value === "function" ? value(slots[slot]) : value; }];
     },
     useRef: (initial) => {
@@ -353,9 +353,12 @@ function dashboardHarness() {
       if (!(slot in slots)) slots[slot] = { current: initial };
       return slots[slot];
     },
-    useCallback: (callback) => callback,
+    memo: (component) => component,
     useEffect: (callback) => { effect = callback; },
   };
+  const chart = { exports: {} };
+  vm.runInNewContext(compile("src/lib/indexChart.ts"), { module: chart, exports: chart.exports, Intl, Date });
+  const clockTime = "2026-11-15T09:00:00Z";
   vm.runInNewContext(compile("src/components/LiveMarketDashboard.tsx"), {
     module: moduleObj, exports: moduleObj.exports,
     require: (name) => {
@@ -366,6 +369,7 @@ function dashboardHarness() {
       };
       if (name === "next/link") return { default: "a" };
       if (name === "./CandleSignalLabels") return { default: "g" };
+      if (name === "@/lib/indexChart") return chart.exports;
       if (name === "@/components/auth/AuthProvider") return {
         useAuth: () => ({
           session: { access_token: "test-token" },
@@ -376,31 +380,33 @@ function dashboardHarness() {
     },
     process: { env: { NEXT_PUBLIC_API_BASE_URL: "https://api.example.test" } },
     AbortSignal, AbortController, Intl, Date, console,
+    setTimeout: (callback) => { scheduledRefresh = callback; return 1; },
+    clearTimeout: () => {},
+    document: { hidden: false, addEventListener() {}, removeEventListener() {} },
     window: {
       localStorage: {
         getItem: (key) => localStorage.get(key) ?? null,
         setItem: (key, value) => localStorage.set(key, value),
       },
-      setInterval: (callback) => { interval = callback; return 1; },
-      clearInterval: () => {},
+      addEventListener() {},
+      removeEventListener() {},
     },
     fetch: async (url, options) => {
       requests.push(String(url));
       assert.equal(options.credentials, "omit");
       assert.ok(options.signal instanceof AbortSignal);
       if (failureStatus) return json({ detail: "failed" }, failureStatus);
-      if (url.includes("/providers")) return json({ providers: [
-        { id: "groww", label: "Groww", configured: true, feed_state: "live", connected: true, message: "Connected" },
-        { id: "upstox", label: "Upstox", configured: true, feed_state: "live", connected: true, message: "Connected" },
-      ] });
-      if (url.includes("/status")) return json({
-        feed_state: "live", provider: "groww", streaming_enabled: true, connected: true, session_open: true, instruments: {},
-      });
-      if (url.includes("/quote")) return json({
-        available: true, feed_state: stale ? "stale" : "live", is_stale: stale,
-        quote: { ltp: 100, timestamp: "2026-11-15T09:00:00Z" },
-      });
-      if (url.includes("/forming-candle")) return json({ available: false, forming_candle: null });
+      if (url.includes("/overview")) {
+        const quote = { available: true, feed_state: stale ? "stale" : "live", is_stale: stale,
+          checked_at: clockTime, quote: { ltp: 100, timestamp: clockTime } };
+        return json({
+          feed_state: "live", connected: true, session_open: true, checked_at: clockTime,
+          providers: [{ id: "groww", label: "Groww", configured: true, feed_state: "live" },
+            { id: "upstox", label: "Upstox", configured: true, feed_state: "live" }],
+          quotes: { NIFTY50: quote, BANKNIFTY: quote },
+        });
+      }
+      assert.ok(url.includes("/candles"));
       return json({
         feed_state: "live", message: "Feed current", candles: [
           { timestamp: "2026-11-15T08:45:00Z", open: 90, high: 105, low: 89, close: 100, is_forming: false, timeframe: "15m" },
@@ -432,10 +438,12 @@ function dashboardHarness() {
       render();
     },
     start: () => effect(),
-    poll: () => interval(),
+    poll: () => scheduledRefresh(),
     fail: (status) => { failureStatus = status; },
     stale: () => { stale = true; },
-    snapshots: () => slots[3],
+    overview: () => slots[0],
+    overviewError: () => slots[1],
+    history: () => slots[4],
     view: () => render(),
     requests: () => requests,
     signedOut: () => signedOut,
@@ -453,16 +461,16 @@ test("a failed market refresh clears previously displayed price and candles", as
   const dashboard = dashboardHarness();
   dashboard.render();
   const cleanup = dashboard.start();
-  await settleUntil(() => dashboard.snapshots().NIFTY50.current);
-  assert.equal(dashboard.snapshots().NIFTY50.current, true);
-  assert.equal(dashboard.snapshots().NIFTY50.quote.ltp, 100);
-  assert.equal(dashboard.snapshots().NIFTY50.candles.length, 1);
+  await settleUntil(() => dashboard.history().NIFTY50);
+  assert.match(JSON.stringify(dashboard.view()), /Latest validated price/);
+  assert.equal(dashboard.overview().quotes.NIFTY50.quote.ltp, 100);
+  assert.equal(dashboard.history().NIFTY50.candles.length, 1);
   dashboard.fail(503);
   dashboard.poll();
-  await settleUntil(() => Boolean(dashboard.snapshots().NIFTY50.error));
-  assert.equal(dashboard.snapshots().NIFTY50.current, false);
-  assert.equal(dashboard.snapshots().NIFTY50.quote, null);
-  assert.equal(dashboard.snapshots().NIFTY50.candles.length, 0);
+  await settleUntil(() => dashboard.overviewError());
+  assert.match(JSON.stringify(dashboard.view()), /Price unavailable/);
+  assert.equal(dashboard.overview(), undefined);
+  assert.equal(dashboard.history().NIFTY50, undefined);
   cleanup();
 });
 
@@ -472,7 +480,7 @@ test("an expired terminal authorization clears the session instead of polling in
   dashboard.fail(401);
   const cleanup = dashboard.start();
   await settleUntil(() => dashboard.signedOut());
-  assert.equal(dashboard.snapshots().NIFTY50.quote, null);
+  assert.equal(dashboard.overview(), undefined);
   cleanup();
 });
 
@@ -481,10 +489,10 @@ test("a server-reported stale quote is retained only as non-current historical d
   dashboard.render();
   dashboard.stale();
   const cleanup = dashboard.start();
-  await settleUntil(() => dashboard.snapshots().NIFTY50.quote !== null);
-  assert.equal(dashboard.snapshots().NIFTY50.current, false);
-  assert.equal(dashboard.snapshots().NIFTY50.feedState, "stale");
-  assert.equal(dashboard.snapshots().NIFTY50.candles.length, 1);
+  await settleUntil(() => dashboard.history().NIFTY50);
+  assert.match(JSON.stringify(dashboard.view()), /Last recorded price/);
+  assert.equal(dashboard.overview().quotes.NIFTY50.feed_state, "stale");
+  assert.equal(dashboard.history().NIFTY50.candles.length, 1);
   assert.doesNotMatch(JSON.stringify(dashboard.view()), /Current confirmed signal/);
   cleanup();
 });
@@ -493,8 +501,8 @@ test("customers can select Upstox and the dashboard requests data from that prov
   const dashboard = dashboardHarness();
   dashboard.chooseProvider("upstox");
   const cleanup = dashboard.start();
-  await settleUntil(() => dashboard.requests().some((url) => url.includes("/api/v1/live/quote?") && url.includes("provider=upstox")));
-  assert.ok(dashboard.requests().some((url) => url.includes("/api/v1/live/status?provider=upstox")));
+  await settleUntil(() => dashboard.history().NIFTY50);
+  assert.ok(dashboard.requests().some((url) => url.includes("/api/v1/live/overview?provider=upstox")));
   assert.ok(dashboard.requests().some((url) => url.includes("/api/v1/live/candles?") && url.includes("provider=upstox")));
   assert.ok(dashboard.requests().some((url) => url.includes("timeframe=15m")));
   cleanup();
@@ -504,7 +512,7 @@ test("each index title opens a separate chart tab and shows the latest decision"
   const dashboard = dashboardHarness();
   dashboard.render();
   const cleanup = dashboard.start();
-  await settleUntil(() => dashboard.snapshots().NIFTY50.decision?.decision === "BUY");
+  await settleUntil(() => dashboard.history().NIFTY50?.indicator_decision.decision === "BUY");
   const visit = (node, found = []) => {
     if (!node || typeof node !== "object") return found;
     if (node.type === "a") found.push(node);
@@ -516,7 +524,7 @@ test("each index title opens a separate chart tab and shows the latest decision"
   for (const symbol of ["NIFTY50", "BANKNIFTY"]) {
     assert.ok(links.some((link) => link.props?.href === `/chart/${symbol}?provider=groww` && link.props?.target === "_blank"));
   }
-  assert.equal(dashboard.snapshots().NIFTY50.decision.decision, "BUY");
+  assert.match(JSON.stringify(dashboard.view()), /BUY signal confirmed/);
   assert.ok(dashboard.requests().some((url) => url.includes("timeframe=15m")));
   cleanup();
 });

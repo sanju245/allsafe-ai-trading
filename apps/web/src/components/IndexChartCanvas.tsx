@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries, ColorType, CrosshairMode, LineStyle, TickMarkType, createChart,
   type CandlestickData, type IChartApi, type IPriceLine, type ISeriesApi, type Time, type UTCTimestamp,
@@ -35,6 +35,11 @@ export default function IndexChartCanvas({ bars, marks, forming, realPrice, pric
   const selected = hovered ?? last;
   const buyCount = marks.filter(mark => mark.side === "BUY").length;
   const sellCount = marks.length - buyCount;
+  const signalBadges = useMemo(() => marks.map((mark) => {
+    const label = mark.side === "BUY" ? "Buy" : "Sell";
+    return <span key={mark.time} className={`chart-badge ${mark.side.toLowerCase()}`} data-time={mark.time} data-price={mark.price} data-side={mark.side}
+      aria-label={`${label} signal on ${formatStamp(mark.time)} IST`}>{label}</span>;
+  }), [marks]);
 
   useEffect(() => {
     if (!host.current || !overlay.current) return;
@@ -88,9 +93,13 @@ export default function IndexChartCanvas({ bars, marks, forming, realPrice, pric
       if (range) setRangeSize(Math.round(range.to - range.from));
       schedule();
     });
+    let previousHover: Bar | null = null;
     chart.subscribeCrosshairMove((event) => {
       const item = event.seriesData.get(candles);
-      setHovered(item && "open" in item ? { time: Number(item.time), open: item.open, high: item.high, low: item.low, close: item.close } : null);
+      const next = item && "open" in item ? { ...item, time: Number(item.time) } : null;
+      if (next === previousHover || (next && previousHover && sameBar(next, previousHover))) return;
+      previousHover = next;
+      setHovered(next);
     });
     const onFullscreen = () => setFull(document.fullscreenElement === frame.current);
     document.addEventListener("fullscreenchange", onFullscreen);
@@ -112,6 +121,11 @@ export default function IndexChartCanvas({ bars, marks, forming, realPrice, pric
     if (!chart || !candleSeries) return;
     const before = drawn.current;
     const samePrefix = before.bars.length <= bars.length && (before.bars === bars || before.bars.every((bar, i) => sameBar(bar, bars[i])));
+    const sameForming = before.forming === forming || (before.forming && forming && sameBar(before.forming, forming));
+    if (samePrefix && before.bars.length === bars.length && sameForming) {
+      drawn.current = { bars, forming };
+      return;
+    }
     const scale = chart.timeScale();
     const historicalView = scale.scrollPosition() < -1 ? scale.getVisibleLogicalRange() : null;
     const append = bars.length > before.bars.length;
@@ -122,7 +136,7 @@ export default function IndexChartCanvas({ bars, marks, forming, realPrice, pric
       if (replaceTail) candleSeries.pop(1);
       for (let i = before.bars.length; i < bars.length; i++) candleSeries.update(datum(bars[i]));
     }
-    if (forming && (!before.forming || !sameBar(before.forming, forming) || !samePrefix || replaceTail)) {
+    if (forming && (!sameForming || !samePrefix || replaceTail)) {
       const color = forming.close >= forming.open ? "#74bda4" : "#f49b98";
       candleSeries.update({ ...datum(forming), color, wickColor: color, borderColor: color });
     }
@@ -204,9 +218,7 @@ export default function IndexChartCanvas({ bars, marks, forming, realPrice, pric
     </div>
     <div className="chart-plot" role="region" aria-label="Interactive 15-minute Heikin Ashi chart" data-range-size={rangeSize} data-closed-bars={bars.length} data-forming={!!forming}>
       <div className="chart-surface" ref={host} />
-      <div className="chart-marks" ref={overlay}>{showSignals && marks.map((m) =>
-        <span key={m.time} className={`chart-badge ${m.side.toLowerCase()}`} data-time={m.time} data-price={m.price} data-side={m.side}
-          aria-label={`${m.side === "BUY" ? "Buy" : "Sell"} signal on ${formatStamp(m.time)} IST`}>{m.side === "BUY" ? "Buy" : "Sell"}</span>)}</div>
+      <div className="chart-marks" ref={overlay}>{showSignals && signalBadges}</div>
       {!last && <div className="chart-empty" role="status">{loading ? "Loading candles…" : "No completed candles in this range"}</div>}
     </div>
     <div className="chart-caption"><span>{bars.length} closed candles · {buyCount} BUY · {sellCount} SELL</span><span>NSE · IST (UTC+5:30)</span></div>

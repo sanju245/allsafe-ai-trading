@@ -41,6 +41,7 @@ const rolled = new Set();
 let recording;
 let signInCount = 0;
 let forbiddenAccessCount = 0;
+let holdDashboardHistory;
 
 function bars(symbol, days = fixtureDays) {
   const base = symbol === "BANKNIFTY" ? 52000 : 25000;
@@ -100,6 +101,18 @@ function nextBar(last) {
     open: last.close, high: last.close + 9, low: last.close - 4, close: last.close + 7 };
 }
 
+function quoteFixture(symbol, provider, includeForming) {
+  if (recording && provider === "upstox" && includeForming) return {
+    available: false, feed_state: "closed", is_stale: false, checked_at: recording[symbol].checked_at, quote: null, forming_candle: null,
+  };
+  const snapshot = candleFixture(symbol, false);
+  const forming = nextBar(snapshot.candles.at(-1));
+  const stale = staleQuotes.has(symbol);
+  return { available: true, feed_state: stale ? "stale" : "live", is_stale: stale, checked_at: snapshot.checked_at,
+    quote: { ltp: forming.close, timestamp: snapshot.checked_at },
+    forming_candle: includeForming ? { ...forming, is_forming: true, is_confirmed: false } : null };
+}
+
 async function intercept(route) {
   const request = route.request();
   const { pathname, searchParams, origin: requestOrigin } = new URL(request.url());
@@ -122,7 +135,7 @@ async function intercept(route) {
     const forwardsCredential = [request.url(), request.postData() ?? "", ...Object.values(request.headers())]
       .some((value) => fixtureCredentials.some((credential) =>
         value.includes(credential) || value.includes(encodeURIComponent(credential))));
-    const appResource = pathname === "/login" || pathname === "/account" || pathname === "/terminal" || pathname === "/favicon.ico" ||
+    const appResource = ["/", "/what-we-done", "/api/health", "/login", "/account", "/terminal", "/favicon.ico"].includes(pathname) ||
       pathname.startsWith("/_next/") || /^\/chart\/(?:NIFTY50|BANKNIFTY)$/.test(pathname);
     if (forwardsCredential) requestErrors.push(new Error("A browser request tried to forward a fixture credential."));
     if (!forwardsCredential && requestOrigin === origin && appResource && ["GET", "HEAD"].includes(method)) {
@@ -166,27 +179,21 @@ async function intercept(route) {
       feed_state: "live", provider, streaming_enabled: true, connected: true, session_open: true,
       last_error: null, instruments: Object.fromEntries(symbols.map((id) => [id, { feed_state: "live" }])),
     });
-    if (pathname === "/api/v1/live/providers") return respond({
-      providers: ["groww", "upstox"].map((id) => ({ id, label: id === "groww" ? "Groww" : "Upstox", configured: true, feed_state: id === "groww" ? "failed" : "live", connected: id === "upstox", message: "Fixture" })),
-    });
+    const providers = ["groww", "upstox"].map((id) => ({ id, label: id === "groww" ? "Groww" : "Upstox", configured: true, feed_state: id === "groww" ? "failed" : "live", connected: id === "upstox", message: "Fixture" }));
+    if (pathname === "/api/v1/live/providers") return respond({ providers });
+    if (pathname === "/api/v1/live/overview") {
+      const quotes = Object.fromEntries(symbols.map(id => [id, quoteFixture(id, provider, true)]));
+      return respond({ provider, providers, quotes, checked_at: quotes.NIFTY50.checked_at, feed_state: "live", connected: true, session_open: true, last_error: null });
+    }
     assert.ok(symbols.includes(symbol), `Expected a supported index for ${pathname}.`);
     if (pathname === "/api/v1/live/candles") {
       assert.equal(searchParams.get("timeframe"), "15m");
+      if (holdDashboardHistory && searchParams.get("limit") === "60") await holdDashboardHistory;
       if (includeHistory && failedCharts.has(symbol)) return respond({ detail: "Simulated refresh outage." }, 503);
       if (recording && includeHistory && provider === "upstox") return respond(recording[symbol]);
       return respond(candleFixture(symbol, includeHistory, Number(searchParams.get("history_days"))));
     }
-    if (pathname === "/api/v1/live/quote") {
-      if (recording && provider === "upstox" && searchParams.has("include_forming")) return respond({
-        available: false, feed_state: "closed", is_stale: false, checked_at: recording[symbol].checked_at, quote: null, forming_candle: null,
-      });
-      const snapshot = candleFixture(symbol, false);
-      const forming = nextBar(snapshot.candles.at(-1));
-      const stale = staleQuotes.has(symbol);
-      return respond({ available: true, feed_state: stale ? "stale" : "live", is_stale: stale, checked_at: snapshot.checked_at,
-        quote: { ltp: forming.close, timestamp: snapshot.checked_at },
-        forming_candle: searchParams.get("include_forming") ? { ...forming, is_forming: true, is_confirmed: false } : null });
-    }
+    if (pathname === "/api/v1/live/quote") return respond(quoteFixture(symbol, provider, searchParams.has("include_forming")));
     if (pathname === "/api/v1/live/forming-candle") return respond({ available: false, forming_candle: null });
     if (pathname === "/api/v1/market-data/upstox/candles") {
       const candles = bars(symbol);
@@ -232,6 +239,15 @@ async function assertFullChart(chart, title) {
 
 async function audit(context) {
   await context.route("**/*", intercept);
+  if (!deployment) {
+    const home = await context.newPage();
+    await home.goto("/", { waitUntil: "domcontentloaded" });
+    await home.getByRole("heading", { level: 1 }).waitFor();
+    await home.getByRole("status").filter({ hasText: /^Checking…$/ }).waitFor();
+    await home.getByRole("status").filter({ hasText: /^Reachable$/ }).waitFor();
+    await home.close();
+    console.log("PASS: the home page displays before the delayed backend health response.");
+  }
   const signedOut = await context.newPage();
   const chartDestination = "/chart/BANKNIFTY?provider=upstox&days=7";
   await signedOut.goto(chartDestination);
@@ -241,28 +257,54 @@ async function audit(context) {
   await signedOut.close();
 
   const entry = await context.newPage();
+  await entry.setViewportSize({ width: 1100, height: 620 });
   entry.on("pageerror", (error) => runtimeErrors.push(error));
   const response = await entry.goto("/login");
   assert.ok(response?.ok(), "The login page must be publicly reachable.");
   await entry.getByLabel("Email").fill(fixtureUser.email);
   await entry.getByLabel("Password").fill(fixturePassword);
-  await entry.getByRole("button", { name: "Sign in", exact: true }).click();
+  let releaseDashboardHistory;
+  if (!deployment) holdDashboardHistory = new Promise(resolve => { releaseDashboardHistory = resolve; });
+  const initialRequests = fixtureRequests.length;
+  await entry.getByRole("button", { name: /^Sign in$/i }).click();
   await entry.waitForURL("**/terminal");
   const live = entry.getByRole("region", { name: "Live index charts" });
   await entry.waitForFunction(() => document.querySelector("#market-data-provider")?.value === "upstox");
+  if (releaseDashboardHistory) {
+    try {
+      await live.getByText("Latest validated price", { exact: true }).last().waitFor();
+      await live.getByText("Loading candle history…", { exact: true }).last().waitFor();
+      const liveRequests = fixtureRequests.slice(initialRequests).filter(({ pathname, provider }) => pathname.startsWith("/api/v1/live/") && provider === "upstox");
+      assert.equal(liveRequests.filter(({ pathname }) => pathname === "/api/v1/live/overview").length, 1);
+      assert.ok(liveRequests.every(({ pathname }) => ["/api/v1/live/overview", "/api/v1/live/candles"].includes(pathname)));
+      assert.ok(fixtureRequests.slice(initialRequests).every(({ pathname }) => !pathname.includes("/market-data/upstox/candles")));
+      console.log("PASS: dashboard prices appear with one overview request while candle history is still pending.");
+    } finally {
+      releaseDashboardHistory();
+      holdDashboardHistory = undefined;
+    }
+  }
   await live.getByRole("img", { name: "NIFTY 50 15-minute candlestick chart" }).waitFor();
+  const focusBank = live.getByRole("button", { name: "Focus BANK NIFTY chart" });
+  if (await focusBank.count()) await focusBank.click();
   await live.getByRole("img", { name: "BANK NIFTY 15-minute candlestick chart" }).waitFor();
+  if (await focusBank.count()) await live.getByRole("button", { name: "Focus NIFTY 50 chart" }).click();
   const history = entry.getByRole("region", { name: "Historical index charts" });
+  const historyTab = entry.getByRole("button", { name: "Historical candles", exact: true });
+  if (await historyTab.count()) await historyTab.click();
+  await history.scrollIntoViewIfNeeded();
   await history.getByRole("img", { name: "NIFTY 50 Upstox 15-minute historical candlestick chart" }).waitFor();
   for (const region of [live, history]) {
+    if (await historyTab.count()) await entry.getByRole("button", { name: region === live ? "Live overview" : "Historical candles", exact: true }).click();
     for (const preview of await region.getByRole("img").all()) {
       for (const side of ["BUY", "SELL"]) {
-        const mark = preview.locator(`text[data-side="${side}"]`);
+        const mark = preview.locator(`[data-side="${side}"]`);
         await mark.waitFor();
         assert.equal(await mark.count(), 1, "Only completed signals have preview labels.");
       }
     }
   }
+  if (await historyTab.count()) await entry.getByRole("button", { name: "Live overview", exact: true }).click();
 
   const nifty = await openChart(context, live.getByRole("link", { name: /^NIFTY 50/ }), "NIFTY50");
   await assertFullChart(nifty, "NIFTY 50");
@@ -315,6 +357,7 @@ async function audit(context) {
         url.searchParams.get("history_days") === "7" && new URL(request.frame().url()).pathname === "/chart/NIFTY50";
     },
   });
+  if (await historyTab.count()) await historyTab.click();
   const historical = await openChart(context, history.getByRole("link", { name: /^NIFTY 50/ }), "NIFTY50");
   await historyRequest;
   await historical.getByRole("heading", { name: "NIFTY 50", exact: true }).waitFor();
@@ -409,7 +452,10 @@ try {
         response.writeHead(status, { "content-type": "application/json" });
         response.end(JSON.stringify(data));
       };
-      if (url.pathname === "/health") return reply(200, health);
+      if (url.pathname === "/health") {
+        await delay(1500);
+        return reply(200, { ...health, time_utc: new Date().toISOString() });
+      }
       if (url.pathname === "/auth/v1/logout") return reply(200, {});
       if (url.pathname !== "/auth/v1/token") return reply(404, {});
       try {
