@@ -1,0 +1,39 @@
+name: Guardian AI connectivity
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/allsafe-ai-guardian]
+    paths: ['.github/workflows/guardian-ai-check.yml']
+permissions:
+  contents: read
+jobs:
+  connectivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify Gemini API and generation
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: python
+        run: |
+          import os, json, urllib.request, urllib.error
+          key = os.environ.get("GEMINI_API_KEY")
+          if not key:
+              raise SystemExit("GEMINI_API_KEY unavailable")
+          base = "https://generativelanguage.googleapis.com/v1beta/"
+          def request(path, payload=None):
+              req = urllib.request.Request(base + path, data=None if payload is None else json.dumps(payload).encode(), headers={"x-goog-api-key": key, "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raise SystemExit(f"Gemini HTTP {exc.code}") from None
+          models = request("models").get("models", [])
+          candidates = sorted(m["name"] for m in models if "flash" in m["name"] and "generateContent" in m.get("supportedGenerationMethods", []) and not any(x in m["name"] for x in ("preview", "experimental", "image", "audio", "tts")))
+          if not candidates:
+              raise SystemExit("No eligible Flash model returned")
+          model = candidates[-1]
+          result = request(model + ":generateContent", {"contents":[{"parts":[{"text":"Reply with OK only."}]}], "generationConfig":{"maxOutputTokens":128}})
+          if not any(p.get("text","").strip() for c in result.get("candidates",[]) for p in c.get("content",{}).get("parts",[]) if not p.get("thought")):
+              raise SystemExit("No generated text returned")
+          print("Gemini generation verified:", model)
