@@ -93,7 +93,7 @@ function Workspace({ symbol, provider, days, token, signOut }: {
       <label>Signal levels <select value={levelTime} onChange={event => setLevelTime(event.target.value)}>
         <option value="latest">Latest confirmed signal</option>
         <option value="off">Hide levels</option>
-        {withLevels.toReversed().map(mark => <option key={mark.time} value={String(mark.time)}>
+        {[...withLevels].reverse().map(mark => <option key={mark.time} value={String(mark.time)}>
           {mark.side} · {formatStamp(mark.time)} IST
         </option>)}
       </select></label>
