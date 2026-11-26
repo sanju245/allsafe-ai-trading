@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { memo, useEffect, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
-import type { Signal } from "@/lib/indexChart";
+import { currentSignal, epoch, formatPrice as formatIndexPrice, freshQuote, slotAt, type Decision, type QuoteSnapshot, type SeriesSnapshot, type Signal } from "@/lib/indexChart";
 import CandleSignalLabels from "./CandleSignalLabels";
 
 type MarketSymbol = "NIFTY50" | "BANKNIFTY";
+type Provider = "groww" | "upstox";
 type Candle = {
   timestamp: string;
   open: number;
@@ -16,62 +17,38 @@ type Candle = {
   is_forming: boolean;
   source?: { kind?: string; name?: string } | null;
 };
-type CandleResponse = {
+type CandleResponse = SeriesSnapshot & {
   candles: Candle[];
-  feed_state: string;
   message: string;
-  indicator_decision: IndicatorDecision;
-  indicator_history?: Signal[];
 };
-type IndicatorDecision = {
-  decision: "BUY" | "SELL" | "WAIT" | "DATA_UNAVAILABLE";
-  is_current_signal: boolean;
-  candle_timestamp: string | null;
-  reason: string;
-  ut_bot_signal: string | null;
-  ema_bullish: boolean | null;
-  rsi_bullish: boolean | null;
-  macd_bullish: boolean | null;
-  supertrend_bullish: boolean | null;
-};
-type QuoteResponse = {
-  available: boolean;
+type QuoteResponse = QuoteSnapshot & { forming_candle?: Candle | null };
+type OverviewResponse = {
   feed_state: string;
-  is_stale: boolean;
-  quote: { ltp: number; timestamp: string } | null;
-};
-type FormingResponse = {
-  available: boolean;
-  forming_candle: Candle | null;
-};
-type InstrumentStatus = { feed_state: string };
-type StatusResponse = {
-  feed_state: string;
-  provider: string;
-  streaming_enabled: boolean;
   connected: boolean;
   session_open: boolean;
   last_error: string | null;
-  instruments: Record<string, InstrumentStatus>;
+  providers: ProviderOption[];
+  quotes: Record<MarketSymbol, QuoteResponse>;
+  checked_at: string;
 };
 type ProviderOption = {
-  id: "groww" | "upstox";
+  id: Provider;
   label: string;
   configured: boolean;
   feed_state: string;
-  connected: boolean;
-  message: string;
 };
-type ProviderResponse = { providers: ProviderOption[] };
+
 type MarketSnapshot = {
   candles: Candle[];
+  forming: Candle | null;
   signals: Signal[];
-  decision: IndicatorDecision | null;
+  decision?: Decision;
   quote: QuoteResponse["quote"];
-  message: string;
+  message?: string;
   loading: boolean;
-  error: string | null;
+  error?: string;
   current: boolean;
+  isCurrentSignal: boolean;
   feedState: string;
 };
 
@@ -89,17 +66,20 @@ const API_BASE_URL = (
   .trim()
   .replace(/\/+$/, "");
 
-const emptyMarket: MarketSnapshot = {
-  candles: [],
-  signals: [],
-  decision: null,
-  quote: null,
-  message: "",
-  loading: true,
-  error: null,
-  current: false,
-  feedState: "checking",
-};
+const emptyCandles: Candle[] = [];
+const emptySignals: Signal[] = [];
+const timeFormat = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", timeStyle: "medium" });
+const stampFormat = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "short", timeStyle: "medium" });
+
+function readProviderPreference(): Provider | null {
+  try {
+    const saved = window.localStorage.getItem("allsafe-market-provider");
+    if (saved === "groww" || saved === "upstox") return saved;
+  } catch {
+    // The dashboard can still work without browser storage.
+  }
+  return null;
+}
 
 class MarketAccessError extends Error {}
 
@@ -117,23 +97,21 @@ async function getJson<T>(path: string, accessToken: string, signal: AbortSignal
   return response.json() as Promise<T>;
 }
 
-function formatPrice(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  return new Intl.NumberFormat("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+function formatPrice(value?: number) {
+  return value === undefined ? "—" : formatIndexPrice(value);
 }
 
 const chartTime = new Intl.DateTimeFormat("en-IN", {
   timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
 });
 
-function CandlestickChart({ candles, signals, label, width }: { candles: Candle[]; signals: Signal[]; label: string; width: number }) {
+const CandlestickChart = memo(function CandlestickChart({ candles, forming, signals, label, width }: {
+  candles: Candle[]; forming: Candle | null; signals: Signal[]; label: string; width: number;
+}) {
   const height = 320;
   const inset = 28;
 
-  if (candles.length === 0) {
+  if (candles.length === 0 && !forming) {
     return (
       <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-ui-line px-6 text-center text-sm text-ui-muted">
         No validated 15-minute candles are available. Check the feed status and account-service connection.
@@ -143,7 +121,8 @@ function CandlestickChart({ candles, signals, label, width }: { candles: Candle[
 
   const plotRight = width - 83;
   const bars = Math.max(12, Math.min(60, Math.floor((plotRight - inset) / 10)));
-  const visible = candles.slice(-bars);
+  const replacesTail = forming && epoch(forming.timestamp) === epoch(candles.at(-1)?.timestamp ?? "");
+  const visible = forming ? [...(replacesTail ? candles.slice(-bars, -1) : candles.slice(1 - bars)), forming] : candles.slice(-bars);
   const min = Math.min(...visible.map((candle) => candle.low));
   const max = Math.max(...visible.map((candle) => candle.high));
   const range = Math.max(max - min, Math.abs(max) * 0.0001, 1);
@@ -212,22 +191,19 @@ function CandlestickChart({ candles, signals, label, width }: { candles: Candle[
       </svg>
     </div>
   );
-}
+});
 
 function readPrice(snapshot: MarketSnapshot) {
-  const forming = snapshot.candles.find((candle) => candle.is_forming);
-  const latestConfirmed = snapshot.candles.slice().reverse().find((candle) => !candle.is_forming);
-  return { forming, price: snapshot.quote?.ltp ?? forming?.close ?? latestConfirmed?.close };
+  return snapshot.quote?.ltp ?? snapshot.forming?.close ?? snapshot.candles.at(-1)?.close;
 }
 
 function priceLabel(snapshot: MarketSnapshot) {
-  return snapshot.error ? "Price unavailable" : snapshot.current ? "Latest validated price" : "Last recorded price · not current";
+  return readPrice(snapshot) === undefined ? "Price unavailable" : snapshot.current ? "Latest validated price" : "Last recorded price · not current";
 }
 
 function signalStyle(snapshot: MarketSnapshot) {
-  if (!snapshot.current || !snapshot.decision?.is_current_signal) return "";
-  const side = snapshot.decision.decision;
-  return side === "BUY" ? "as-pill--green" : side === "SELL" ? "as-pill--red" : "";
+  if (!snapshot.isCurrentSignal) return "";
+  return snapshot.decision?.decision === "BUY" ? "as-pill--green" : "as-pill--red";
 }
 
 function signalText(snapshot: MarketSnapshot) {
@@ -250,21 +226,20 @@ function FocusedMarketChart({
   chartHref,
   title,
   snapshot,
-  feedState,
   plotRef,
   width,
 }: {
   chartHref: string;
   title: string;
   snapshot: MarketSnapshot;
-  feedState: string;
   plotRef: RefObject<HTMLDivElement | null>;
   width: number;
 }) {
-  const { forming, price } = readPrice(snapshot);
-  const stateLabel = (snapshot.error ? "unavailable" : snapshot.feedState || feedState).replaceAll("_", " ");
+  const { forming } = snapshot;
+  const price = readPrice(snapshot);
+  const stateLabel = snapshot.feedState.replaceAll("_", " ");
   const decision = snapshot.decision;
-  const signalLabel = snapshot.current && decision?.is_current_signal
+  const signalLabel = snapshot.isCurrentSignal
     ? "Current confirmed signal"
     : decision?.decision === "BUY" || decision?.decision === "SELL"
       ? "Previous confirmed signal"
@@ -284,7 +259,7 @@ function FocusedMarketChart({
       <div className="market-focus-grid">
         <div>
           <div ref={plotRef}>
-            <CandlestickChart candles={snapshot.candles} signals={snapshot.signals} label={title} width={width} />
+            <CandlestickChart candles={snapshot.candles} forming={forming} signals={snapshot.signals} label={title} width={width} />
           </div>
           {forming && <p className="mt-2 text-xs text-ui-amber">The latest candle is still forming.</p>}
         </div>
@@ -295,7 +270,7 @@ function FocusedMarketChart({
             <p className="market-focus-price tabular-nums">{formatPrice(price)}</p>
             {snapshot.quote?.timestamp && (
               <p className="mt-1 text-xs text-ui-muted">
-                Recorded {new Date(snapshot.quote.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST
+                Recorded {stampFormat.format(new Date(snapshot.quote.timestamp))} IST
               </p>
             )}
           </div>
@@ -306,7 +281,7 @@ function FocusedMarketChart({
           </div>
           {snapshot.error && <p className="text-sm text-ui-red" role="alert">{snapshot.error}</p>}
           {snapshot.message && !snapshot.error && <p className="text-sm text-ui-muted">{snapshot.message}</p>}
-          {snapshot.loading && <p className="text-xs text-ui-muted">Loading market data…</p>}
+          {snapshot.loading && <p className="text-xs text-ui-muted">Loading candle history…</p>}
           {!snapshot.loading && !snapshot.current && !snapshot.error && snapshot.candles.length > 0 && (
             <p className="text-xs text-ui-amber">Historical candles are shown. This feed is not current.</p>
           )}
@@ -319,20 +294,18 @@ function FocusedMarketChart({
 export default function LiveMarketDashboard() {
   const { session, signOut } = useAuth();
   const accessToken = session?.access_token;
-  const [status, setStatus] = useState<StatusResponse | null>(null);
-  const [providers, setProviders] = useState<ProviderOption[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState<"groww" | "upstox">("groww");
-  const [marketsState, setMarketsState] = useState<Record<MarketSymbol, MarketSnapshot>>({
-    NIFTY50: emptyMarket,
-    BANKNIFTY: emptyMarket,
-  });
-  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+  const [overview, setOverview] = useState<OverviewResponse>();
+  const [overviewError, setOverviewError] = useState(false);
+  const [preferredProvider, setPreferredProvider] = useState(readProviderPreference);
+  const [automaticProvider, setAutomaticProvider] = useState<Provider>("groww");
+  const selectedProvider = preferredProvider ?? automaticProvider;
+  const [history, setHistory] = useState<Partial<Record<MarketSymbol, CandleResponse>>>({});
+  const [historyErrors, setHistoryErrors] = useState<Partial<Record<MarketSymbol, string>>>({});
+  const refreshController = useRef<AbortController | null>(null);
+
   const [focusedSymbol, setFocusedSymbol] = useState<MarketSymbol>("NIFTY50");
   const [plotWidth, setPlotWidth] = useState(720);
   const plotRef = useRef<HTMLDivElement>(null);
-  const activeRefresh = useRef<AbortSignal | null>(null);
-  const refreshController = useRef<AbortController | null>(null);
-  const hasProviderPreference = useRef(false);
 
   useEffect(() => {
     const plot = plotRef.current;
@@ -344,148 +317,159 @@ export default function LiveMarketDashboard() {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("allsafe-market-provider");
-      if (saved === "groww" || saved === "upstox") {
-        hasProviderPreference.current = true;
-        setSelectedProvider(saved);
-      }
-    } catch {
-      // Customers can still select a provider when browser storage is unavailable.
-    }
-  }, []);
-
-  const selectProvider = (provider: "groww" | "upstox") => {
-    hasProviderPreference.current = true;
-    if (provider === selectedProvider) return;
-    refreshController.current?.abort();
-    setSelectedProvider(provider);
+  const selectProvider = (provider: Provider) => {
     try {
       window.localStorage.setItem("allsafe-market-provider", provider);
     } catch {
       // Chart links preserve the selection independently of browser storage.
     }
-    setStatus(null);
-    setMarketsState({ NIFTY50: emptyMarket, BANKNIFTY: emptyMarket });
-    setCheckedAt(null);
+    if (provider === selectedProvider) return;
+    refreshController.current?.abort();
+    setPreferredProvider(provider);
+    setOverview(undefined);
+    setOverviewError(false);
+    setHistory({});
+    setHistoryErrors({});
   };
-
-  const refresh = useCallback(async (signal: AbortSignal) => {
-    if (!accessToken || signal.aborted || (activeRefresh.current && !activeRefresh.current.aborted)) return;
-    activeRefresh.current = signal;
-    try {
-      const [latestStatus, providerResponse] = await Promise.all([
-        getJson<StatusResponse>(`/api/v1/live/status?provider=${selectedProvider}`, accessToken, signal),
-        getJson<ProviderResponse>("/api/v1/live/providers", accessToken, signal),
-      ]);
-      if (!signal.aborted) {
-        setProviders(providerResponse.providers);
-        const usable = (p: ProviderOption) => p.configured && ["live", "closed"].includes(p.feed_state);
-        const selected = providerResponse.providers.find(p => p.id === selectedProvider);
-        const alternative = providerResponse.providers.find(p => p.id !== selectedProvider && usable(p));
-        if (!hasProviderPreference.current && (!selected || !usable(selected)) && alternative) {
-          setStatus(null);
-          setMarketsState({ NIFTY50: emptyMarket, BANKNIFTY: emptyMarket });
-          setCheckedAt(null);
-          activeRefresh.current = null;
-          setSelectedProvider(alternative.id);
-          return;
-        }
-        setStatus(latestStatus);
-      }
-    } catch (error) {
-      if (signal.aborted) return;
-      setStatus(null);
-      if (error instanceof MarketAccessError) {
-        await signOut();
-        activeRefresh.current = null;
-        return;
-      }
-    }
-
-    await Promise.all(markets.map(async ({ symbol }) => {
-      const query = `?symbol=${symbol}&provider=${selectedProvider}`;
-      try {
-        const [candleResponse, quoteResponse, formingResponse] = await Promise.all([
-          getJson<CandleResponse>(`/api/v1/live/candles${query}&timeframe=15m&limit=500&history_days=7&include_indicator_history=true`, accessToken, signal),
-          getJson<QuoteResponse>(`/api/v1/live/quote${query}`, accessToken, signal),
-          getJson<FormingResponse>(`/api/v1/live/forming-candle${query}`, accessToken, signal),
-        ]);
-        if (signal.aborted) return;
-        const isCurrent = quoteResponse.available && quoteResponse.feed_state === "live" && !quoteResponse.is_stale;
-        const candles = [...candleResponse.candles];
-        if (isCurrent && formingResponse.available && formingResponse.forming_candle) {
-          candles.push({ ...formingResponse.forming_candle, is_forming: true });
-        }
-        const uniqueCandles = Array.from(
-          new Map(candles.map((candle) => [candle.timestamp, candle])).values(),
-        ).sort((left, right) => left.timestamp.localeCompare(right.timestamp));
-        setMarketsState((current) => ({
-          ...current,
-          [symbol]: {
-            candles: uniqueCandles,
-            signals: candleResponse.indicator_history ?? [],
-            decision: candleResponse.indicator_decision,
-            quote: quoteResponse.quote,
-            message: candleResponse.message,
-            loading: false,
-            error: null,
-            current: isCurrent,
-            feedState: quoteResponse.feed_state || candleResponse.feed_state,
-          },
-        }));
-      } catch (error) {
-        if (signal.aborted) return;
-        if (error instanceof MarketAccessError) {
-          await signOut();
-          return;
-        }
-        setMarketsState((current) => ({
-          ...current,
-          [symbol]: {
-            ...current[symbol],
-            candles: [],
-            signals: [],
-            decision: null,
-            quote: null,
-            message: "",
-            current: false,
-            feedState: "unavailable",
-            loading: false,
-            error: error instanceof Error ? error.message : "Could not load market data.",
-          },
-        }));
-      }
-    }));
-    if (!signal.aborted) setCheckedAt(new Date());
-    if (activeRefresh.current === signal) activeRefresh.current = null;
-  }, [accessToken, selectedProvider, signOut]);
 
   useEffect(() => {
     if (!accessToken) return;
+    const token = accessToken;
     const controller = new AbortController();
+    const { signal } = controller;
     refreshController.current = controller;
-    void refresh(controller.signal);
-    const timer = window.setInterval(() => void refresh(controller.signal), 15000);
+    const active = () => !signal.aborted && !document.hidden;
+    let timer: ReturnType<typeof setTimeout>;
+    let readingOverview = false;
+    let readingHistory = false;
+    let lastHistoryStart = 0;
+    let lastHistorySlot: number | undefined;
+
+    function accessChanged(error: unknown) {
+      if (!(error instanceof MarketAccessError)) return false;
+      controller.abort();
+      void signOut();
+      return true;
+    }
+
+    async function loadHistory(slot: number | undefined, sessionOpen: boolean) {
+      const now = Date.now();
+      const interval = sessionOpen ? 30000 : 60000;
+      if (!active() || readingHistory || (slot === lastHistorySlot && now - lastHistoryStart < interval)) return;
+      readingHistory = true;
+      lastHistoryStart = now;
+      lastHistorySlot = slot;
+      try {
+        await Promise.all(markets.map(async ({ symbol }) => {
+          try {
+            const data = await getJson<CandleResponse>(
+              `/api/v1/live/candles?symbol=${symbol}&provider=${selectedProvider}&timeframe=15m&limit=60&history_days=7&include_indicator_history=true`,
+              token, signal,
+            );
+            if (signal.aborted) return;
+            setHistory((previous) => ({ ...previous, [symbol]: data }));
+            setHistoryErrors((previous) => ({ ...previous, [symbol]: undefined }));
+          } catch (error) {
+            if (signal.aborted || accessChanged(error)) return;
+            setHistoryErrors((previous) => ({
+              ...previous,
+              [symbol]: error instanceof Error ? error.message : "Could not load candle history.",
+            }));
+          }
+        }));
+      } finally {
+        readingHistory = false;
+      }
+    }
+
+    async function loadOverview() {
+      if (!active() || readingOverview) return;
+      readingOverview = true;
+      let delay = 15000;
+      try {
+        const data = await getJson<OverviewResponse>(`/api/v1/live/overview?provider=${selectedProvider}`, token, signal);
+        if (signal.aborted) return;
+        const usable = (provider: ProviderOption) => provider.configured && ["live", "closed"].includes(provider.feed_state);
+        const selected = data.providers.find((provider) => provider.id === selectedProvider);
+        const alternative = data.providers.find((provider) => provider.id !== selectedProvider && usable(provider));
+        if (!preferredProvider && (!selected || !usable(selected)) && alternative) {
+          controller.abort();
+          setOverview(undefined);
+          setHistory({});
+          setHistoryErrors({});
+          setAutomaticProvider(alternative.id);
+          return;
+        }
+        setOverview(data);
+        setOverviewError(false);
+        delay = data.session_open ? 15000 : 30000;
+        void loadHistory(data.session_open ? slotAt(data.checked_at) : undefined, data.session_open);
+      } catch (error) {
+        if (signal.aborted || accessChanged(error)) return;
+        setOverview(undefined);
+        setOverviewError(true);
+        setHistory({});
+        setHistoryErrors({});
+        lastHistoryStart = 0;
+      } finally {
+        readingOverview = false;
+        if (active()) timer = setTimeout(loadOverview, delay);
+      }
+    }
+
+    function refreshWhenVisible() {
+      clearTimeout(timer);
+      if (!active()) return;
+      lastHistoryStart = 0;
+      void loadOverview();
+    }
+    void loadOverview();
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("online", refreshWhenVisible);
     return () => {
       controller.abort();
-      if (refreshController.current === controller) refreshController.current = null;
-      window.clearInterval(timer);
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("online", refreshWhenVisible);
     };
-  }, [accessToken, refresh]);
+  }, [accessToken, preferredProvider, selectedProvider, signOut]);
 
-  const backendMessage = !status
-    ? "Waiting for the live-data service."
-    : !providers.find((provider) => provider.id === selectedProvider)?.configured
-      ? `${selectedProvider === "groww" ? "Groww" : "Upstox"} is not configured for this platform yet. No live prices are being shown.`
-      : status.last_error
-        ? `${selectedProvider === "groww" ? "Groww" : "Upstox"} reports: ${status.last_error}`
-        : !status.session_open
-          ? "NSE is currently closed. Available data is historical."
-          : status.connected && status.feed_state === "live"
-            ? `${selectedProvider === "groww" ? "Groww" : "Upstox"} is connected. Prices refresh automatically.`
-            : `The live feed is ${status.feed_state.replaceAll("_", " ")}. Displayed history is not current.`;
+  const providerLabel = selectedProvider === "upstox" ? "Upstox" : "Groww";
+  const providers = overview?.providers ?? [];
+  const backendMessage = overviewError
+    ? "The live-data service could not be reached. Retrying…"
+    : !overview
+      ? "Waiting for the live-data service."
+      : !providers.find((provider) => provider.id === selectedProvider)?.configured
+        ? `${providerLabel} is not configured for this platform yet. No live prices are being shown.`
+        : overview.last_error
+          ? `${providerLabel} reports: ${overview.last_error}`
+          : !overview.session_open
+            ? "NSE is currently closed. Available data is historical."
+            : overview.connected && overview.feed_state === "live"
+              ? `${providerLabel} is connected. Prices refresh automatically.`
+              : `The live feed is ${overview.feed_state.replaceAll("_", " ")}. Displayed history is not current.`;
+
+  function snapshotFor(symbol: MarketSymbol): MarketSnapshot {
+    const series = overviewError ? undefined : history[symbol];
+    const quote = overviewError ? undefined : overview?.quotes[symbol];
+    const candles = series?.candles ?? emptyCandles;
+    const latest = candles.at(-1);
+    const current = freshQuote(quote);
+    const forming = current && quote?.forming_candle && (!latest || epoch(quote.forming_candle.timestamp) >= epoch(latest.timestamp))
+      ? quote.forming_candle : null;
+    const error = overviewError ? undefined : historyErrors[symbol];
+    return {
+      candles, forming, current, error,
+      signals: series?.indicator_history ?? emptySignals,
+      decision: series?.indicator_decision,
+      quote: quote?.quote ?? null,
+      message: series?.message,
+      loading: !overviewError && !series && !error,
+      isCurrentSignal: !error && currentSignal(series, quote),
+      feedState: overviewError ? "unavailable" : quote?.feed_state ?? series?.feed_state ?? "checking",
+    };
+  }
 
   return (
     <div className="space-y-4">
@@ -496,7 +480,7 @@ export default function LiveMarketDashboard() {
             <select
               id="market-data-provider"
               value={selectedProvider}
-              onChange={(event) => selectProvider(event.target.value as "groww" | "upstox")}
+              onChange={(event) => selectProvider(event.target.value as Provider)}
               className="as-field"
             >
               {(["groww", "upstox"] as const).map((id) => {
@@ -509,17 +493,17 @@ export default function LiveMarketDashboard() {
             <p className="text-sm text-ui-muted">{backendMessage}</p>
           </div>
           <p className="text-xs text-ui-muted">
-            {checkedAt ? `Checked ${checkedAt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} IST · refreshes every 15 seconds` : "Connecting…"}
+            {overview ? `Checked ${timeFormat.format(new Date(overview.checked_at))} IST` : overviewError ? "Retrying…" : "Connecting…"}
           </p>
         </div>
       </div>
       <div className="market-watchlist" aria-label="Index overview">
         {markets.map(({ symbol, title }) => {
-          const snapshot = marketsState[symbol];
-          const { price } = readPrice(snapshot);
+          const snapshot = snapshotFor(symbol);
+          const price = readPrice(snapshot);
           const selected = focusedSymbol === symbol;
           const previousSignal = (snapshot.decision?.decision === "BUY" || snapshot.decision?.decision === "SELL")
-            && (!snapshot.current || !snapshot.decision.is_current_signal);
+            && !snapshot.isCurrentSignal;
           return (
             <article key={symbol} className={`as-panel market-watch-tile${selected ? " market-watch-tile--selected" : ""}`}>
               <div className="min-w-0">
@@ -545,8 +529,7 @@ export default function LiveMarketDashboard() {
       <FocusedMarketChart
         chartHref={`/chart/${focusedSymbol}?provider=${selectedProvider}`}
         title={focusedSymbol === "NIFTY50" ? "NIFTY 50" : "BANK NIFTY"}
-        snapshot={marketsState[focusedSymbol]}
-        feedState={status?.instruments?.[focusedSymbol]?.feed_state ?? status?.feed_state ?? "checking"}
+        snapshot={snapshotFor(focusedSymbol)}
         plotRef={plotRef}
         width={plotWidth}
       />

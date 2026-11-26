@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   (process.env.NODE_ENV === "production" ? "https://allsafe-ai-api.onrender.com" : "http://localhost:8000")
 ).trim().replace(/\/+$/, "");
+const REQUEST_TIMEOUT_MS = 60_000;
 
 async function errorMessage(response: Response): Promise<string> {
   try {
@@ -23,6 +24,7 @@ export default function AccountRequestButton() {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const pendingRequest = useRef<AbortController | null>(null);
   const [fullName, setFullName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [email, setEmail] = useState("");
@@ -39,6 +41,12 @@ export default function AccountRequestButton() {
   const address = email.trim().toLowerCase();
   const awaitingCode = Boolean(codeEmail && address === codeEmail);
 
+  const cancelPendingRequest = useCallback(() => {
+    const request = pendingRequest.current;
+    pendingRequest.current = null;
+    request?.abort();
+  }, []);
+
   useEffect(() => {
     const panel = dialog.current;
     const opener = trigger.current;
@@ -46,12 +54,15 @@ export default function AccountRequestButton() {
     panel.showModal();
     panel.querySelector("input")?.focus();
     return () => {
+      cancelPendingRequest();
       panel.close();
       opener?.focus();
     };
-  }, [open]);
+  }, [open, cancelPendingRequest]);
 
   function close() {
+    cancelPendingRequest();
+    setBusy(false);
     setPassword("");
     setConfirmation("");
     setEmailCode("");
@@ -59,34 +70,53 @@ export default function AccountRequestButton() {
     setOpen(false);
   }
 
-  async function sendCode() {
-    const response = await fetch(`${API_BASE_URL}/api/v1/account-requests/email-code`, {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ email: address }),
-      cache: "no-store",
-      credentials: "omit",
-    });
-    if (!response.ok) throw new Error(await errorMessage(response));
-    setCodeEmail(address);
-    setEmailCode("");
-  }
-
-  async function resendCode() {
+  async function postRequest(
+    path: "" | "/email-code",
+    payload: Record<string, string>,
+    onSuccess: (body: unknown) => void,
+  ) {
+    if (pendingRequest.current) return;
+    const request = new AbortController();
+    pendingRequest.current = request;
+    const deadline = window.setTimeout(() => request.abort(), REQUEST_TIMEOUT_MS);
     setBusy(true);
     setError(null);
     try {
-      await sendCode();
+      const response = await fetch(`${API_BASE_URL}/api/v1/account-requests${path}`, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+        credentials: "omit",
+        signal: request.signal,
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const body: unknown = await response.json();
+      request.signal.throwIfAborted();
+      if (pendingRequest.current === request) onSuccess(body);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not send the verification code.");
+      if (pendingRequest.current !== request) return;
+      setError(request.signal.aborted
+        ? "The request took too long. Please try again."
+        : cause instanceof Error ? cause.message : "Could not complete the request. Please try again.");
     } finally {
-      setBusy(false);
+      window.clearTimeout(deadline);
+      if (pendingRequest.current === request) {
+        pendingRequest.current = null;
+        setBusy(false);
+      }
     }
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function sendCode() {
+    void postRequest("/email-code", { email: address }, () => {
+      setCodeEmail(address);
+      setEmailCode("");
+    });
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
     if (password !== confirmation) {
       setError("Passwords do not match.");
       return;
@@ -96,28 +126,18 @@ export default function AccountRequestButton() {
       return;
     }
     if (!awaitingCode) {
-      await resendCode();
+      sendCode();
       return;
     }
-    setBusy(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/account-requests`, {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({
-          full_name: fullName.trim(),
-          date_of_birth: dateOfBirth,
-          email: address,
-          phone_number: phoneNumber.trim(),
-          whatsapp_number: whatsappNumber.trim(),
-          password,
-          email_code: emailCode,
-        }),
-        cache: "no-store",
-        credentials: "omit",
-      });
-      if (!response.ok) throw new Error(await errorMessage(response));
-      const body: unknown = await response.json();
+    void postRequest("", {
+      full_name: fullName.trim(),
+      date_of_birth: dateOfBirth,
+      email: address,
+      phone_number: phoneNumber.trim(),
+      whatsapp_number: whatsappNumber.trim(),
+      password,
+      email_code: emailCode,
+    }, (body) => {
       const message = typeof body === "object" && body !== null && "message" in body
         ? (body as { message: unknown }).message : null;
       setResultMessage(typeof message === "string" ? message : "Your request is awaiting administrator review.");
@@ -131,11 +151,7 @@ export default function AccountRequestButton() {
       setConfirmation("");
       setEmailCode("");
       setCodeEmail("");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not submit the request.");
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   const inputClass = "as-field mt-1 w-full";
@@ -147,14 +163,14 @@ export default function AccountRequestButton() {
       {open && (
         <dialog ref={dialog} aria-labelledby="account-request-title" onCancel={(event) => {
           event.preventDefault();
-          if (!busy) close();
+          close();
         }} className="as-panel fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-2xl overflow-y-auto p-5 shadow-2xl backdrop:bg-black/80 sm:p-8">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="as-kicker">Customer access</p>
                 <h2 id="account-request-title" className="mt-2 text-2xl font-semibold text-ui-ink">Request an account</h2>
               </div>
-              <button type="button" aria-label="Close request form" disabled={busy} onClick={close} className="as-button as-button--quiet">✕</button>
+              <button type="button" aria-label="Close request form" onClick={close} className="as-button as-button--quiet">✕</button>
             </div>
             {submitted ? (
               <div role="status" className="mt-6 rounded-xl border border-ui-green/25 bg-ui-green/10 p-5 text-sm leading-6 text-ui-green">
@@ -163,7 +179,7 @@ export default function AccountRequestButton() {
             ) : (
               <>
                 <p className="mt-3 text-sm leading-6 text-ui-muted">Choose a password and verify your email address to submit your request. After approval, use that email and password to sign in.</p>
-                <form onSubmit={submit} className="mt-6 grid gap-4 sm:grid-cols-2">
+                <form onSubmit={submit} aria-busy={busy} className="mt-6 grid gap-4 sm:grid-cols-2">
                   <label className="text-sm text-ui-muted">Full name
                     <input className={inputClass} type="text" autoComplete="name" required maxLength={120} value={fullName} onChange={(event) => setFullName(event.target.value)} />
                   </label>
@@ -195,7 +211,7 @@ export default function AccountRequestButton() {
                         <label className="min-w-40 flex-1 text-sm text-ui-muted">Email verification code
                           <input className={inputClass} name="email-code" type="text" autoComplete="one-time-code" autoCapitalize="characters" spellCheck={false} required pattern="[A-Z2-7]{8}" maxLength={8} value={emailCode} onChange={(event) => setEmailCode(event.target.value.trim().toUpperCase())} />
                         </label>
-                        <button type="button" disabled={busy} onClick={() => void resendCode()} className="as-button as-button--quiet">Resend code</button>
+                        <button type="button" disabled={busy} onClick={sendCode} className="as-button as-button--quiet">Resend code</button>
                       </div>
                     </div>
                   )}

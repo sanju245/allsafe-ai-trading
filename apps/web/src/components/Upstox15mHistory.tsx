@@ -102,7 +102,7 @@ function HistoryCandleChart({ candles, signals, label }: { candles: Candle[]; si
   });
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-ui-line bg-[#102820]" tabIndex={0} aria-label={`${label} historical chart; scroll horizontally to older candles`}>
+    <div className="overflow-x-auto rounded-lg border border-ui-line bg-[#102820]" tabIndex={0} aria-label={`${label} historical chart, oldest candles on the left and newest on the right`}>
       <svg
         className="block h-72 max-w-none"
         style={{ width: `${width}px` }}
@@ -232,7 +232,7 @@ function HistoryPanel({ accessToken }: { accessToken: string }) {
         <div>
           <p className="as-kicker">Upstox history</p>
           <h2 id="upstox-history-title" className="as-section-title mt-1">15-minute candle charts</h2>
-          <p className="mt-2 max-w-2xl text-sm text-ui-muted">Review completed candles from earlier sessions. Scroll the chart horizontally to see older dates.</p>
+          <p className="mt-2 max-w-2xl text-sm text-ui-muted">Scroll horizontally to browse completed candles. Older candles are on the left and newer candles are on the right.</p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="text-xs font-medium text-ui-muted">

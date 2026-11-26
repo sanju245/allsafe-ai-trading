@@ -4,9 +4,6 @@ import Upstox15mHistory from "@/components/Upstox15mHistory";
 import DashboardAccessGate from "@/components/auth/DashboardAccessGate";
 import TerminalViews from "@/components/TerminalViews";
 
-// Backend status must be checked per request, never cached at build time.
-export const dynamic = "force-dynamic";
-
 export default function Home() {
   return (
     <DashboardAccessGate>

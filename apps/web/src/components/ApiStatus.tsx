@@ -1,10 +1,13 @@
-import { getApiHealth } from "@/lib/api";
+"use client";
 
-// Async Server Component: checks the backend /health endpoint on each request.
-export default async function ApiStatus() {
-  const health = await getApiHealth();
+import { useApiHealth } from "./useApiHealth";
 
-  if (!health.ok) {
+export default function ApiStatus() {
+  const { status } = useApiHealth();
+  if (status === "checking") {
+    return <p className="as-pill" role="status">Checking account service…</p>;
+  }
+  if (status === "unavailable") {
     return (
       <p className="as-pill as-pill--amber">Account service unavailable</p>
     );

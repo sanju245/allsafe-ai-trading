@@ -89,6 +89,17 @@ class LiveQuoteResponse(BaseModel):
     checked_at: datetime
 
 
+class LiveOverviewResponse(BaseModel):
+    provider: str
+    providers: list[dict[str, object]]
+    feed_state: FeedState
+    connected: bool
+    session_open: bool
+    last_error: str | None
+    quotes: dict[InstrumentId, LiveQuoteResponse]
+    checked_at: datetime
+
+
 class ConfirmedCandleSchema(BaseModel):
     model_config = ConfigDict(frozen=True)
 

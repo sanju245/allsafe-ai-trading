@@ -11,60 +11,32 @@ concurrency:
 jobs:
   triage:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - name: Probe public routes and request incident analysis
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check Guardian retry and provider limits
+        run: python -m unittest discover -s scripts -p 'test_guardian_repair.py' -v
+      - name: Probe public routes and diagnose persistent incidents
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        shell: python
+        run: python scripts/guardian_repair.py
+      - name: Classify untrusted candidate as evidence only
+        if: always()
+        shell: bash
         run: |
-          import json, os, urllib.request, urllib.error
-          from pathlib import Path
-          results = {}
-          for route in ("/", "/login", "/admin/login", "/privacy", "/what-we-done"):
-              try:
-                  with urllib.request.urlopen("https://allsafe-ai-trading.vercel.app" + route, timeout=15) as response:
-                      results[route] = response.status
-              except urllib.error.HTTPError as exc:
-                  results[route] = exc.code
-              except (OSError, TimeoutError):
-                  results[route] = "transport_error"
-          report = {"checks": results}
-          Path("guardian-triage.json").write_text(json.dumps(report, indent=2))
-          if all(value == 200 for value in results.values()):
-              print("Public routes healthy; no AI request needed")
-              raise SystemExit(0)
-          key = os.environ.get("GROQ_API_KEY")
-          if not key:
-              raise SystemExit("Groq credential unavailable")
-          base = "https://api.groq.com/openai/v1/"
-          def request(path, payload=None):
-              req = urllib.request.Request(base + path, data=None if payload is None else json.dumps(payload).encode(), headers={"Authorization":"Bearer "+key,"Content-Type":"application/json","User-Agent":"AllSafe-Guardian/1.0","Accept":"application/json"})
-              try:
-                  with urllib.request.urlopen(req, timeout=30) as response:
-                      return json.load(response)
-              except urllib.error.HTTPError as exc:
-                  raise SystemExit(f"Groq HTTP {exc.code}") from None
-          models = request("models").get("data", [])
-          import re
-          available = {m["id"] for m in models if isinstance(m, dict) and isinstance(m.get("id"), str) and m.get("active", True)}
-          print("Available model IDs:", sorted(m for m in available if re.fullmatch(r"[a-zA-Z0-9_./-]{1,150}", m)))
-          preferred = ("openai/gpt-oss-120b","openai/gpt-oss-20b","llama-3.3-70b-versatile","llama-3.1-8b-instant","qwen/qwen3-32b","moonshotai/kimi-k2-instruct-0905")
-          model = next((m for m in preferred if m in available), None)
-          if not model:
-              raise SystemExit("No recognized chat model available; inspect model IDs above")
-          prompt = "Analyze public HTTP status observations, give possible causes and safe diagnostic steps, without claiming proven root cause or requesting secrets: " + json.dumps(results)
-          result = request("chat/completions", {"model":model,"messages":[{"role":"user","content":prompt}],"max_tokens":512})
-          answer = result.get("choices",[{}])[0].get("message",{}).get("content","")
-          if not answer.strip():
-              raise SystemExit("No generated text returned")
-          report["model"] = model
-          report["analysis"] = answer
-          Path("guardian-triage.json").write_text(json.dumps(report, indent=2))
-          raise SystemExit("Public route incident detected")
+          if [[ ! -s guardian-candidate.patch ]]; then
+            echo "No code candidate; persistent incidents require investigation"
+            exit 0
+          fi
+          python scripts/guardian_candidate.py guardian-candidate.patch
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: guardian-triage
-          path: guardian-triage.json
+          path: |
+            guardian-triage.json
+            guardian-candidate.patch
+          if-no-files-found: error
           retention-days: 14

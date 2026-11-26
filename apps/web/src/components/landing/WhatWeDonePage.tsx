@@ -4,17 +4,10 @@ import { memo, useState } from "react";
 import Link from "next/link";
 import BrandLink from "@/components/BrandLink";
 import { useAuth } from "@/components/auth/AuthProvider";
-import type { MarketCalendar } from "@/lib/indianMarketStatus";
+import { useApiHealth } from "@/components/useApiHealth";
 import IndianMarketStatusBadge from "@/components/landing/IndianMarketStatusBadge";
 import LiveIstClock from "@/components/landing/LiveIstClock";
 import ScrollReveal from "@/components/landing/ScrollReveal";
-
-export interface WhatWeDonePageProps {
-  serverTimeUtc?: string | null;
-  backendOnline?: boolean;
-  backendVersion?: string;
-  marketCalendar?: MarketCalendar;
-}
 
 type ConsensusMode = "BUY" | "SELL" | "WAIT";
 
@@ -106,23 +99,12 @@ const SIGNAL_CHECKS: SignalCheckSpec[] = [
  * Overview of the current deterministic five-check signal engine.
  * It is one rule engine, not a collection of independent AI services.
  */
-function WhatWeDonePage({
-  serverTimeUtc = null,
-  backendOnline = false,
-  marketCalendar,
-}: WhatWeDonePageProps) {
+function WhatWeDonePage() {
   const { session } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [consensusMode, setConsensusMode] = useState<ConsensusMode>("BUY");
 
-  const [serverTimeOffsetMs] = useState<number>(() => {
-    if (!serverTimeUtc) return 0;
-    const parsed = new Date(serverTimeUtc).getTime();
-    if (!Number.isFinite(parsed)) return 0;
-    return parsed - Date.now();
-  });
-  const parsedEpoch = serverTimeUtc ? Date.parse(serverTimeUtc) : Number.NaN;
-  const initialEpochMs = Number.isFinite(parsedEpoch) ? parsedEpoch : undefined;
+  const { status, marketCalendar, serverTimeOffsetMs } = useApiHealth();
 
   return (
     <div className="as-page selection:bg-ui-green/30 selection:text-ui-green">
@@ -239,13 +221,11 @@ function WhatWeDonePage({
         {/* Live IST Clock & NSE Market Status Strip */}
         <div className="mb-8 grid grid-cols-1 gap-3.5 md:grid-cols-2">
           <LiveIstClock
-            initialEpochMs={initialEpochMs}
             serverTimeOffsetMs={serverTimeOffsetMs}
             variant="hero"
           />
           <IndianMarketStatusBadge
                 calendar={marketCalendar}
-            initialEpochMs={initialEpochMs}
             serverTimeOffsetMs={serverTimeOffsetMs}
             variant="hero"
             showCountdown
@@ -484,7 +464,7 @@ function WhatWeDonePage({
               Customer Sign In
             </Link>
             <span className="font-mono text-[11px] text-ui-muted">
-              Account service: {backendOnline ? "Reachable" : "Currently unavailable"}
+              Account service: {status === "checking" ? "Checking…" : status === "online" ? "Reachable" : "Currently unavailable"}
             </span>
           </div>
         </div>

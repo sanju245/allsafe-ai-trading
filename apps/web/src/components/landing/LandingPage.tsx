@@ -5,17 +5,10 @@ import Link from "next/link";
 import BrandLink from "@/components/BrandLink";
 import { useAuth } from "@/components/auth/AuthProvider";
 import LandingChartPreview from "@/components/landing/LandingChartPreview";
-import type { MarketCalendar } from "@/lib/indianMarketStatus";
+import { useApiHealth } from "@/components/useApiHealth";
 import IndianMarketStatusBadge from "@/components/landing/IndianMarketStatusBadge";
 import LiveIstClock from "@/components/landing/LiveIstClock";
 import AccountRequestButton from "@/components/landing/AccountRequestButton";
-
-export interface LandingPageProps {
-  serverTimeUtc?: string | null;
-  backendOnline?: boolean;
-  backendVersion?: string;
-  marketCalendar?: MarketCalendar;
-}
 
 type ExampleMode = "BUY" | "SELL" | "WAIT";
 const CREATOR_NAME = "Sanjay Singh";
@@ -67,18 +60,10 @@ const FEATURES = [
   },
 ];
 
-function LandingPage({
-  serverTimeUtc = null,
-  backendOnline = false,
-  marketCalendar,
-}: LandingPageProps) {
+function LandingPage() {
   const { session } = useAuth();
   const [exampleMode, setExampleMode] = useState<ExampleMode>("WAIT");
-  const parsedEpoch = serverTimeUtc ? Date.parse(serverTimeUtc) : Number.NaN;
-  const initialEpochMs = Number.isFinite(parsedEpoch) ? parsedEpoch : undefined;
-  const [serverTimeOffsetMs] = useState(() =>
-    initialEpochMs === undefined ? 0 : initialEpochMs - Date.now(),
-  );
+  const { status, marketCalendar, serverTimeOffsetMs } = useApiHealth();
   const example = EXAMPLES[exampleMode];
 
   return (
@@ -135,11 +120,13 @@ function LandingPage({
               <LandingChartPreview />
             </div>
             <div className="landing-health">
-              <LiveIstClock initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
-              <IndianMarketStatusBadge calendar={marketCalendar} initialEpochMs={initialEpochMs} serverTimeOffsetMs={serverTimeOffsetMs} />
+              <LiveIstClock serverTimeOffsetMs={serverTimeOffsetMs} />
+              <IndianMarketStatusBadge calendar={marketCalendar} serverTimeOffsetMs={serverTimeOffsetMs} />
               <div className="landing-account-service">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ui-muted">Account service</p>
-                <p className={`as-pill mt-2 ${backendOnline ? "as-pill--green" : "as-pill--amber"}`}>{backendOnline ? "Reachable" : "Currently unavailable"}</p>
+                <p role="status" className={`as-pill mt-2 ${status === "online" ? "as-pill--green" : "as-pill--amber"}`}>
+                  {status === "checking" ? "Checking…" : status === "online" ? "Reachable" : "Currently unavailable"}
+                </p>
                 <p className="mt-1 text-xs leading-relaxed text-ui-muted">Sign-in and application service</p>
               </div>
             </div>

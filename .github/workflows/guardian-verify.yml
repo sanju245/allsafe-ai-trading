@@ -10,6 +10,18 @@ on:
 permissions:
   contents: read
 jobs:
+  guardian:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m unittest discover -s scripts -p test_guardian_repair.py -v
+      - run: python -m unittest discover -s tests -p test_guardian_release_gate.py -v
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 20
