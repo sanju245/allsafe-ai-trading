@@ -1,0 +1,55 @@
+name: Guardian AI connectivity
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/allsafe-ai-guardian]
+    paths: ['.github/workflows/guardian-ai-check.yml']
+permissions:
+  contents: read
+jobs:
+  connectivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify Groq API and generation
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        shell: python
+        run: |
+          import os, json, urllib.request, urllib.error
+          key = os.environ.get("GROQ_API_KEY")
+          if not key:
+              raise SystemExit("GROQ_API_KEY unavailable")
+          base = "https://api.groq.com/openai/v1/"
+          def request(path, payload=None):
+              req = urllib.request.Request(base + path, data=None if payload is None else json.dumps(payload).encode(), headers={"Authorization":"Bearer "+key,"Content-Type":"application/json","User-Agent":"AllSafe-Guardian/1.0","Accept":"application/json"})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read(8192)
+                  print("Endpoint:", path, "HTTP:", exc.code)
+                  print("Response type:", exc.headers.get("Content-Type", "unknown"))
+                  try:
+                      error = json.loads(raw).get("error", {})
+                      for field in ("type", "code", "message"):
+                          value = str(error.get(field, ""))[:500].replace(key, "[REDACTED]")
+                          print(field + ":", repr(value))
+                  except (ValueError, AttributeError):
+                      print("Non-JSON response; possible gateway or request filtering")
+                  raise SystemExit(1) from None
+          models = request("models").get("data", [])
+          import re
+          available = {m["id"] for m in models if isinstance(m, dict) and isinstance(m.get("id"), str) and m.get("active", True)}
+          print("Available model IDs:", sorted(m for m in available if re.fullmatch(r"[a-zA-Z0-9_./-]{1,150}", m)))
+          preferred = ("openai/gpt-oss-120b","openai/gpt-oss-20b","llama-3.3-70b-versatile","llama-3.1-8b-instant","qwen/qwen3-32b","moonshotai/kimi-k2-instruct-0905")
+          model = next((m for m in preferred if m in available), None)
+          if not model:
+              raise SystemExit("No recognized chat model available; inspect model IDs above")
+          prompt = "Reply with OK only."
+          result = request("chat/completions", {"model":model,"messages":[{"role":"user","content":prompt}],"max_tokens":512})
+          answer = result.get("choices",[{}])[0].get("message",{}).get("content","")
+          if not answer.strip():
+              raise SystemExit("No generated text returned")
+          print("Groq generation verified:", model)
+
