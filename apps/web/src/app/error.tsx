@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 const RELOAD_FLAG = "allsafe-auto-reload-once";
 
@@ -15,8 +15,6 @@ function looksLikeStaleChunk(error: Error): boolean {
 }
 
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  const [autoRecovering, setAutoRecovering] = useState(false);
-
   useEffect(() => {
     // A fresh deploy rotates build chunk hashes. A tab that was already open (or loaded
     // from a stale cache) can fail to load a lazy chunk - e.g. the chart canvas, which is
@@ -25,12 +23,9 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
     // a sessionStorage flag stops a real repeated failure from reload-looping forever.
     if (looksLikeStaleChunk(error) && !sessionStorage.getItem(RELOAD_FLAG)) {
       sessionStorage.setItem(RELOAD_FLAG, "1");
-      setAutoRecovering(true);
       window.location.reload();
     }
   }, [error]);
-
-  if (autoRecovering) return null;
 
   return (
     <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: "24px", background: "#f2f5ef", color: "#152d25", fontFamily: "Inter, Arial, sans-serif" }}>
