@@ -22,12 +22,22 @@ jobs:
               raise SystemExit("GROQ_API_KEY unavailable")
           base = "https://api.groq.com/openai/v1/"
           def request(path, payload=None):
-              req = urllib.request.Request(base + path, data=None if payload is None else json.dumps(payload).encode(), headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"})
+              req = urllib.request.Request(base + path, data=None if payload is None else json.dumps(payload).encode(), headers={"Authorization":"Bearer "+key,"Content-Type":"application/json","User-Agent":"AllSafe-Guardian/1.0","Accept":"application/json"})
               try:
                   with urllib.request.urlopen(req, timeout=30) as response:
                       return json.load(response)
               except urllib.error.HTTPError as exc:
-                  raise SystemExit(f"Groq HTTP {exc.code}") from None
+                  raw = exc.read(8192)
+                  print("Endpoint:", path, "HTTP:", exc.code)
+                  print("Response type:", exc.headers.get("Content-Type", "unknown"))
+                  try:
+                      error = json.loads(raw).get("error", {})
+                      for field in ("type", "code", "message"):
+                          value = str(error.get(field, ""))[:500].replace(key, "[REDACTED]")
+                          print(field + ":", repr(value))
+                  except (ValueError, AttributeError):
+                      print("Non-JSON response; possible gateway or request filtering")
+                  raise SystemExit(1) from None
           models = request("models").get("data", [])
           available = {m["id"] for m in models}
           model = next((m for m in ("llama-3.3-70b-versatile","llama-3.1-8b-instant") if m in available), None)
